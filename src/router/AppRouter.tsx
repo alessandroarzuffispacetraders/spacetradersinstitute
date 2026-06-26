@@ -1,0 +1,109 @@
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import AppLayout from '../components/layout/AppLayout'
+import LoginPage from '../pages/auth/LoginPage'
+
+// Student pages
+import StudentDashboard from '../pages/student/StudentDashboard'
+import StudentPercorso from '../pages/student/StudentPercorso'
+import StudentCorsi from '../pages/student/StudentCorsi'
+import StudentCategoryDetail from '../pages/student/StudentCategoryDetail'
+import StudentLezione from '../pages/student/StudentLezione'
+import StudentDiario from '../pages/student/StudentDiario'
+import StudentChat from '../pages/student/StudentChat'
+import StudentMentalCoach from '../pages/student/StudentMentalCoach'
+import StudentLive from '../pages/student/StudentLive'
+import StudentLivePlayer from '../pages/student/StudentLivePlayer'
+import StudentProgressi from '../pages/student/StudentProgressi'
+import StudentJournal from '../pages/student/StudentJournal'
+
+// Coach pages
+import CoachDashboard from '../pages/coach/CoachDashboard'
+import CoachStudenti from '../pages/coach/CoachStudenti'
+import CoachReview from '../pages/coach/CoachReview'
+import CoachSegnalazioni from '../pages/coach/CoachSegnalazioni'
+
+// Mental Coach pages
+import MentalCoachDashboard from '../pages/mental-coach/MentalCoachDashboard'
+import MentalCoachStudenti from '../pages/mental-coach/MentalCoachStudenti'
+import MentalCoachSessioni from '../pages/mental-coach/MentalCoachSessioni'
+import MentalCoachNote from '../pages/mental-coach/MentalCoachNote'
+import MentalCoachChat from '../pages/mental-coach/MentalCoachChat'
+
+// Admin pages
+import AdminDashboard from '../pages/admin/AdminDashboard'
+import AdminUtenti from '../pages/admin/AdminUtenti'
+import AdminContenuti from '../pages/admin/AdminContenuti'
+import AdminStatistiche from '../pages/admin/AdminStatistiche'
+import AdminChat from '../pages/admin/AdminChat'
+
+function PrivateRoutes() {
+  const { user } = useAuth()
+  if (!user) return <Navigate to="/login" replace />
+
+  const defaultPath = {
+    student: '/student',
+    coach: '/coach',
+    mental_coach: '/mental-coach',
+    admin: '/admin',
+  }[user.role]
+
+  return (
+    <Routes>
+      <Route element={<AppLayout />}>
+        {/* Student */}
+        <Route path="/student" element={<StudentDashboard />} />
+        <Route path="/student/percorso" element={<StudentPercorso />} />
+        <Route path="/student/corsi" element={<StudentCorsi />} />
+        {/* NOTE: /lezione/:id must come before /:categoryId so static "lezione" wins */}
+        <Route path="/student/corsi/lezione/:lessonId" element={<StudentLezione />} />
+        <Route path="/student/corsi/:categoryId" element={<StudentCategoryDetail />} />
+        <Route path="/student/diario" element={<StudentDiario />} />
+        <Route path="/student/chat" element={<StudentChat />} />
+        <Route path="/student/mental-coach" element={<StudentMentalCoach />} />
+        <Route path="/student/live" element={<StudentLive />} />
+        <Route path="/student/live/:liveId" element={<StudentLivePlayer />} />
+        <Route path="/student/progressi" element={<StudentProgressi />} />
+        <Route path="/student/journal" element={<StudentJournal />} />
+
+        {/* Coach */}
+        <Route path="/coach" element={<CoachDashboard />} />
+        <Route path="/coach/studenti" element={<CoachStudenti />} />
+        <Route path="/coach/review" element={<CoachReview />} />
+        <Route path="/coach/segnalazioni" element={<CoachSegnalazioni />} />
+
+        {/* Mental Coach */}
+        <Route path="/mental-coach" element={<MentalCoachDashboard />} />
+        <Route path="/mental-coach/studenti" element={<MentalCoachStudenti />} />
+        <Route path="/mental-coach/sessioni" element={<MentalCoachSessioni />} />
+        <Route path="/mental-coach/note" element={<MentalCoachNote />} />
+        <Route path="/mental-coach/chat" element={<MentalCoachChat />} />
+
+        {/* Admin */}
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/admin/utenti" element={<AdminUtenti />} />
+        <Route path="/admin/contenuti" element={<AdminContenuti />} />
+        <Route path="/admin/statistiche" element={<AdminStatistiche />} />
+        <Route path="/admin/chat" element={<AdminChat />} />
+
+        <Route path="*" element={<Navigate to={defaultPath} replace />} />
+      </Route>
+    </Routes>
+  )
+}
+
+export default function AppRouter() {
+  const { isAuthenticated } = useAuth()
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route
+          path="/login"
+          element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
+        />
+        <Route path="/*" element={<PrivateRoutes />} />
+      </Routes>
+    </BrowserRouter>
+  )
+}
