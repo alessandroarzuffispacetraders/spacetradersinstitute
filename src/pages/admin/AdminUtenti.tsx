@@ -1,34 +1,26 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import PageHeader from '../../components/ui/PageHeader'
-import { ChevronDown, Radio, Upload, Shield } from 'lucide-react'
-import { UserPermissions } from '../../types'
+import { ChevronDown, Radio, Upload, Shield, X, Loader2 } from 'lucide-react'
+import { UserPermissions, UserRole, StudentStatus, StudentPhase } from '../../types'
+import { supabase } from '../../lib/supabase'
 
-interface MockUser {
-  id: number
+interface Profile {
+  id: string
   name: string
   email: string
-  role: string
-  status: string
-  phase: string
-  joined: string
-  permissions?: UserPermissions
+  role: UserRole
+  roles: UserRole[] | null
+  status: StudentStatus | null
+  phase: StudentPhase | null
+  permissions: UserPermissions | null
+  created_at: string
 }
 
-const INITIAL_USERS: MockUser[] = [
-  { id: 1, name: 'Marco Rossi',     email: 'marco@example.com',  role: 'student',      status: 'active',  phase: 'Build',       joined: '5 Mag' },
-  { id: 2, name: 'Anna Pellegrini', email: 'anna@example.com',   role: 'student',      status: 'active',  phase: 'Build',       joined: '8 Mag' },
-  { id: 3, name: 'Marta Esposito',  email: 'marta@example.com',  role: 'student',      status: 'blocked', phase: 'Onboarding',  joined: '1 Giu' },
-  { id: 4, name: 'Paolo Gallo',     email: 'paolo@example.com',  role: 'student',      status: 'expired', phase: 'Build',       joined: '20 Apr' },
-  { id: 5, name: 'Roberto Greco',   email: 'roberto@example.com',role: 'student',      status: 'active',  phase: 'Deploy',      joined: '15 Apr' },
-  { id: 6, name: 'Laura Bianchi',   email: 'laura@ist.com',      role: 'coach',        status: 'active',  phase: '—',           joined: '1 Gen', permissions: { canGoLive: true,  canUploadContent: false } },
-  { id: 7, name: 'Sofia Verdi',     email: 'sofia@ist.com',      role: 'mental_coach', status: 'active',  phase: '—',           joined: '1 Gen', permissions: { canGoLive: false, canUploadContent: true  } },
-]
-
 const ROLE_LABELS: Record<string, string> = {
-  student:      'Studente',
-  coach:        'Coach',
+  student: 'Studente',
+  coach: 'Coach',
   mental_coach: 'Mental Coach',
-  admin:        'Admin',
+  admin: 'Admin',
 }
 
 const STATUS_STYLE: Record<string, React.CSSProperties> = {
@@ -38,7 +30,8 @@ const STATUS_STYLE: Record<string, React.CSSProperties> = {
 }
 const STATUS_LABELS: Record<string, string> = { active: 'Attivo', expired: 'Scaduto', blocked: 'Bloccato' }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status }: { status: string | null }) {
+  if (!status) return null
   return (
     <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full flex-shrink-0" style={STATUS_STYLE[status] ?? {}}>
       {STATUS_LABELS[status] ?? status}
@@ -46,14 +39,7 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-// Permission toggle row
-function PermToggle({
-  icon,
-  label,
-  description,
-  checked,
-  onChange,
-}: {
+function PermToggle({ icon, label, description, checked, onChange }: {
   icon: React.ReactNode
   label: string
   description: string
@@ -74,120 +60,240 @@ function PermToggle({
       </div>
       <button
         onClick={() => onChange(!checked)}
-        className="relative flex-shrink-0 w-10 h-5.5 rounded-full transition-all"
-        style={{
-          background: checked ? '#46D39A' : 'var(--ist-w10)',
-          boxShadow: checked ? '0 0 8px rgba(70,211,154,0.35)' : 'none',
-          width: 40, height: 22,
-        }}
-        aria-checked={checked}
+        className="relative flex-shrink-0 rounded-full transition-all"
+        style={{ background: checked ? '#46D39A' : 'var(--ist-w10)', boxShadow: checked ? '0 0 8px rgba(70,211,154,0.35)' : 'none', width: 40, height: 22 }}
         role="switch"
+        aria-checked={checked}
       >
-        <span
-          className="absolute top-0.5 rounded-full bg-white transition-all shadow"
-          style={{
-            width: 18, height: 18,
-            left: checked ? 20 : 2,
-          }}
-        />
+        <span className="absolute top-0.5 rounded-full bg-white transition-all shadow" style={{ width: 18, height: 18, left: checked ? 20 : 2 }} />
       </button>
     </div>
   )
 }
 
-// Expanded permissions panel for coach / mental_coach
-function PermissionsPanel({
-  user,
-  onUpdate,
-}: {
-  user: MockUser
-  onUpdate: (id: number, perms: UserPermissions) => void
+// ── Edit Modal ──────────────────────────────────────────────────────────────
+
+function EditModal({ user, onClose, onSave }: {
+  user: Profile
+  onClose: () => void
+  onSave: (updated: Profile) => void
 }) {
-  const perms = user.permissions ?? {}
-  const set = (key: keyof UserPermissions, val: boolean) =>
-    onUpdate(user.id, { ...perms, [key]: val })
+  const [role, setRole] = useState<UserRole>(user.role)
+  const [extraRoles, setExtraRoles] = useState<UserRole[]>(user.roles ?? [])
+  const [status, setStatus] = useState<StudentStatus | null>(user.status)
+  const [phase, setPhase] = useState<StudentPhase | null>(user.phase)
+  const [permissions, setPermissions] = useState<UserPermissions>(user.permissions ?? {})
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const ALL_ROLES: UserRole[] = ['student', 'coach', 'mental_coach', 'admin']
+  const ALL_STATUSES: StudentStatus[] = ['active', 'expired', 'blocked']
+  const ALL_PHASES: StudentPhase[] = ['onboarding', 'build', 'test', 'deploy']
+
+  const toggleExtraRole = (r: UserRole) => {
+    setExtraRoles(prev =>
+      prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]
+    )
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    setError(null)
+
+    const allRoles = Array.from(new Set([role, ...extraRoles]))
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        role,
+        roles: allRoles.length > 1 ? allRoles : null,
+        status: role === 'student' ? status : null,
+        phase: role === 'student' ? phase : null,
+        permissions: (role === 'coach' || role === 'mental_coach' || allRoles.includes('coach') || allRoles.includes('mental_coach'))
+          ? permissions
+          : null,
+      })
+      .eq('id', user.id)
+
+    if (error) {
+      setError('Errore nel salvataggio. Riprova.')
+      setSaving(false)
+      return
+    }
+
+    onSave({ ...user, role, roles: allRoles.length > 1 ? allRoles : null, status, phase, permissions })
+    onClose()
+  }
+
+  const selectStyle: React.CSSProperties = {
+    background: 'var(--ist-w8)',
+    border: '1px solid var(--ist-border)',
+    borderRadius: 14,
+    color: 'var(--ist-text)',
+    padding: '10px 14px',
+    fontSize: 13,
+    outline: 'none',
+    width: '100%',
+  }
+
+  const showPermissions = role === 'coach' || role === 'mental_coach'
+    || extraRoles.includes('coach') || extraRoles.includes('mental_coach')
 
   return (
-    <div
-      className="mt-3 p-4 rounded-2xl space-y-3"
-      style={{ background: 'var(--ist-w5)', border: '1px solid var(--ist-border)' }}
-    >
-      <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2" style={{ color: 'var(--ist-text-dim)' }}>
-        <Shield size={10} strokeWidth={2.5} />
-        Permessi delegati
-      </p>
-      <PermToggle
-        icon={<Radio size={14} strokeWidth={2} />}
-        label="Può andare live"
-        description="Abilita questo utente a condurre sessioni live"
-        checked={perms.canGoLive ?? false}
-        onChange={v => set('canGoLive', v)}
-      />
-      <PermToggle
-        icon={<Upload size={14} strokeWidth={2} />}
-        label="Può caricare contenuti"
-        description="Abilita caricamento video e materiali sulla piattaforma"
-        checked={perms.canUploadContent ?? false}
-        onChange={v => set('canUploadContent', v)}
-      />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}>
+      <div
+        className="w-full max-w-md rounded-3xl p-6 flex flex-col gap-5"
+        style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: 'var(--ist-card-shadow-premium)' }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-bold text-base" style={{ color: 'var(--ist-text)' }}>{user.name}</p>
+            <p className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>{user.email}</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/[0.06]" style={{ color: 'var(--ist-text-muted)' }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Ruolo primario */}
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--ist-text-dim)' }}>Ruolo primario</label>
+          <select value={role} onChange={e => setRole(e.target.value as UserRole)} style={selectStyle}>
+            {ALL_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+          </select>
+        </div>
+
+        {/* Ruoli aggiuntivi */}
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--ist-text-dim)' }}>Ruoli aggiuntivi</label>
+          <div className="flex flex-wrap gap-2">
+            {ALL_ROLES.filter(r => r !== role).map(r => {
+              const active = extraRoles.includes(r)
+              return (
+                <button
+                  key={r}
+                  onClick={() => toggleExtraRole(r)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                  style={{
+                    background: active ? 'rgba(90,154,177,0.18)' : 'var(--ist-w8)',
+                    border: active ? '1px solid rgba(90,154,177,0.4)' : '1px solid var(--ist-border)',
+                    color: active ? 'var(--ist-accent-text)' : 'var(--ist-text-muted)',
+                  }}
+                >
+                  {ROLE_LABELS[r]}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Stato e fase — solo studenti */}
+        {role === 'student' && (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--ist-text-dim)' }}>Stato</label>
+              <select value={status ?? 'active'} onChange={e => setStatus(e.target.value as StudentStatus)} style={selectStyle}>
+                {ALL_STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--ist-text-dim)' }}>Fase</label>
+              <select value={phase ?? 'onboarding'} onChange={e => setPhase(e.target.value as StudentPhase)} style={selectStyle}>
+                {ALL_PHASES.map(p => <option key={p} value={p} style={{ textTransform: 'capitalize' }}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* Permessi — coach / mental coach */}
+        {showPermissions && (
+          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: 'var(--ist-w5)', border: '1px solid var(--ist-border)' }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--ist-text-dim)' }}>
+              <Shield size={10} strokeWidth={2.5} /> Permessi delegati
+            </p>
+            <PermToggle
+              icon={<Radio size={14} strokeWidth={2} />}
+              label="Può andare live"
+              description="Abilita a condurre sessioni live"
+              checked={permissions.canGoLive ?? false}
+              onChange={v => setPermissions(p => ({ ...p, canGoLive: v }))}
+            />
+            <PermToggle
+              icon={<Upload size={14} strokeWidth={2} />}
+              label="Può caricare contenuti"
+              description="Abilita caricamento video e materiali"
+              checked={permissions.canUploadContent ?? false}
+              onChange={v => setPermissions(p => ({ ...p, canUploadContent: v }))}
+            />
+          </div>
+        )}
+
+        {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+
+        {/* Azioni */}
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 rounded-2xl text-sm font-semibold transition-all"
+            style={{ background: 'var(--ist-w8)', border: '1px solid var(--ist-border)', color: 'var(--ist-text-muted)' }}
+          >
+            Annulla
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 py-3 rounded-2xl text-sm font-semibold text-white transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+            style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)', boxShadow: '0 4px 16px rgba(90,154,177,0.3)' }}
+          >
+            {saving && <Loader2 size={14} className="animate-spin" />}
+            {saving ? 'Salvataggio...' : 'Salva'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
 
-// Single user row
-function UserRow({
-  user,
-  onUpdatePerms,
-}: {
-  user: MockUser
-  onUpdatePerms: (id: number, perms: UserPermissions) => void
+// ── User Row ────────────────────────────────────────────────────────────────
+
+function UserRow({ user, onEdit, onUpdatePerms }: {
+  user: Profile
+  onEdit: (u: Profile) => void
+  onUpdatePerms: (id: string, perms: UserPermissions) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const hasPerms = user.role === 'coach' || user.role === 'mental_coach'
+    || (user.roles ?? []).some(r => r === 'coach' || r === 'mental_coach')
 
   return (
-    <div
-      className="rounded-3xl overflow-hidden"
-      style={{
-        background: 'var(--ist-card-bg)',
-        border: '1px solid var(--ist-border)',
-        boxShadow: 'var(--ist-card-shadow)',
-      }}
-    >
+    <div className="rounded-3xl overflow-hidden" style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: 'var(--ist-card-shadow)' }}>
       <div
         className="flex items-center gap-3 px-4 py-4"
         onClick={() => hasPerms && setExpanded(e => !e)}
         style={{ cursor: hasPerms ? 'pointer' : 'default' }}
       >
-        {/* Avatar */}
         <div
           className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
-          style={{
-            background: 'linear-gradient(135deg, rgba(90,154,177,0.22), rgba(40,102,128,0.22))',
-            color: 'var(--ist-accent-text)',
-          }}
+          style={{ background: 'linear-gradient(135deg, rgba(90,154,177,0.22), rgba(40,102,128,0.22))', color: 'var(--ist-accent-text)' }}
         >
-          {user.name.charAt(0)}
+          {user.name.charAt(0).toUpperCase()}
         </div>
 
-        {/* Info */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold truncate" style={{ color: 'var(--ist-text)' }}>
-            {user.name}
-          </p>
-          <p className="text-[11px] truncate" style={{ color: 'var(--ist-text-dim)' }}>
-            {user.email}
-          </p>
+          <p className="text-sm font-semibold truncate" style={{ color: 'var(--ist-text)' }}>{user.name}</p>
+          <p className="text-[11px] truncate" style={{ color: 'var(--ist-text-dim)' }}>{user.email}</p>
         </div>
 
-        {/* Role */}
         <span className="text-xs hidden sm:block flex-shrink-0" style={{ color: 'var(--ist-text-muted)' }}>
           {ROLE_LABELS[user.role]}
+          {user.roles && user.roles.length > 1 && (
+            <span style={{ color: 'var(--ist-text-dim)' }}> +{user.roles.length - 1}</span>
+          )}
         </span>
 
-        {/* Phase — students only */}
-        {user.phase !== '—' && (
-          <span className="text-xs hidden md:block flex-shrink-0" style={{ color: 'var(--ist-text-dim)' }}>
+        {user.phase && (
+          <span className="text-xs hidden md:block flex-shrink-0 capitalize" style={{ color: 'var(--ist-text-dim)' }}>
             {user.phase}
           </span>
         )}
@@ -197,7 +303,7 @@ function UserRow({
         <button
           className="text-xs font-medium flex-shrink-0 px-3 py-1.5 rounded-xl transition-colors hover:bg-white/[0.04]"
           style={{ color: 'var(--ist-accent-text)' }}
-          onClick={e => { e.stopPropagation(); /* open edit modal */ }}
+          onClick={e => { e.stopPropagation(); onEdit(user) }}
         >
           Modifica
         </button>
@@ -206,38 +312,70 @@ function UserRow({
           <ChevronDown
             size={14}
             strokeWidth={2}
-            style={{
-              color: 'var(--ist-text-dim)',
-              transform: expanded ? 'rotate(180deg)' : 'none',
-              transition: 'transform 0.2s',
-              flexShrink: 0,
-            }}
+            style={{ color: 'var(--ist-text-dim)', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}
           />
         )}
       </div>
 
-      {/* Permissions panel */}
       {expanded && hasPerms && (
         <div className="px-4 pb-4">
-          <PermissionsPanel user={user} onUpdate={onUpdatePerms} />
+          <div className="p-4 rounded-2xl space-y-3" style={{ background: 'var(--ist-w5)', border: '1px solid var(--ist-border)' }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2" style={{ color: 'var(--ist-text-dim)' }}>
+              <Shield size={10} strokeWidth={2.5} /> Permessi delegati
+            </p>
+            <PermToggle
+              icon={<Radio size={14} strokeWidth={2} />}
+              label="Può andare live"
+              description="Abilita questo utente a condurre sessioni live"
+              checked={user.permissions?.canGoLive ?? false}
+              onChange={v => onUpdatePerms(user.id, { ...user.permissions, canGoLive: v })}
+            />
+            <PermToggle
+              icon={<Upload size={14} strokeWidth={2} />}
+              label="Può caricare contenuti"
+              description="Abilita caricamento video e materiali sulla piattaforma"
+              checked={user.permissions?.canUploadContent ?? false}
+              onChange={v => onUpdatePerms(user.id, { ...user.permissions, canUploadContent: v })}
+            />
+          </div>
         </div>
       )}
     </div>
   )
 }
 
+// ── Main Page ───────────────────────────────────────────────────────────────
+
 export default function AdminUtenti() {
-  const [search, setSearch]   = useState('')
+  const [users, setUsers] = useState<Profile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
-  const [users, setUsers]     = useState<MockUser[]>(INITIAL_USERS)
+  const [editingUser, setEditingUser] = useState<Profile | null>(null)
+
+  useEffect(() => {
+    supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (data) setUsers(data as Profile[])
+        setLoading(false)
+      })
+  }, [])
 
   const filtered = users.filter(u => {
     const matchSearch = u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
-    const matchRole   = roleFilter === 'all' || u.role === roleFilter
+    const matchRole = roleFilter === 'all' || u.role === roleFilter
     return matchSearch && matchRole
   })
 
-  const updatePerms = (id: number, perms: UserPermissions) => {
+  const handleSave = (updated: Profile) => {
+    setUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
+  }
+
+  const handleUpdatePerms = async (id: string, perms: UserPermissions) => {
+    await supabase.from('profiles').update({ permissions: perms }).eq('id', id)
     setUsers(prev => prev.map(u => u.id === id ? { ...u, permissions: perms } : u))
   }
 
@@ -253,22 +391,17 @@ export default function AdminUtenti() {
     <div className="p-5 lg:p-8 max-w-6xl mx-auto">
       <PageHeader
         title="Gestione Utenti"
-        subtitle={`${users.length} utenti totali`}
+        subtitle={loading ? 'Caricamento...' : `${users.length} utenti totali`}
         action={
           <button
             className="px-5 py-2.5 text-white text-sm font-bold rounded-full transition-all hover:-translate-y-0.5"
-            style={{
-              background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)',
-              border: '1px solid rgba(255,255,255,0.12)',
-              boxShadow: '0 8px 24px rgba(40,102,128,0.36)',
-            }}
+            style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 8px 24px rgba(40,102,128,0.36)' }}
           >
             + Nuovo
           </button>
         }
       />
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-5">
         <input
           type="text"
@@ -278,47 +411,44 @@ export default function AdminUtenti() {
           className="flex-1 min-w-[200px] max-w-sm px-4 py-2.5 text-sm placeholder:opacity-40"
           style={inputStyle}
         />
-        <select
-          value={roleFilter}
-          onChange={e => setRoleFilter(e.target.value)}
-          className="px-4 py-2.5 text-sm"
-          style={inputStyle}
-        >
+        <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="px-4 py-2.5 text-sm" style={inputStyle}>
           <option value="all">Tutti i ruoli</option>
           <option value="student">Studenti</option>
           <option value="coach">Coach</option>
           <option value="mental_coach">Mental Coach</option>
+          <option value="admin">Admin</option>
         </select>
       </div>
 
-      {/* Permission info banner for coaches */}
-      {(roleFilter === 'coach' || roleFilter === 'mental_coach' || roleFilter === 'all') && (
-        <div
-          className="flex items-start gap-3 px-4 py-3 rounded-2xl mb-4"
-          style={{
-            background: 'rgba(90,154,177,0.07)',
-            border: '1px solid rgba(90,154,177,0.15)',
-          }}
-        >
-          <Shield size={14} strokeWidth={2} style={{ color: 'var(--ist-accent-text)', flexShrink: 0, marginTop: 1 }} />
-          <p className="text-xs leading-relaxed" style={{ color: 'var(--ist-text-muted)' }}>
-            I coach e mental coach con permessi delegati compaiono con un indicatore espandibile. Tocca la riga per gestire i permessi.
-          </p>
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} />
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {filtered.map(user => (
+            <UserRow
+              key={user.id}
+              user={user}
+              onEdit={setEditingUser}
+              onUpdatePerms={handleUpdatePerms}
+            />
+          ))}
+          {filtered.length === 0 && (
+            <p className="text-center py-10 text-sm" style={{ color: 'var(--ist-text-dim)' }}>
+              Nessun utente trovato.
+            </p>
+          )}
         </div>
       )}
 
-      {/* Users list */}
-      <div className="space-y-2.5">
-        {filtered.map(user => (
-          <UserRow key={user.id} user={user} onUpdatePerms={updatePerms} />
-        ))}
-
-        {filtered.length === 0 && (
-          <p className="text-center py-10 text-sm" style={{ color: 'var(--ist-text-dim)' }}>
-            Nessun utente trovato.
-          </p>
-        )}
-      </div>
+      {editingUser && (
+        <EditModal
+          user={editingUser}
+          onClose={() => setEditingUser(null)}
+          onSave={handleSave}
+        />
+      )}
     </div>
   )
 }
