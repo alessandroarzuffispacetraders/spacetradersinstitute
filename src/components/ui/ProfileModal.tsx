@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   X, Camera, Eye, EyeOff, Check, Lock, User as UserIcon,
-  Mail, Shield, ChevronRight, Upload,
+  Mail, Shield, ChevronRight, Upload, Bell, BellOff,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import UserAvatar, { PRESET_AVATARS } from './UserAvatar'
@@ -19,7 +19,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   blocked: { label: 'Bloccato', color: '#FF6B7A' },
 }
 
-type Section = 'main' | 'avatar' | 'name' | 'password'
+type Section = 'main' | 'avatar' | 'name' | 'password' | 'notifications'
 
 interface Props {
   isOpen: boolean
@@ -210,6 +210,17 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
                   value={ROLE_LABELS[user.role]}
                   disabled
                 />
+                <MenuRow
+                  icon={<Bell size={16} strokeWidth={2} />}
+                  label="Notifiche"
+                  value={
+                    !('Notification' in window) ? 'Non supportate'
+                    : Notification.permission === 'granted' ? 'Attive'
+                    : Notification.permission === 'denied' ? 'Bloccate'
+                    : 'Non abilitate'
+                  }
+                  onClick={() => setSection('notifications')}
+                />
               </div>
             </>
           )}
@@ -338,6 +349,11 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
                 </button>
               </div>
             </>
+          )}
+
+          {/* ── NOTIFICATIONS SECTION ── */}
+          {section === 'notifications' && (
+            <NotificationsSection onBack={() => setSection('main')} onClose={onClose} />
           )}
 
           {/* ── PASSWORD SECTION ── */}
@@ -528,6 +544,132 @@ function PasswordField({
         </button>
       </div>
     </div>
+  )
+}
+
+function NotificationsSection({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  const [permission, setPermission] = useState<NotificationPermission>(
+    'Notification' in window ? Notification.permission : 'denied'
+  )
+  const [localEnabled, setLocalEnabled] = useState(
+    () => localStorage.getItem('ist_notif_enabled') !== 'false'
+  )
+
+  const handleRequest = async () => {
+    const result = await Notification.requestPermission()
+    setPermission(result)
+    if (result === 'granted') {
+      localStorage.setItem('ist_notif_enabled', 'true')
+      setLocalEnabled(true)
+    }
+  }
+
+  const toggleLocal = () => {
+    const next = !localEnabled
+    setLocalEnabled(next)
+    localStorage.setItem('ist_notif_enabled', next ? 'true' : 'false')
+  }
+
+  const notSupported = !('Notification' in window)
+
+  return (
+    <>
+      <ModalHeader title="Notifiche" onBack={onBack} onClose={onClose} />
+      <div className="px-5 pb-6 pt-3 flex flex-col gap-4">
+
+        {/* Stato corrente */}
+        <div
+          className="rounded-2xl px-4 py-3 flex items-center gap-3"
+          style={{
+            background: permission === 'granted' ? 'rgba(70,211,154,0.08)' : 'var(--ist-w6)',
+            border: `1px solid ${permission === 'granted' ? 'rgba(70,211,154,0.20)' : 'var(--ist-w9)'}`,
+          }}
+        >
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{
+              background: permission === 'granted' ? 'rgba(70,211,154,0.15)' : 'rgba(255,107,122,0.10)',
+              color: permission === 'granted' ? '#46D39A' : '#FF6B7A',
+            }}
+          >
+            {permission === 'granted' ? <Bell size={17} strokeWidth={2} /> : <BellOff size={17} strokeWidth={2} />}
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>
+              {notSupported ? 'Non supportate' : permission === 'granted' ? 'Notifiche attive' : permission === 'denied' ? 'Notifiche bloccate' : 'Notifiche disabilitate'}
+            </p>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--ist-text-muted)' }}>
+              {notSupported
+                ? 'Il tuo browser non supporta le notifiche push'
+                : permission === 'granted'
+                ? 'Ricevi aggiornamenti su messaggi e live'
+                : permission === 'denied'
+                ? 'Riattivale dalle impostazioni del browser'
+                : 'Tocca "Abilita" per ricevere notifiche'}
+            </p>
+          </div>
+        </div>
+
+        {/* Toggle locale (se già concesse) */}
+        {permission === 'granted' && (
+          <button
+            onClick={toggleLocal}
+            className="w-full flex items-center justify-between px-4 py-3 rounded-2xl transition-all"
+            style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)' }}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'rgba(90,154,177,0.12)', border: '1px solid rgba(90,154,177,0.16)', color: '#7CBBD0' }}
+              >
+                <Bell size={16} strokeWidth={2} />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-medium" style={{ color: 'var(--ist-text)' }}>Ricezione notifiche</p>
+                <p className="text-[11px]" style={{ color: 'var(--ist-text-muted)' }}>
+                  {localEnabled ? 'Attiva' : 'Disattivata'}
+                </p>
+              </div>
+            </div>
+            {/* Toggle pill */}
+            <div
+              className="relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0"
+              style={{ background: localEnabled ? '#5A9AB1' : 'var(--ist-w12)' }}
+            >
+              <div
+                className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform duration-200"
+                style={{ transform: localEnabled ? 'translateX(21px)' : 'translateX(2px)' }}
+              />
+            </div>
+          </button>
+        )}
+
+        {/* CTA se non ancora richieste */}
+        {!notSupported && permission === 'default' && (
+          <button
+            onClick={handleRequest}
+            className="w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+            style={{
+              background: 'linear-gradient(135deg, #5A9AB1, #286680)',
+              color: 'white',
+              boxShadow: '0 4px 16px rgba(40,102,128,0.30)',
+            }}
+          >
+            <Bell size={15} strokeWidth={2} />
+            Abilita notifiche
+          </button>
+        )}
+
+        {/* Info se bloccate */}
+        {permission === 'denied' && (
+          <p className="text-xs px-1 leading-relaxed" style={{ color: 'var(--ist-text-dim)' }}>
+            Hai bloccato le notifiche. Per riattivarle vai su{' '}
+            <span style={{ color: '#7CBBD0' }}>Impostazioni → Sito → Notifiche</span>{' '}
+            nel tuo browser.
+          </p>
+        )}
+      </div>
+    </>
   )
 }
 

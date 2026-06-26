@@ -3,6 +3,7 @@ import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import { UIProvider, useUI } from '../../context/UIContext'
 import ProfileModal from '../ui/ProfileModal'
+import AppPrompts from '../ui/AppPrompts'
 
 function AppShell() {
   const { profileOpen, setProfileOpen } = useUI()
@@ -14,6 +15,7 @@ function AppShell() {
       </main>
       <BottomNav />
       <ProfileModal isOpen={profileOpen} onClose={() => setProfileOpen(false)} />
+      <AppPrompts />
     </div>
   )
 }
