@@ -1,14 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   Hash, Megaphone, ChevronDown, ChevronRight,
-  Send, ArrowLeft, Search, Pin, Check, Users, MessageCircle, UsersRound,
+  Send, ArrowLeft, Search, Pin, Check, Users, MessageCircle, UsersRound, Loader2,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
 import {
-  CHANNELS, MESSAGES, BACHECA_POSTS,
-  Channel, ChatMessage, BachecaPost, MemberRole,
+  CHANNELS, BACHECA_POSTS,
+  Channel, BachecaPost, MemberRole,
 } from '../../data/chatData'
+import { useChatMessages, useDmUsers, dmChannelId, DmUser } from '../../lib/chat'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -105,49 +106,6 @@ function ChannelRow({ channel, active, onSelect }: { channel: Channel; active: b
   )
 }
 
-// ─── DM row (directs) ────────────────────────────────────────────────────────
-
-function DmRow({ channel, active, onSelect }: { channel: Channel; active: boolean; onSelect: (id: string) => void }) {
-  const dm = channel.dmWith!
-  return (
-    <button
-      onClick={() => onSelect(channel.id)}
-      className="w-full flex items-center gap-3 px-2 py-2 rounded-xl text-left transition-all duration-100"
-      style={active ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' } : {}}
-    >
-      {/* Avatar with online dot */}
-      <div className="relative flex-shrink-0">
-        <div
-          className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold"
-          style={{ background: DM_AVATAR_GRADIENT[dm.role], color: 'white' }}
-        >
-          {dm.name.charAt(0)}
-        </div>
-        <div
-          className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2"
-          style={{
-            background: dm.online ? '#46D39A' : 'var(--ist-w12)',
-            borderColor: 'var(--ist-nav-bg)',
-          }}
-        />
-      </div>
-
-      {/* Name and role */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold truncate" style={{ color: active ? 'var(--ist-accent-text)' : 'var(--ist-text)' }}>
-          {dm.name}
-        </p>
-        <p className="text-[11px]" style={{ color: ROLE_TEXT[dm.role] }}>
-          {ROLE_LABEL[dm.role]}
-        </p>
-      </div>
-
-      {(channel.unread ?? 0) > 0 && !active && (
-        <UnreadBadge count={channel.unread!} />
-      )}
-    </button>
-  )
-}
 
 // ─── channel sidebar ──────────────────────────────────────────────────────────
 
@@ -155,18 +113,16 @@ interface SidebarProps {
   activeChannel: string
   onSelect: (id: string) => void
   userRole: MemberRole
+  userId: string
+  dmUsers: DmUser[]
 }
 
-function ChannelSidebar({ activeChannel, onSelect, userRole }: SidebarProps) {
+function ChannelSidebar({ activeChannel, onSelect, userRole, userId, dmUsers }: SidebarProps) {
   const [tab, setTab] = useState<'groups' | 'direct'>('groups')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [search, setSearch] = useState('')
 
-  const allVisible = CHANNELS.filter(ch => ch.roles.includes(userRole))
-  const groupChannels = allVisible.filter(ch => ch.channelKind === 'group')
-  const directChannels = allVisible.filter(ch => ch.channelKind === 'direct')
-
-  const activeChannels = tab === 'groups' ? groupChannels : directChannels
+  const groupChannels = CHANNELS.filter(ch => ch.roles.includes(userRole) && ch.channelKind === 'group')
 
   // Group by category (only for groups tab)
   const categories: Record<string, Channel[]> = {}
@@ -175,16 +131,20 @@ function ChannelSidebar({ activeChannel, onSelect, userRole }: SidebarProps) {
     categories[ch.category].push(ch)
   }
 
-  const filtered = search.trim()
-    ? activeChannels.filter(ch => ch.name.toLowerCase().includes(search.toLowerCase()))
+  const filteredGroups = search.trim()
+    ? groupChannels.filter(ch => ch.name.toLowerCase().includes(search.toLowerCase()))
     : null
+
+  const filteredDms = search.trim()
+    ? dmUsers.filter(u => u.name.toLowerCase().includes(search.toLowerCase()))
+    : dmUsers
 
   const toggleCategory = (cat: string) => {
     setCollapsed(p => ({ ...p, [cat]: !p[cat] }))
   }
 
   const groupUnread = groupChannels.reduce((n, ch) => n + (ch.unread ?? 0), 0)
-  const directUnread = directChannels.reduce((n, ch) => n + (ch.unread ?? 0), 0)
+  const directUnread = 0
 
   return (
     <div
@@ -278,36 +238,51 @@ function ChannelSidebar({ activeChannel, onSelect, userRole }: SidebarProps) {
         {/* ── DIRECT TAB ── */}
         {tab === 'direct' && (
           <div className="px-1 py-1">
-            {(filtered ?? directChannels).length === 0 ? (
+            {filteredDms.length === 0 ? (
               <p className="text-xs px-3 py-4 text-center" style={{ color: 'var(--ist-text-dim)' }}>
                 Nessuna chat privata
               </p>
             ) : (
-              (filtered ?? directChannels).map(ch => (
-                <DmRow
-                  key={ch.id}
-                  channel={ch}
-                  active={activeChannel === ch.id}
-                  onSelect={onSelect}
-                />
-              ))
+              filteredDms.map(u => {
+                const chId = dmChannelId(userId, u.id)
+                return (
+                  <button
+                    key={u.id}
+                    onClick={() => onSelect(chId)}
+                    className="w-full flex items-center gap-3 px-2 py-2 rounded-xl text-left transition-all duration-100"
+                    style={activeChannel === chId ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' } : {}}
+                  >
+                    <div className="relative flex-shrink-0">
+                      <div
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold"
+                        style={{ background: DM_AVATAR_GRADIENT[u.role] ?? DM_AVATAR_GRADIENT.student, color: 'white' }}
+                      >
+                        {u.name.charAt(0)}
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: activeChannel === chId ? 'var(--ist-accent-text)' : 'var(--ist-text)' }}>
+                        {u.name}
+                      </p>
+                      <p className="text-[11px]" style={{ color: ROLE_TEXT[u.role] }}>
+                        {ROLE_LABEL[u.role]}
+                      </p>
+                    </div>
+                  </button>
+                )
+              })
             )}
           </div>
         )}
 
         {/* ── GROUPS TAB ── */}
         {tab === 'groups' && (
-          filtered ? (
+          filteredGroups ? (
             <div className="px-1 py-1">
-              {filtered.map(ch => (
-                <ChannelRow
-                  key={ch.id}
-                  channel={ch}
-                  active={activeChannel === ch.id}
-                  onSelect={onSelect}
-                />
+              {filteredGroups.map(ch => (
+                <ChannelRow key={ch.id} channel={ch} active={activeChannel === ch.id} onSelect={onSelect} />
               ))}
-              {filtered.length === 0 && (
+              {filteredGroups.length === 0 && (
                 <p className="text-xs px-3 py-4 text-center" style={{ color: 'var(--ist-text-dim)' }}>
                   Nessun canale trovato
                 </p>
@@ -332,16 +307,10 @@ function ChannelSidebar({ activeChannel, onSelect, userRole }: SidebarProps) {
                       {catIcon} {cat}
                     </span>
                   </button>
-
                   {!isCollapsed && (
                     <div className="px-1">
                       {channels.map(ch => (
-                        <ChannelRow
-                          key={ch.id}
-                          channel={ch}
-                          active={activeChannel === ch.id}
-                          onSelect={onSelect}
-                        />
+                        <ChannelRow key={ch.id} channel={ch} active={activeChannel === ch.id} onSelect={onSelect} />
                       ))}
                     </div>
                   )}
@@ -360,19 +329,19 @@ function ChannelSidebar({ activeChannel, onSelect, userRole }: SidebarProps) {
 interface ChatAreaProps {
   channel: Channel
   userRole: MemberRole
+  userId: string
   userName: string
   onBack?: () => void
   isMobile?: boolean
 }
 
-function ChatArea({ channel, userRole, userName, onBack, isMobile }: ChatAreaProps) {
+function ChatArea({ channel, userRole, userId, userName, onBack, isMobile }: ChatAreaProps) {
   const [input, setInput] = useState('')
-  const [messages, setMessages] = useState<ChatMessage[]>(MESSAGES[channel.id] ?? [])
+  const { messages, loading, sendMessage: sendToDb } = useChatMessages(channel.id)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    setMessages(MESSAGES[channel.id] ?? [])
     setInput('')
   }, [channel.id])
 
@@ -382,22 +351,12 @@ function ChatArea({ channel, userRole, userName, onBack, isMobile }: ChatAreaPro
 
   const canPost = channel.canPost.includes(userRole)
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     const text = input.trim()
     if (!text || !canPost) return
-    const msg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      author: userName,
-      authorRole: userRole,
-      text,
-      timestamp: new Date().toISOString(),
-      own: true,
-    }
-    setMessages(prev => [...prev, msg])
     setInput('')
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-    }
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
+    await sendToDb(text, userId, userName, userRole)
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -418,29 +377,28 @@ function ChatArea({ channel, userRole, userName, onBack, isMobile }: ChatAreaPro
     author: string
     authorRole: MemberRole
     own: boolean
-    messages: ChatMessage[]
+    messages: { id: string; text: string }[]
     firstTimestamp: string
   }
 
   const groups: MessageGroup[] = []
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i]
-    const own = !!msg.own
+  for (const msg of messages) {
+    const own = msg.user_id === userId
     const last = groups[groups.length - 1]
     if (
       last &&
-      last.author === msg.author &&
+      last.author === msg.author_name &&
       last.own === own &&
-      sameDay(last.firstTimestamp, msg.timestamp)
+      sameDay(last.firstTimestamp, msg.created_at)
     ) {
-      last.messages.push(msg)
+      last.messages.push({ id: msg.id, text: msg.content })
     } else {
       groups.push({
-        author: msg.author,
-        authorRole: msg.authorRole,
+        author: msg.author_name,
+        authorRole: msg.author_role,
         own,
-        messages: [msg],
-        firstTimestamp: msg.timestamp,
+        messages: [{ id: msg.id, text: msg.content }],
+        firstTimestamp: msg.created_at,
       })
     }
   }
@@ -522,6 +480,16 @@ function ChatArea({ channel, userRole, userName, onBack, isMobile }: ChatAreaPro
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 no-scrollbar">
+        {loading && (
+          <div className="flex justify-center py-8">
+            <Loader2 size={20} className="animate-spin" style={{ color: 'var(--ist-text-dim)' }} />
+          </div>
+        )}
+        {!loading && messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 gap-2">
+            <p className="text-sm" style={{ color: 'var(--ist-text-dim)' }}>Nessun messaggio ancora. Inizia la conversazione!</p>
+          </div>
+        )}
         {groups.map((group, gi) => {
           const prevGroup = groups[gi - 1]
           const showDateSep = !prevGroup || !sameDay(prevGroup.firstTimestamp, group.firstTimestamp)
@@ -539,18 +507,16 @@ function ChatArea({ channel, userRole, userName, onBack, isMobile }: ChatAreaPro
               )}
 
               <div className={`flex gap-2.5 mt-2 ${group.own ? 'flex-row-reverse' : ''}`}>
-                {/* Avatar */}
                 <div
                   className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 mt-0.5"
                   style={group.own
                     ? { background: 'linear-gradient(135deg, #5A9AB1, #286680)', color: 'white' }
-                    : { background: DM_AVATAR_GRADIENT[group.authorRole] ?? 'var(--ist-avatar-other-bg)', color: 'white' }
+                    : { background: DM_AVATAR_GRADIENT[group.authorRole] ?? 'var(--ist-w12)', color: 'white' }
                   }
                 >
                   {group.author.charAt(0)}
                 </div>
 
-                {/* Messages column */}
                 <div className={`flex flex-col gap-0.5 min-w-0 max-w-[72%] ${group.own ? 'items-end' : 'items-start'}`}>
                   <div className={`flex items-baseline gap-2 ${group.own ? 'flex-row-reverse' : ''}`}>
                     <span className="text-[11px] font-semibold" style={{ color: group.own ? 'var(--ist-bubble-own-name)' : 'var(--ist-text)' }}>
@@ -957,12 +923,14 @@ export default function StudentChat() {
   const { user } = useAuth()
   const { setHideBottomNav } = useUI()
   const userRole = (user?.role ?? 'student') as MemberRole
-  const userName = user?.name ?? 'Marco Rossi'
+  const userId = user?.id ?? ''
+  const userName = user?.name ?? ''
+
+  const dmUsers = useDmUsers(userId, userRole)
 
   const visibleChannels = CHANNELS.filter(ch => ch.roles.includes(userRole))
   const firstGroup = visibleChannels.find(ch => ch.channelKind === 'group')
-  const [activeChannelId, setActiveChannelId] = useState(firstGroup?.id ?? visibleChannels[0]?.id ?? 'generale')
-
+  const [activeChannelId, setActiveChannelId] = useState(firstGroup?.id ?? 'generale')
   const [mobileView, setMobileView] = useState<'channels' | 'chat'>('channels')
 
   useEffect(() => {
@@ -970,74 +938,87 @@ export default function StudentChat() {
     return () => setHideBottomNav(false)
   }, [mobileView, setHideBottomNav])
 
-  const activeChannel = CHANNELS.find(ch => ch.id === activeChannelId) ?? visibleChannels[0]
+  // Il canale attivo può essere un canale gruppo (da CHANNELS) o una DM (generata da userId)
+  const activeGroupChannel = CHANNELS.find(ch => ch.id === activeChannelId)
+  const isDmChannel = activeChannelId.startsWith('dm_')
+
+  // Costruisce un oggetto canale virtuale per le DM
+  const activeDmUser = isDmChannel
+    ? dmUsers.find(u => dmChannelId(userId, u.id) === activeChannelId)
+    : null
+
+  const activeDmChannel: Channel | null = activeDmUser
+    ? {
+      id: activeChannelId,
+      name: activeDmUser.name,
+      description: ROLE_LABEL[activeDmUser.role],
+      type: 'chat',
+      channelKind: 'direct',
+      category: 'Privati',
+      categoryIcon: '',
+      roles: ['student', 'coach', 'mental_coach', 'admin'],
+      canPost: ['student', 'coach', 'mental_coach', 'admin'],
+      dmWith: { name: activeDmUser.name, role: activeDmUser.role },
+    }
+    : null
+
+  const activeChannel = activeGroupChannel ?? activeDmChannel
 
   const selectChannel = (id: string) => {
     setActiveChannelId(id)
     setMobileView('chat')
   }
 
-  const goBack = () => {
-    setMobileView('channels')
-  }
+  const goBack = () => setMobileView('channels')
 
   return (
-    <div
-      className="flex overflow-hidden fixed inset-0 z-10"
-      style={{ background: 'var(--ist-nav-bg)' }}
-    >
+    <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)' }}>
       {/* Sidebar */}
       <div
-        className={`
-          flex-shrink-0
-          ${mobileView === 'channels' ? 'flex' : 'hidden'}
-          lg:flex
-          w-full lg:w-[240px] lg:ml-[108px]
-          flex-col
-          overflow-hidden
-        `}
+        className={`flex-shrink-0 ${mobileView === 'channels' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[240px] lg:ml-[108px] flex-col overflow-hidden`}
         style={{ height: '100%' }}
       >
         <ChannelSidebar
           activeChannel={activeChannelId}
           onSelect={selectChannel}
           userRole={userRole}
+          userId={userId}
+          dmUsers={dmUsers}
         />
       </div>
 
       {/* Chat / Bacheca area */}
       <div
-        className={`
-          flex-1 min-w-0 flex flex-col overflow-hidden
-          ${mobileView === 'chat' ? 'flex' : 'hidden'}
-          lg:flex
-        `}
+        className={`flex-1 min-w-0 flex flex-col overflow-hidden ${mobileView === 'chat' ? 'flex' : 'hidden'} lg:flex`}
         style={{ height: '100%' }}
       >
-        {activeChannel?.type === 'bacheca' ? (
+        {activeChannel?.type === 'bacheca' && activeGroupChannel ? (
           <BachecaArea
-            channel={activeChannel}
+            channel={activeGroupChannel}
             userRole={userRole}
             onBack={goBack}
             isMobile={mobileView === 'chat'}
           />
-        ) : (
+        ) : activeChannel ? (
           <ChatArea
             key={activeChannelId}
             channel={activeChannel}
             userRole={userRole}
+            userId={userId}
             userName={userName}
             onBack={goBack}
             isMobile={mobileView === 'chat'}
           />
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-sm" style={{ color: 'var(--ist-text-dim)' }}>Seleziona un canale</p>
+          </div>
         )}
       </div>
 
       {!activeChannel && (
         <div className="hidden lg:flex flex-1 items-center justify-center">
-          <p className="text-sm" style={{ color: 'var(--ist-text-dim)' }}>
-            Seleziona un canale
-          </p>
+          <p className="text-sm" style={{ color: 'var(--ist-text-dim)' }}>Seleziona un canale</p>
         </div>
       )}
     </div>
