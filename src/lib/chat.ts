@@ -54,7 +54,18 @@ export function useChatMessages(channelId: string | null) {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `channel_id=eq.${channelId}` },
         (payload) => {
-          setMessages(prev => [...prev, payload.new as DbMessage])
+          const newMsg = payload.new as DbMessage
+          setMessages(prev => {
+            // Evita duplicati: il messaggio potrebbe essere già stato aggiunto in modo ottimistico
+            if (prev.some(m => m.id === newMsg.id)) return prev
+            // Sostituisce eventuali messaggi temporanei con stesso contenuto/autore
+            const withoutTemp = prev.filter(m => !(
+              m.id.startsWith('temp_') &&
+              m.user_id === newMsg.user_id &&
+              m.content === newMsg.content
+            ))
+            return [...withoutTemp, newMsg]
+          })
         }
       )
       .subscribe()
@@ -73,13 +84,40 @@ export function useChatMessages(channelId: string | null) {
     authorRole: UserRole
   ) => {
     if (!channelId || !content.trim()) return
-    await supabase.from('messages').insert({
+
+    // Ottimistic update — il messaggio appare subito con un id temporaneo
+    const tempId = `temp_${Date.now()}`
+    const optimistic: DbMessage = {
+      id: tempId,
       channel_id: channelId,
       user_id: userId,
       author_name: authorName,
       author_role: authorRole,
       content: content.trim(),
-    })
+      created_at: new Date().toISOString(),
+    }
+    setMessages(prev => [...prev, optimistic])
+
+    const { data } = await supabase
+      .from('messages')
+      .insert({
+        channel_id: channelId,
+        user_id: userId,
+        author_name: authorName,
+        author_role: authorRole,
+        content: content.trim(),
+      })
+      .select()
+      .single()
+
+    // Sostituisce il messaggio temporaneo con quello reale (se Realtime non l'ha già fatto)
+    if (data) {
+      setMessages(prev => {
+        const withoutTemp = prev.filter(m => m.id !== tempId)
+        if (withoutTemp.some(m => m.id === (data as DbMessage).id)) return withoutTemp
+        return [...withoutTemp, data as DbMessage]
+      })
+    }
   }
 
   return { messages, loading, sendMessage }
