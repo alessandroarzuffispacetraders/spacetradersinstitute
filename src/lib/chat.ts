@@ -77,7 +77,7 @@ export function useChatMessages(channelId: string | null) {
     }
   }, [channelId])
 
-  const sendMessage = async (
+  const sendMessage = (
     content: string,
     userId: string,
     authorName: string,
@@ -85,7 +85,7 @@ export function useChatMessages(channelId: string | null) {
   ) => {
     if (!channelId || !content.trim()) return
 
-    // Ottimistic update — il messaggio appare subito con un id temporaneo
+    // Ottimistic update — messaggio visibile istantaneamente
     const tempId = `temp_${Date.now()}`
     const optimistic: DbMessage = {
       id: tempId,
@@ -98,7 +98,8 @@ export function useChatMessages(channelId: string | null) {
     }
     setMessages(prev => [...prev, optimistic])
 
-    const { data } = await supabase
+    // Insert in background — nessun await, non blocca l'UI
+    supabase
       .from('messages')
       .insert({
         channel_id: channelId,
@@ -107,17 +108,12 @@ export function useChatMessages(channelId: string | null) {
         author_role: authorRole,
         content: content.trim(),
       })
-      .select()
-      .single()
-
-    // Sostituisce il messaggio temporaneo con quello reale (se Realtime non l'ha già fatto)
-    if (data) {
-      setMessages(prev => {
-        const withoutTemp = prev.filter(m => m.id !== tempId)
-        if (withoutTemp.some(m => m.id === (data as DbMessage).id)) return withoutTemp
-        return [...withoutTemp, data as DbMessage]
+      .then(({ error }) => {
+        if (error) {
+          // Rollback ottimistico se l'insert fallisce
+          setMessages(prev => prev.filter(m => m.id !== tempId))
+        }
       })
-    }
   }
 
   return { messages, loading, sendMessage }
