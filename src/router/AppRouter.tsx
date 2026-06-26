@@ -93,7 +93,15 @@ function PrivateRoutes() {
 }
 
 export default function AppRouter() {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#070812' }}>
+        <div className="w-8 h-8 rounded-full border-2 border-ist-400 border-t-transparent animate-spin" />
+      </div>
+    )
+  }
 
   return (
     <BrowserRouter>

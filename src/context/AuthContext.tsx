@@ -1,68 +1,93 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
-import { User, UserRole } from '../types'
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { supabase } from '../lib/supabase'
+import { User } from '../types'
 
 type ProfileUpdate = Partial<Pick<User, 'name' | 'avatarPreset' | 'avatarUrl'>>
 
-const MOCK_USERS: User[] = [
-  {
-    id: '1',
-    name: 'Marco Rossi',
-    email: 'studente@ist.com',
-    role: 'student',
-    status: 'active',
-    phase: 'build',
-    avatarPreset: 'blue',
-  },
-  {
-    id: '2',
-    name: 'Laura Bianchi',
-    email: 'coach@ist.com',
-    role: 'coach',
-    avatarPreset: 'purple',
-  },
-  {
-    id: '3',
-    name: 'Sofia Verdi',
-    email: 'mentalcoach@ist.com',
-    role: 'mental_coach',
-    avatarPreset: 'green',
-  },
-  {
-    id: '4',
-    name: 'Admin IST',
-    email: 'admin@ist.com',
-    role: 'admin',
-    roles: ['admin', 'coach'],
-    avatarPreset: 'gold',
-  },
-]
-
 interface AuthContextType {
   user: User | null
-  login: (role: UserRole) => void
-  logout: () => void
-  updateProfile: (data: ProfileUpdate) => void
+  login: (email: string, password: string) => Promise<{ error: string | null }>
+  logout: () => Promise<void>
+  updateProfile: (data: ProfileUpdate) => Promise<void>
   isAuthenticated: boolean
+  loading: boolean
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
+async function fetchProfile(userId: string): Promise<User | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single()
+
+  if (error || !data) return null
+
+  return {
+    id: data.id,
+    name: data.name,
+    email: data.email,
+    role: data.role,
+    roles: data.roles ?? undefined,
+    avatarPreset: data.avatar_preset ?? undefined,
+    avatarUrl: data.avatar_url ?? undefined,
+    status: data.status ?? undefined,
+    phase: data.phase ?? undefined,
+    permissions: data.permissions ?? undefined,
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  const login = (role: UserRole) => {
-    const mockUser = MOCK_USERS.find(u => u.role === role)
-    if (mockUser) setUser(mockUser)
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const profile = await fetchProfile(session.user.id)
+        setUser(profile)
+      }
+      setLoading(false)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const profile = await fetchProfile(session.user.id)
+        setUser(profile)
+      } else {
+        setUser(null)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const login = async (email: string, password: string): Promise<{ error: string | null }> => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) return { error: error.message }
+    return { error: null }
   }
 
-  const logout = () => setUser(null)
+  const logout = async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+  }
 
-  const updateProfile = (data: ProfileUpdate) => {
+  const updateProfile = async (data: ProfileUpdate) => {
+    if (!user) return
+
+    const updates: Record<string, unknown> = {}
+    if (data.name) updates.name = data.name
+    if (data.avatarPreset !== undefined) updates.avatar_preset = data.avatarPreset
+    if (data.avatarUrl !== undefined) updates.avatar_url = data.avatarUrl
+
+    await supabase.from('profiles').update(updates).eq('id', user.id)
     setUser(prev => prev ? { ...prev, ...data } : prev)
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, updateProfile, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, login, logout, updateProfile, isAuthenticated: !!user, loading }}>
       {children}
     </AuthContext.Provider>
   )
