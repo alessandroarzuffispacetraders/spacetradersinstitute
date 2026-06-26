@@ -7,6 +7,7 @@ type ProfileUpdate = Partial<Pick<User, 'name' | 'avatarPreset' | 'avatarUrl'>>
 interface AuthContextType {
   user: User | null
   login: (email: string, password: string) => Promise<{ error: string | null }>
+  signup: (email: string, password: string, name: string) => Promise<{ error: string | null }>
   logout: () => Promise<void>
   updateProfile: (data: ProfileUpdate) => Promise<void>
   isAuthenticated: boolean
@@ -69,6 +70,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null }
   }
 
+  const signup = async (email: string, password: string, name: string): Promise<{ error: string | null }> => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { name, role: 'student' } },
+    })
+    if (error) return { error: error.message }
+    return { error: null }
+  }
+
   const logout = async () => {
     await supabase.auth.signOut()
     setUser(null)
@@ -87,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, updateProfile, isAuthenticated: !!user, loading }}>
+    <AuthContext.Provider value={{ user, login, signup, logout, updateProfile, isAuthenticated: !!user, loading }}>
       {children}
     </AuthContext.Provider>
   )
