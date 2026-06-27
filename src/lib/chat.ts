@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from './supabase'
 import { UserRole } from '../types'
+import { triggerPushNotifications } from './push'
 
 export interface DbMessage {
   id: string
@@ -98,6 +99,8 @@ export function useChatMessages(channelId: string | null) {
     }
     setMessages(prev => [...prev, optimistic])
 
+    const trimmed = content.trim()
+
     // Insert in background — nessun await, non blocca l'UI
     supabase
       .from('messages')
@@ -106,13 +109,16 @@ export function useChatMessages(channelId: string | null) {
         user_id: userId,
         author_name: authorName,
         author_role: authorRole,
-        content: content.trim(),
+        content: trimmed,
       })
       .then(({ error }) => {
         if (error) {
           // Rollback ottimistico se l'insert fallisce
           setMessages(prev => prev.filter(m => m.id !== tempId))
+          return
         }
+        // Invia push notifications agli altri utenti
+        triggerPushNotifications({ channel_id: channelId, user_id: userId, author_name: authorName, content: trimmed })
       })
   }
 

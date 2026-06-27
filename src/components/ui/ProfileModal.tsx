@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import UserAvatar, { PRESET_AVATARS } from './UserAvatar'
+import { subscribeToPush, unsubscribeFromPush } from '../../lib/push'
 
 const ROLE_LABELS: Record<string, string> = {
   student: 'Studente',
@@ -548,6 +549,7 @@ function PasswordField({
 }
 
 function NotificationsSection({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  const { user } = useAuth()
   const [permission, setPermission] = useState<NotificationPermission>(
     'Notification' in window ? Notification.permission : 'denied'
   )
@@ -558,16 +560,22 @@ function NotificationsSection({ onBack, onClose }: { onBack: () => void; onClose
   const handleRequest = async () => {
     const result = await Notification.requestPermission()
     setPermission(result)
-    if (result === 'granted') {
+    if (result === 'granted' && user?.id) {
       localStorage.setItem('ist_notif_enabled', 'true')
       setLocalEnabled(true)
+      await subscribeToPush(user.id)
     }
   }
 
-  const toggleLocal = () => {
+  const toggleLocal = async () => {
     const next = !localEnabled
     setLocalEnabled(next)
     localStorage.setItem('ist_notif_enabled', next ? 'true' : 'false')
+    if (!next && user?.id) {
+      await unsubscribeFromPush(user.id)
+    } else if (next && user?.id) {
+      await subscribeToPush(user.id)
+    }
   }
 
   const notSupported = !('Notification' in window)

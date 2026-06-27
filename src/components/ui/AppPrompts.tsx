@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Bell, Download, Share2 } from 'lucide-react'
+import { subscribeToPush } from '../../lib/push'
+import { useAuth } from '../../context/AuthContext'
 
 const LS_INSTALL_DISMISSED = 'ist_install_dismissed'
 const LS_NOTIF_DISMISSED = 'ist_notif_dismissed'
@@ -26,6 +28,7 @@ function shouldShowNotification() {
 }
 
 export default function AppPrompts() {
+  const { user } = useAuth()
   const [active, setActive] = useState<ActivePrompt>(null)
   const [deferredEvent, setDeferredEvent] = useState<any>(null)
   const [visible, setVisible] = useState(false)
@@ -93,7 +96,10 @@ export default function AppPrompts() {
   }
 
   const handleEnableNotifications = async () => {
-    await Notification.requestPermission()
+    const permission = await Notification.requestPermission()
+    if (permission === 'granted' && user?.id) {
+      await subscribeToPush(user.id)
+    }
     dismissNotification()
   }
 
