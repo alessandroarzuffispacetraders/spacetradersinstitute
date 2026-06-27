@@ -570,7 +570,7 @@ function ChatArea({ channel, userRole, userId, userName, onBack, isMobile }: Cha
       {/* Input bar */}
       {canPost ? (
         <div
-          className="flex items-end gap-2 px-3 pt-3 flex-shrink-0"
+          className="flex items-center gap-2 px-3 pt-3 flex-shrink-0"
           style={{
             borderTop: '1px solid var(--ist-w8)',
             background: 'var(--ist-nav-bg)',
