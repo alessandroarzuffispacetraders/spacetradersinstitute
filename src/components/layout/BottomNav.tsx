@@ -189,7 +189,7 @@ export default function BottomNav() {
 
       <nav
         className={`lg:hidden fixed z-50 transition-transform duration-300 ease-in-out ${hideBottomNav ? 'translate-y-[120%]' : 'translate-y-0'}`}
-        style={{ bottom: 16, left: 16, right: 16 }}
+        style={{ bottom: 'max(16px, calc(env(safe-area-inset-bottom, 0px) + 8px))', left: 16, right: 16 }}
       >
         <div
           className="flex items-center justify-around h-[68px] px-1"

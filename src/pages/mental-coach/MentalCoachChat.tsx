@@ -39,7 +39,7 @@ export default function MentalCoachChat() {
   return (
     <div
       className="flex fixed inset-0 z-10"
-      style={{ background: 'var(--ist-nav-bg)' }}
+      style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)' }}
     >
       {/* Student list sidebar */}
       <div
