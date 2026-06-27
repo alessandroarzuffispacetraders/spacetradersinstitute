@@ -125,7 +125,7 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave }: {
       .eq('id', user.id)
 
     if (error) {
-      setError('Errore nel salvataggio. Riprova.')
+      setError(error.message || 'Errore nel salvataggio. Riprova.')
       setSaving(false)
       return
     }
