@@ -18,14 +18,14 @@ export async function subscribeToPush(userId: string): Promise<boolean> {
 
     const reg = await navigator.serviceWorker.ready
 
-    // Rimuovi eventuale subscription precedente
-    const existing = await reg.pushManager.getSubscription()
-    if (existing) await existing.unsubscribe()
-
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-    })
+    // Riusa la subscription esistente se c'è, altrimenti crea
+    let sub = await reg.pushManager.getSubscription()
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      })
+    }
 
     const { endpoint, keys } = sub.toJSON() as { endpoint: string; keys: Record<string, string> }
 

@@ -33,6 +33,18 @@ export default function AppPrompts() {
   const [deferredEvent, setDeferredEvent] = useState<any>(null)
   const [visible, setVisible] = useState(false)
 
+  // Se permission già granted, assicura che la subscription sia salvata su Supabase
+  useEffect(() => {
+    if (
+      user?.id &&
+      'Notification' in window &&
+      Notification.permission === 'granted' &&
+      'serviceWorker' in navigator
+    ) {
+      subscribeToPush(user.id)
+    }
+  }, [user?.id])
+
   // Intercetta l'evento installazione prima che sparisca
   useEffect(() => {
     const handler = (e: Event) => {
