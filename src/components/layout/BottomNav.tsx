@@ -48,7 +48,7 @@ function OverflowSheet({
       <div
         className="lg:hidden fixed z-50 left-4 right-4"
         style={{
-          bottom: 'calc(max(8px, env(safe-area-inset-bottom, 0px)) + 76px)',
+          bottom: 'calc(max(4px, env(safe-area-inset-bottom, 0px)) + 76px)',
           borderRadius: '2rem',
           background: 'var(--ist-nav-bg)',
           border: '1px solid var(--ist-nav-border)',
@@ -188,8 +188,8 @@ export default function BottomNav() {
       )}
 
       <nav
-        className={`lg:hidden fixed z-50 transition-transform duration-300 ease-in-out ${hideBottomNav ? 'translate-y-[120%]' : 'translate-y-0'}`}
-        style={{ bottom: 'max(8px, env(safe-area-inset-bottom, 0px))', left: 16, right: 16 }}
+        className={`lg:hidden fixed z-50 transition-transform duration-300 ease-in-out ${hideBottomNav ? 'translate-y-[200%]' : 'translate-y-0'}`}
+        style={{ bottom: 'max(4px, env(safe-area-inset-bottom, 0px))', left: 16, right: 16 }}
       >
         <div
           className="flex items-center justify-around h-[68px] px-1"
