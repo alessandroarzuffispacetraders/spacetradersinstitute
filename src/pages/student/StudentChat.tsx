@@ -99,60 +99,66 @@ interface UserCardProps {
 
 function UserCard({ name, role, canDm, onStartDm, onClose }: UserCardProps) {
   return (
-    <>
-      <div className="fixed inset-0 z-[200]" onClick={onClose} />
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      onClick={onClose}
+      style={{ background: 'rgba(0,0,0,0.45)' }}
+    >
       <div
-        className="fixed z-[201] left-1/2 bottom-32 -translate-x-1/2 w-[220px] rounded-3xl p-4 flex flex-col gap-3"
+        onClick={e => e.stopPropagation()}
+        className="relative w-[300px] max-w-[calc(100vw-32px)] rounded-2xl overflow-hidden"
         style={{
           background: 'var(--ist-nav-bg)',
           border: '1px solid var(--ist-nav-border)',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
-          boxShadow: '0 16px 48px rgba(0,0,0,0.40)',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.45)',
         }}
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div
-              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold"
-              style={{ background: DM_AVATAR_GRADIENT[role] ?? DM_AVATAR_GRADIENT.student, color: 'white' }}
-            >
-              {name.charAt(0)}
-            </div>
-            <div>
-              <p className="text-sm font-semibold leading-tight" style={{ color: 'var(--ist-text)' }}>{name}</p>
-              <span
-                className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                style={{ background: ROLE_COLOR[role], color: ROLE_TEXT[role] }}
-              >
-                {ROLE_LABEL[role]}
-              </span>
-            </div>
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 z-10 w-7 h-7 rounded-full flex items-center justify-center"
+          style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+        >
+          <X size={13} strokeWidth={2.5} />
+        </button>
+
+        {/* Identità */}
+        <div className="flex flex-col items-center text-center px-5 pt-7 pb-5">
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold mb-3"
+            style={{ background: DM_AVATAR_GRADIENT[role] ?? DM_AVATAR_GRADIENT.student, color: 'white' }}
+          >
+            {name.charAt(0).toUpperCase()}
           </div>
-          <button
-            onClick={onClose}
-            className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
-            style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+          <p className="w-full text-base font-semibold leading-snug break-words" style={{ color: 'var(--ist-text)' }}>
+            {name}
+          </p>
+          <span
+            className="mt-2 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+            style={{ background: ROLE_COLOR[role], color: ROLE_TEXT[role] }}
           >
-            <X size={12} strokeWidth={2.5} />
-          </button>
+            {ROLE_LABEL[role]}
+          </span>
         </div>
+
+        {/* Azione */}
         {canDm && (
-          <button
-            onClick={() => { onStartDm(); onClose() }}
-            className="w-full py-2 rounded-2xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-[0.97]"
-            style={{
-              background: 'linear-gradient(135deg, #5A9AB1, #286680)',
-              color: 'white',
-              boxShadow: '0 4px 14px rgba(40,102,128,0.30)',
-            }}
-          >
-            <MessageCircle size={13} strokeWidth={2} />
-            Messaggio privato
-          </button>
+          <div className="px-4 pb-4">
+            <button
+              onClick={() => { onStartDm(); onClose() }}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+              style={{
+                background: 'linear-gradient(135deg, #5A9AB1, #286680)',
+                color: 'white',
+                boxShadow: '0 4px 14px rgba(40,102,128,0.30)',
+              }}
+            >
+              <MessageCircle size={15} strokeWidth={2} />
+              Messaggio privato
+            </button>
+          </div>
         )}
       </div>
-    </>
+    </div>
   )
 }
 
@@ -852,24 +858,6 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
           })}
         </div>
 
-        {/* Typing indicator */}
-        {typingUsers.length > 0 && (
-          <div className="flex items-center gap-2 px-1 mt-2">
-            <div className="flex gap-0.5">
-              {[0, 1, 2].map(i => (
-                <div
-                  key={i}
-                  className="w-1.5 h-1.5 rounded-full animate-bounce"
-                  style={{ background: 'var(--ist-text-dim)', animationDelay: `${i * 0.15}s` }}
-                />
-              ))}
-            </div>
-            <span className="text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>
-              {typingUsers.length === 1 ? `${typingUsers[0]} sta scrivendo…` : `${typingUsers.join(', ')} stanno scrivendo…`}
-            </span>
-          </div>
-        )}
-
         <div ref={bottomRef} />
       </div>
 
@@ -890,6 +878,24 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
           <ChevronDown size={13} strokeWidth={2.5} />
           {newMsgCount > 0 ? `${newMsgCount} nuovi` : 'Scorri giu'}
         </button>
+      )}
+
+      {/* Typing indicator — riga dedicata sopra l'input, sempre visibile */}
+      {typingUsers.length > 0 && (
+        <div className="flex items-center gap-2 px-4 py-1.5 flex-shrink-0" style={{ background: 'var(--ist-nav-bg)' }}>
+          <div className="flex gap-0.5">
+            {[0, 1, 2].map(i => (
+              <div
+                key={i}
+                className="w-1.5 h-1.5 rounded-full animate-bounce"
+                style={{ background: 'var(--ist-text-dim)', animationDelay: `${i * 0.15}s` }}
+              />
+            ))}
+          </div>
+          <span className="text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>
+            {typingUsers.length === 1 ? `${typingUsers[0]} sta scrivendo…` : `${typingUsers.join(', ')} stanno scrivendo…`}
+          </span>
+        </div>
       )}
 
       {/* Input bar */}
