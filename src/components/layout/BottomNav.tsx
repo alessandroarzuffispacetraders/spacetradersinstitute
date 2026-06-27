@@ -48,7 +48,7 @@ function OverflowSheet({
       <div
         className="lg:hidden fixed z-50 left-4 right-4"
         style={{
-          bottom: 91,
+          bottom: 96,
           borderRadius: '2rem',
           background: 'var(--ist-nav-bg)',
           border: '1px solid var(--ist-nav-border)',
@@ -189,7 +189,7 @@ export default function BottomNav() {
 
       <nav
         className={`lg:hidden fixed z-50 transition-transform duration-300 ease-in-out ${hideBottomNav ? 'translate-y-[200%]' : 'translate-y-0'}`}
-        style={{ bottom: 15, left: 16, right: 16 }}
+        style={{ bottom: 20, left: 16, right: 16 }}
       >
         <div
           className="flex items-center justify-around h-[68px] px-1"
