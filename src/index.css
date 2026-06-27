@@ -117,7 +117,7 @@
 
   /* Prevent iOS Safari auto-zoom on input focus */
   input, textarea, select {
-    font-size: max(16px, 1em);
+    font-size: 16px !important;
   }
 
   ::selection {
