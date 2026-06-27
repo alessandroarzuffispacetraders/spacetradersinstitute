@@ -107,7 +107,9 @@ export function useChatMessages(channelId: string | null, userId: string) {
         const id = (payload.old as { id: string }).id
         setMessages(prev => prev.filter(m => m.id !== id))
       })
-      .subscribe()
+      .subscribe((status, err) => {
+        console.log('[chat realtime]', channelId, status, err ?? '')
+      })
 
     // Reaction changes — no filter, filter client-side
     const reactSub = supabase
