@@ -607,11 +607,10 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
         )}
 
         {isDirect && dmPartner ? (
-          <div className="relative flex-shrink-0">
+          <div className="flex-shrink-0">
             <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold" style={{ background: DM_AVATAR_GRADIENT[dmPartner.role], color: 'white' }}>
               {dmPartner.name.charAt(0)}
             </div>
-            <div className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2" style={{ background: dmPartner.online ? '#46D39A' : 'var(--ist-w12)', borderColor: 'var(--ist-nav-bg)' }} />
           </div>
         ) : (
           <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--ist-w8)', color: 'var(--ist-accent-text)' }}>
@@ -628,11 +627,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
               </span>
             )}
           </div>
-          {isDirect && dmPartner ? (
-            <p className="text-[11px]" style={{ color: dmPartner.online ? '#46D39A' : 'var(--ist-text-dim)' }}>
-              {dmPartner.online ? 'Online' : 'Offline'}
-            </p>
-          ) : channel.description ? (
+          {!isDirect && channel.description ? (
             <p className="text-[11px] truncate" style={{ color: 'var(--ist-text-muted)' }}>{channel.description}</p>
           ) : null}
         </div>
