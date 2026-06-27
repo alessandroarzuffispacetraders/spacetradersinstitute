@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import {
   Hash, Megaphone, ChevronDown, ChevronRight,
   Send, ArrowLeft, Search, Pin, Check, Users, MessageCircle, UsersRound, Loader2, X,
+  Edit2, Trash2, SmilePlus,
 } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
@@ -10,7 +11,10 @@ import {
   CHANNELS, BACHECA_POSTS,
   Channel, BachecaPost, MemberRole,
 } from '../../data/chatData'
-import { useChatMessages, useDmUsers, useUnreadCounts, dmChannelId, DmUser } from '../../lib/chat'
+import {
+  useChatMessages, useDmUsers, useUnreadCounts, useTypingIndicator,
+  dmChannelId, DmUser, DbMessage,
+} from '../../lib/chat'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -59,6 +63,8 @@ const DM_AVATAR_GRADIENT: Record<MemberRole, string> = {
   mental_coach: 'linear-gradient(135deg, #7c3aed, #a78bfa)',
   student: 'linear-gradient(135deg, #374151, #6b7280)',
 }
+
+const QUICK_EMOJIS = ['👍', '❤️', '😂', '🔥', '🎯']
 
 // ─── channel icon ────────────────────────────────────────────────────────────
 
@@ -435,26 +441,69 @@ interface ChatAreaProps {
   userRole: MemberRole
   userId: string
   userName: string
-  dmUsers: DmUser[]
-  onStartDm: (targetUserId: string) => void
+  onShowUserCard: (card: { userId: string; name: string; role: MemberRole }) => void
   onBack?: () => void
   isMobile?: boolean
 }
 
-function ChatArea({ channel, userRole, userId, userName, dmUsers, onStartDm, onBack, isMobile }: ChatAreaProps) {
+function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack, isMobile }: ChatAreaProps) {
   const [input, setInput] = useState('')
-  const [userCard, setUserCard] = useState<{ userId: string; name: string; role: MemberRole } | null>(null)
-  const { messages, loading, sendMessage: sendToDb } = useChatMessages(channel.id)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editContent, setEditContent] = useState('')
+  const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null)
+  const [showReactFor, setShowReactFor] = useState<string | null>(null)
+  const [isAtBottom, setIsAtBottom] = useState(true)
+  const [newMsgCount, setNewMsgCount] = useState(0)
+
+  const { messages, loading, reactions, sendMessage: sendToDb, editMessage, deleteMessage, toggleReaction } = useChatMessages(channel.id, userId)
+  const { typingUsers, notifyTyping, stopTyping } = useTypingIndicator(channel.id, userId, userName)
+
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null)
 
-  useEffect(() => {
-    setInput('')
-  }, [channel.id])
+  useEffect(() => { setInput(''); setEditingId(null); setHoveredMsgId(null) }, [channel.id])
 
+  // Auto-scroll: only if already at bottom
+  const prevMsgCount = useRef(0)
   useEffect(() => {
+    const added = messages.length > prevMsgCount.current
+    prevMsgCount.current = messages.length
+    if (!added) return
+
+    if (isAtBottom) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+      setNewMsgCount(0)
+    } else {
+      // count only messages from others
+      const lastMsg = messages[messages.length - 1]
+      if (lastMsg && lastMsg.user_id !== userId) {
+        setNewMsgCount(prev => prev + 1)
+      }
+    }
+  }, [messages.length])
+
+  // Initial scroll to bottom on load
+  useEffect(() => {
+    if (!loading && messages.length > 0) {
+      bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior })
+    }
+  }, [loading])
+
+  const handleScroll = () => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+    setIsAtBottom(atBottom)
+    if (atBottom) setNewMsgCount(0)
+  }
+
+  const scrollToBottom = () => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    setIsAtBottom(true)
+    setNewMsgCount(0)
+  }
 
   const canPost = channel.canPost.includes(userRole)
 
@@ -462,8 +511,9 @@ function ChatArea({ channel, userRole, userId, userName, dmUsers, onStartDm, onB
     const text = input.trim()
     if (!text || !canPost) return
     setInput('')
+    stopTyping()
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
-    await sendToDb(text, userId, userName, userRole)
+    await sendToDb(text, userName, userRole)
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -475,9 +525,32 @@ function ChatArea({ channel, userRole, userId, userName, dmUsers, onStartDm, onB
 
   const onInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value)
+    notifyTyping()
     const el = e.target
     el.style.height = 'auto'
     el.style.height = Math.min(el.scrollHeight, 120) + 'px'
+  }
+
+  const startEdit = (msg: DbMessage) => {
+    setEditingId(msg.id)
+    setEditContent(msg.content)
+    setTimeout(() => {
+      editTextareaRef.current?.focus()
+      editTextareaRef.current?.select()
+    }, 50)
+  }
+
+  const confirmEdit = async () => {
+    if (!editingId || !editContent.trim()) return
+    await editMessage(editingId, editContent)
+    setEditingId(null)
+  }
+
+  const cancelEdit = () => setEditingId(null)
+
+  const handleDeleteMessage = async (id: string) => {
+    if (!confirm('Eliminare questo messaggio?')) return
+    await deleteMessage(id)
   }
 
   interface MessageGroup {
@@ -485,7 +558,7 @@ function ChatArea({ channel, userRole, userId, userName, dmUsers, onStartDm, onB
     authorId: string
     authorRole: MemberRole
     own: boolean
-    messages: { id: string; text: string }[]
+    messages: { id: string; text: string; editedAt?: string | null; fullMsg: DbMessage }[]
     firstTimestamp: string
   }
 
@@ -493,20 +566,15 @@ function ChatArea({ channel, userRole, userId, userName, dmUsers, onStartDm, onB
   for (const msg of messages) {
     const own = msg.user_id === userId
     const last = groups[groups.length - 1]
-    if (
-      last &&
-      last.author === msg.author_name &&
-      last.own === own &&
-      sameDay(last.firstTimestamp, msg.created_at)
-    ) {
-      last.messages.push({ id: msg.id, text: msg.content })
+    if (last && last.author === msg.author_name && last.own === own && sameDay(last.firstTimestamp, msg.created_at)) {
+      last.messages.push({ id: msg.id, text: msg.content, editedAt: msg.edited_at, fullMsg: msg })
     } else {
       groups.push({
         author: msg.author_name,
         authorId: msg.user_id,
         authorRole: msg.author_role,
         own,
-        messages: [{ id: msg.id, text: msg.content }],
+        messages: [{ id: msg.id, text: msg.content, editedAt: msg.edited_at, fullMsg: msg }],
         firstTimestamp: msg.created_at,
       })
     }
@@ -516,25 +584,11 @@ function ChatArea({ channel, userRole, userId, userName, dmUsers, onStartDm, onB
   const dmPartner = channel.dmWith
 
   return (
-    <div className="flex flex-col h-full">
-      {userCard && (
-        <UserCard
-          userId={userCard.userId}
-          name={userCard.name}
-          role={userCard.role}
-          canDm={dmUsers.some(u => u.id === userCard.userId)}
-          onStartDm={() => onStartDm(userCard.userId)}
-          onClose={() => setUserCard(null)}
-        />
-      )}
+    <div className="flex flex-col h-full relative">
       {/* Header */}
       <div
         className="flex items-center gap-3 px-4 py-3 flex-shrink-0"
-        style={{
-          borderBottom: '1px solid var(--ist-w8)',
-          background: 'var(--ist-nav-bg)',
-          backdropFilter: 'blur(16px)',
-        }}
+        style={{ borderBottom: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)', backdropFilter: 'blur(16px)' }}
       >
         {isMobile && onBack && (
           <button
@@ -548,39 +602,22 @@ function ChatArea({ channel, userRole, userId, userName, dmUsers, onStartDm, onB
 
         {isDirect && dmPartner ? (
           <div className="relative flex-shrink-0">
-            <div
-              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold"
-              style={{ background: DM_AVATAR_GRADIENT[dmPartner.role], color: 'white' }}
-            >
+            <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold" style={{ background: DM_AVATAR_GRADIENT[dmPartner.role], color: 'white' }}>
               {dmPartner.name.charAt(0)}
             </div>
-            <div
-              className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2"
-              style={{
-                background: dmPartner.online ? '#46D39A' : 'var(--ist-w12)',
-                borderColor: 'var(--ist-nav-bg)',
-              }}
-            />
+            <div className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2" style={{ background: dmPartner.online ? '#46D39A' : 'var(--ist-w12)', borderColor: 'var(--ist-nav-bg)' }} />
           </div>
         ) : (
-          <div
-            className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{ background: 'var(--ist-w8)', color: 'var(--ist-accent-text)' }}
-          >
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--ist-w8)', color: 'var(--ist-accent-text)' }}>
             <ChannelIcon type={channel.type} size={15} />
           </div>
         )}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold truncate" style={{ color: 'var(--ist-text)' }}>
-              {channel.name}
-            </span>
+            <span className="text-sm font-semibold truncate" style={{ color: 'var(--ist-text)' }}>{channel.name}</span>
             {isDirect && dmPartner && (
-              <span
-                className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0"
-                style={{ background: ROLE_COLOR[dmPartner.role], color: ROLE_TEXT[dmPartner.role] }}
-              >
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: ROLE_COLOR[dmPartner.role], color: ROLE_TEXT[dmPartner.role] }}>
                 {ROLE_LABEL[dmPartner.role]}
               </span>
             )}
@@ -590,15 +627,19 @@ function ChatArea({ channel, userRole, userId, userName, dmUsers, onStartDm, onB
               {dmPartner.online ? 'Online' : 'Offline'}
             </p>
           ) : channel.description ? (
-            <p className="text-[11px] truncate" style={{ color: 'var(--ist-text-muted)' }}>
-              {channel.description}
-            </p>
+            <p className="text-[11px] truncate" style={{ color: 'var(--ist-text-muted)' }}>{channel.description}</p>
           ) : null}
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 no-scrollbar">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-4 py-4 no-scrollbar"
+        style={{ overscrollBehavior: 'contain' }}
+        onClick={() => { setHoveredMsgId(null); setShowReactFor(null) }}
+      >
         {loading && (
           <div className="flex justify-center py-8">
             <Loader2 size={20} className="animate-spin" style={{ color: 'var(--ist-text-dim)' }} />
@@ -609,119 +650,269 @@ function ChatArea({ channel, userRole, userId, userName, dmUsers, onStartDm, onB
             <p className="text-sm" style={{ color: 'var(--ist-text-dim)' }}>Nessun messaggio ancora. Inizia la conversazione!</p>
           </div>
         )}
-        {groups.map((group, gi) => {
-          const prevGroup = groups[gi - 1]
-          const showDateSep = !prevGroup || !sameDay(prevGroup.firstTimestamp, group.firstTimestamp)
 
-          return (
-            <div key={`group-${gi}`}>
-              {showDateSep && (
-                <div className="flex items-center gap-3 py-3">
-                  <div className="flex-1 h-px" style={{ background: 'var(--ist-w8)' }} />
-                  <span className="text-[10px] font-semibold px-2" style={{ color: 'var(--ist-text-dim)' }}>
-                    {formatDate(group.firstTimestamp)}
-                  </span>
-                  <div className="flex-1 h-px" style={{ background: 'var(--ist-w8)' }} />
-                </div>
-              )}
+        <div className="space-y-0.5">
+          {groups.map((group, gi) => {
+            const prevGroup = groups[gi - 1]
+            const showDateSep = !prevGroup || !sameDay(prevGroup.firstTimestamp, group.firstTimestamp)
 
-              <div className={`flex gap-2.5 mt-2 ${group.own ? 'flex-row-reverse' : ''}`}>
-                <button
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 mt-0.5 transition-opacity hover:opacity-80 active:opacity-60"
-                  style={group.own
-                    ? { background: 'linear-gradient(135deg, #5A9AB1, #286680)', color: 'white' }
-                    : { background: DM_AVATAR_GRADIENT[group.authorRole] ?? 'var(--ist-w12)', color: 'white' }
-                  }
-                  onClick={() => !group.own && setUserCard({ userId: group.authorId, name: group.author, role: group.authorRole })}
-                >
-                  {group.author.charAt(0)}
-                </button>
-
-                <div className={`flex flex-col gap-0.5 min-w-0 max-w-[72%] ${group.own ? 'items-end' : 'items-start'}`}>
-                  <div className={`flex items-baseline gap-2 ${group.own ? 'flex-row-reverse' : ''}`}>
-                    <span className="text-[11px] font-semibold" style={{ color: group.own ? 'var(--ist-bubble-own-name)' : 'var(--ist-text)' }}>
-                      {group.own ? 'Tu' : group.author}
-                    </span>
-                    <span className="text-[10px]" style={{ color: 'var(--ist-text-dim)' }}>
-                      {formatTime(group.firstTimestamp)}
-                    </span>
-                    {!group.own && (
-                      <span
-                        className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold"
-                        style={{ background: ROLE_COLOR[group.authorRole], color: ROLE_TEXT[group.authorRole] }}
-                      >
-                        {ROLE_LABEL[group.authorRole]}
-                      </span>
-                    )}
+            return (
+              <div key={`group-${gi}`}>
+                {showDateSep && (
+                  <div className="flex items-center gap-3 py-3">
+                    <div className="flex-1 h-px" style={{ background: 'var(--ist-w8)' }} />
+                    <span className="text-[10px] font-semibold px-2" style={{ color: 'var(--ist-text-dim)' }}>{formatDate(group.firstTimestamp)}</span>
+                    <div className="flex-1 h-px" style={{ background: 'var(--ist-w8)' }} />
                   </div>
+                )}
 
-                  {group.messages.map((msg, mi) => (
-                    <div
-                      key={msg.id}
-                      className="px-3.5 py-2 text-sm leading-relaxed"
-                      style={group.own
-                        ? {
-                          background: 'var(--ist-bubble-own-bg)',
-                          color: 'var(--ist-bubble-own-text)',
-                          border: '1px solid var(--ist-bubble-own-border)',
-                          borderRadius: mi === 0 ? '18px 18px 4px 18px' : '18px 4px 4px 18px',
-                          ...(mi === group.messages.length - 1 ? { borderRadius: '18px 4px 18px 18px' } : {}),
-                        }
-                        : {
-                          background: 'var(--ist-bubble-other-bg)',
-                          color: 'var(--ist-text)',
-                          border: '1px solid var(--ist-bubble-other-border)',
-                          borderRadius: mi === 0 ? '18px 18px 18px 4px' : '4px 18px 18px 4px',
-                          ...(mi === group.messages.length - 1 ? { borderRadius: '4px 18px 18px 18px' } : {}),
-                        }
-                      }
-                    >
-                      {msg.text}
+                <div className={`flex gap-2.5 mt-3 group/msggroup ${group.own ? 'flex-row-reverse' : ''}`}>
+                  {/* Avatar */}
+                  <button
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 mt-0.5 transition-opacity hover:opacity-80 active:opacity-60 self-end"
+                    style={group.own
+                      ? { background: 'linear-gradient(135deg, #5A9AB1, #286680)', color: 'white' }
+                      : { background: DM_AVATAR_GRADIENT[group.authorRole] ?? 'var(--ist-w12)', color: 'white' }
+                    }
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (!group.own) onShowUserCard({ userId: group.authorId, name: group.author, role: group.authorRole })
+                    }}
+                  >
+                    {group.author.charAt(0)}
+                  </button>
+
+                  <div className={`flex flex-col gap-0.5 min-w-0 max-w-[75%] ${group.own ? 'items-end' : 'items-start'}`}>
+                    {/* Author + time */}
+                    <div className={`flex items-baseline gap-2 mb-0.5 ${group.own ? 'flex-row-reverse' : ''}`}>
+                      <span className="text-[11px] font-semibold" style={{ color: group.own ? 'var(--ist-bubble-own-name)' : 'var(--ist-text)' }}>
+                        {group.own ? 'Tu' : group.author}
+                      </span>
+                      <span className="text-[10px]" style={{ color: 'var(--ist-text-dim)' }}>{formatTime(group.firstTimestamp)}</span>
+                      {!group.own && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: ROLE_COLOR[group.authorRole], color: ROLE_TEXT[group.authorRole] }}>
+                          {ROLE_LABEL[group.authorRole]}
+                        </span>
+                      )}
                     </div>
-                  ))}
+
+                    {/* Messages */}
+                    {group.messages.map((msg, mi) => {
+                      const msgReactions = reactions[msg.id]
+                      const hasReactions = msgReactions && Object.keys(msgReactions).length > 0
+                      const isEditing = editingId === msg.id
+                      const isHovered = hoveredMsgId === msg.id
+                      const isLastInGroup = mi === group.messages.length - 1
+
+                      return (
+                        <div key={msg.id} className="relative w-full" style={{ marginBottom: hasReactions ? 8 : 0 }}>
+                          {/* Message bubble with action bar */}
+                          <div
+                            className={`relative flex items-end gap-1 ${group.own ? 'flex-row-reverse' : 'flex-row'}`}
+                            onMouseEnter={() => setHoveredMsgId(msg.id)}
+                            onMouseLeave={() => { if (showReactFor !== msg.id) setHoveredMsgId(null) }}
+                          >
+                            {/* Action bar (shown on hover for desktop) */}
+                            {(isHovered || showReactFor === msg.id) && !isEditing && (
+                              <div
+                                className={`flex items-center gap-0.5 flex-shrink-0 ${group.own ? 'mr-1' : 'ml-1'}`}
+                                onClick={e => e.stopPropagation()}
+                              >
+                                {/* React button */}
+                                <div className="relative">
+                                  <button
+                                    onClick={() => setShowReactFor(prev => prev === msg.id ? null : msg.id)}
+                                    className="w-6 h-6 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                                    style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+                                    title="Reagisci"
+                                  >
+                                    <SmilePlus size={12} strokeWidth={2} />
+                                  </button>
+                                  {/* Emoji picker popover */}
+                                  {showReactFor === msg.id && (
+                                    <div
+                                      className={`absolute bottom-8 flex gap-0.5 p-1.5 rounded-2xl z-10 ${group.own ? 'right-0' : 'left-0'}`}
+                                      style={{ background: 'var(--ist-nav-bg)', border: '1px solid var(--ist-nav-border)', boxShadow: '0 8px 24px rgba(0,0,0,0.30)', backdropFilter: 'blur(16px)' }}
+                                    >
+                                      {QUICK_EMOJIS.map(em => (
+                                        <button
+                                          key={em}
+                                          onClick={() => { toggleReaction(msg.id, em); setShowReactFor(null); setHoveredMsgId(null) }}
+                                          className="w-8 h-8 flex items-center justify-center rounded-xl text-lg transition-all hover:scale-125 hover:bg-white/10"
+                                        >
+                                          {em}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Edit/Delete for own messages */}
+                                {group.own && (
+                                  <>
+                                    <button
+                                      onClick={() => startEdit(msg.fullMsg)}
+                                      className="w-6 h-6 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                                      style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+                                      title="Modifica"
+                                    >
+                                      <Edit2 size={11} strokeWidth={2} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteMessage(msg.id)}
+                                      className="w-6 h-6 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                                      style={{ background: 'var(--ist-w8)', color: '#FF6B7A' }}
+                                      title="Elimina"
+                                    >
+                                      <Trash2 size={11} strokeWidth={2} />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Bubble */}
+                            {isEditing ? (
+                              <div className="flex-1 flex flex-col gap-2">
+                                <textarea
+                                  ref={editTextareaRef}
+                                  value={editContent}
+                                  onChange={e => setEditContent(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmEdit() }
+                                    if (e.key === 'Escape') cancelEdit()
+                                  }}
+                                  rows={1}
+                                  className="w-full resize-none px-3.5 py-2.5 text-sm focus:outline-none no-scrollbar rounded-2xl"
+                                  style={{ background: 'var(--ist-input-surface)', border: '1px solid var(--ist-accent-text)', color: 'var(--ist-text)', maxHeight: 120, lineHeight: 1.5 }}
+                                />
+                                <div className={`flex gap-2 text-xs ${group.own ? 'justify-end' : 'justify-start'}`}>
+                                  <button onClick={cancelEdit} className="px-3 py-1 rounded-xl" style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}>Annulla</button>
+                                  <button onClick={confirmEdit} className="px-3 py-1 rounded-xl font-semibold" style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)', color: 'white' }}>Salva</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div
+                                className="px-3.5 py-2.5 text-sm leading-relaxed"
+                                style={group.own
+                                  ? {
+                                    background: 'var(--ist-bubble-own-bg)',
+                                    color: 'var(--ist-bubble-own-text)',
+                                    border: '1px solid var(--ist-bubble-own-border)',
+                                    borderRadius: mi === 0
+                                      ? (isLastInGroup ? '18px 4px 18px 18px' : '18px 18px 4px 18px')
+                                      : (isLastInGroup ? '4px 4px 18px 18px' : '4px 18px 4px 4px'),
+                                    wordBreak: 'break-word',
+                                  }
+                                  : {
+                                    background: 'var(--ist-bubble-other-bg)',
+                                    color: 'var(--ist-text)',
+                                    border: '1px solid var(--ist-bubble-other-border)',
+                                    borderRadius: mi === 0
+                                      ? (isLastInGroup ? '4px 18px 18px 18px' : '18px 18px 18px 4px')
+                                      : (isLastInGroup ? '4px 4px 18px 18px' : '4px 18px 4px 4px'),
+                                    wordBreak: 'break-word',
+                                  }
+                                }
+                              >
+                                {msg.text}
+                                {msg.editedAt && (
+                                  <span className="text-[9px] ml-1.5 opacity-50">modificato</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Reactions */}
+                          {hasReactions && (
+                            <div className={`flex flex-wrap gap-1 mt-1.5 ${group.own ? 'justify-end' : 'justify-start'}`}>
+                              {Object.entries(msgReactions).map(([emoji, { count, reacted }]) => (
+                                <button
+                                  key={emoji}
+                                  onClick={e => { e.stopPropagation(); toggleReaction(msg.id, emoji) }}
+                                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-all hover:scale-105 active:scale-95"
+                                  style={reacted
+                                    ? { background: 'rgba(124,187,208,0.25)', border: '1px solid rgba(124,187,208,0.50)', color: 'var(--ist-accent-text)' }
+                                    : { background: 'var(--ist-w6)', border: '1px solid var(--ist-w9)', color: 'var(--ist-text-muted)' }
+                                  }
+                                >
+                                  <span>{emoji}</span>
+                                  <span className="font-semibold">{count}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
+            )
+          })}
+        </div>
+
+        {/* Typing indicator */}
+        {typingUsers.length > 0 && (
+          <div className="flex items-center gap-2 px-1 mt-2">
+            <div className="flex gap-0.5">
+              {[0, 1, 2].map(i => (
+                <div
+                  key={i}
+                  className="w-1.5 h-1.5 rounded-full animate-bounce"
+                  style={{ background: 'var(--ist-text-dim)', animationDelay: `${i * 0.15}s` }}
+                />
+              ))}
             </div>
-          )
-        })}
+            <span className="text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>
+              {typingUsers.length === 1 ? `${typingUsers[0]} sta scrivendo…` : `${typingUsers.join(', ')} stanno scrivendo…`}
+            </span>
+          </div>
+        )}
+
         <div ref={bottomRef} />
       </div>
+
+      {/* Scroll to bottom button */}
+      {!isAtBottom && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all hover:scale-105 active:scale-95 z-10"
+          style={{
+            bottom: canPost ? 88 : 64,
+            background: 'var(--ist-nav-bg)',
+            border: '1px solid var(--ist-nav-border)',
+            color: 'var(--ist-text)',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+            backdropFilter: 'blur(16px)',
+          }}
+        >
+          <ChevronDown size={13} strokeWidth={2.5} />
+          {newMsgCount > 0 ? `${newMsgCount} nuovi` : 'Scorri giu'}
+        </button>
+      )}
 
       {/* Input bar */}
       {canPost ? (
         <div
           className="flex items-center gap-2 px-3 pt-3 flex-shrink-0"
-          style={{
-            borderTop: '1px solid var(--ist-w8)',
-            background: 'var(--ist-nav-bg)',
-            paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-          }}
+          style={{ borderTop: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
         >
           <textarea
             ref={textareaRef}
             value={input}
             onChange={onInputChange}
             onKeyDown={onKeyDown}
-            placeholder={isDirect && dmPartner ? `Scrivi a ${dmPartner.name}...` : `Scrivi in #${channel.name}...`}
+            placeholder={isDirect && dmPartner ? `Scrivi a ${dmPartner.name}…` : `Scrivi in #${channel.name}…`}
             rows={1}
             className="flex-1 resize-none px-3.5 py-2.5 text-sm focus:outline-none no-scrollbar"
-            style={{
-              background: 'var(--ist-input-surface)',
-              border: '1px solid var(--ist-input-border)',
-              borderRadius: 16,
-              color: 'var(--ist-text)',
-              maxHeight: 120,
-              lineHeight: 1.5,
-            }}
+            style={{ background: 'var(--ist-input-surface)', border: '1px solid var(--ist-input-border)', borderRadius: 16, color: 'var(--ist-text)', maxHeight: 120, lineHeight: 1.5 }}
           />
           <button
             onClick={sendMessage}
             disabled={!input.trim()}
             className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{
-              background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)',
-              boxShadow: input.trim() ? '0 4px 16px rgba(40,102,128,0.36)' : 'none',
-            }}
+            style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)', boxShadow: input.trim() ? '0 4px 16px rgba(40,102,128,0.36)' : 'none' }}
           >
             <Send size={15} strokeWidth={2} className="text-white" />
           </button>
@@ -729,15 +920,9 @@ function ChatArea({ channel, userRole, userId, userName, dmUsers, onStartDm, onB
       ) : (
         <div
           className="flex items-center justify-center gap-2 px-4 pt-3 flex-shrink-0"
-          style={{
-            borderTop: '1px solid var(--ist-w8)',
-            background: 'var(--ist-nav-bg)',
-            paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-          }}
+          style={{ borderTop: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
         >
-          <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>
-            🔒 Solo lettura — non puoi scrivere in questo canale
-          </span>
+          <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>🔒 Solo lettura — non puoi scrivere in questo canale</span>
         </div>
       )}
     </div>
@@ -1062,6 +1247,7 @@ export default function StudentChat() {
   const firstGroup = visibleChannels.find(ch => ch.channelKind === 'group')
   const [activeChannelId, setActiveChannelId] = useState(firstGroup?.id ?? 'generale')
   const [mobileView, setMobileView] = useState<'channels' | 'chat'>('channels')
+  const [userCard, setUserCard] = useState<{ userId: string; name: string; role: MemberRole } | null>(null)
 
   // Lista di tutti i channel ID noti (gruppi + DM)
   const allChannelIds = useMemo(() => [
@@ -1166,11 +1352,7 @@ export default function StudentChat() {
             userRole={userRole}
             userId={userId}
             userName={userName}
-            dmUsers={dmUsers}
-            onStartDm={(targetId) => {
-              const ch = dmChannelId(userId, targetId)
-              selectChannel(ch)
-            }}
+            onShowUserCard={setUserCard}
             onBack={goBack}
             isMobile={mobileView === 'chat'}
           />
@@ -1185,6 +1367,18 @@ export default function StudentChat() {
         <div className="hidden lg:flex flex-1 items-center justify-center">
           <p className="text-sm" style={{ color: 'var(--ist-text-dim)' }}>Seleziona un canale</p>
         </div>
+      )}
+
+      {/* UserCard rendered at top level — outside overflow-hidden containers */}
+      {userCard && (
+        <UserCard
+          userId={userCard.userId}
+          name={userCard.name}
+          role={userCard.role}
+          canDm={dmUsers.some(u => u.id === userCard.userId)}
+          onStartDm={() => { const ch = dmChannelId(userId, userCard.userId); selectChannel(ch) }}
+          onClose={() => setUserCard(null)}
+        />
       )}
     </div>
   )
