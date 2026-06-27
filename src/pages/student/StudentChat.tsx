@@ -3,6 +3,7 @@ import {
   Hash, Megaphone, ChevronDown, ChevronRight,
   Send, ArrowLeft, Search, Pin, Check, Users, MessageCircle, UsersRound, Loader2, X,
 } from 'lucide-react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
 import {
@@ -184,10 +185,11 @@ interface SidebarProps {
   userId: string
   dmUsers: DmUser[]
   unreadCounts: Record<string, number>
+  initialTab?: 'groups' | 'direct'
 }
 
-function ChannelSidebar({ activeChannel, onSelect, userRole, userId, dmUsers, unreadCounts }: SidebarProps) {
-  const [tab, setTab] = useState<'groups' | 'direct'>('groups')
+function ChannelSidebar({ activeChannel, onSelect, userRole, userId, dmUsers, unreadCounts, initialTab }: SidebarProps) {
+  const [tab, setTab] = useState<'groups' | 'direct'>(initialTab ?? 'groups')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [search, setSearch] = useState('')
 
@@ -1048,6 +1050,8 @@ function BachecaArea({
 export default function StudentChat() {
   const { user } = useAuth()
   const { setHideBottomNav } = useUI()
+  const location = useLocation()
+  const navigate = useNavigate()
   const userRole = (user?.role ?? 'student') as MemberRole
   const userId = user?.id ?? ''
   const userName = user?.name ?? ''
@@ -1076,6 +1080,22 @@ export default function StudentChat() {
   useEffect(() => {
     if (userId && activeChannelId) markRead(activeChannelId)
   }, [userId])
+
+  // Gestisce apertura DM da navigazione esterna: navigate('/student/chat', { state: { openDm: userId } })
+  const navState = location.state as { openDm?: string; tab?: 'direct' | 'groups' } | null
+  const [initialNavHandled, setInitialNavHandled] = useState(false)
+  useEffect(() => {
+    if (initialNavHandled || !navState) return
+    setInitialNavHandled(true)
+    navigate(location.pathname, { replace: true, state: null }) // pulisce lo state dall'history
+
+    if (navState.openDm && userId) {
+      const ch = dmChannelId(userId, navState.openDm)
+      setActiveChannelId(ch)
+      setMobileView('chat')
+      markRead(ch)
+    }
+  }, [navState, userId, initialNavHandled])
 
   const activeGroupChannel = CHANNELS.find(ch => ch.id === activeChannelId)
   const isDmChannel = activeChannelId.startsWith('dm_')
@@ -1123,6 +1143,7 @@ export default function StudentChat() {
           userId={userId}
           dmUsers={dmUsers}
           unreadCounts={unreadCounts}
+          initialTab={navState?.tab === 'direct' ? 'direct' : undefined}
         />
       </div>
 

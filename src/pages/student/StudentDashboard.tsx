@@ -379,7 +379,7 @@ export default function StudentDashboard() {
                 "Ottima analisi su EUR/USD ieri! L'entry era precisa. Continua così 💪"
               </p>
               <button
-                onClick={() => navigate('/student/chat')}
+                onClick={() => navigate('/student/chat', { state: { tab: 'direct' } })}
                 className="w-full py-2.5 rounded-2xl text-sm font-semibold"
                 style={{ background: 'rgba(90,154,177,0.10)', border: '1px solid rgba(90,154,177,0.18)', color: 'var(--ist-accent-text)' }}
               >

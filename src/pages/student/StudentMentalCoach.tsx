@@ -1,6 +1,7 @@
+import { useNavigate } from 'react-router-dom'
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
-import { CheckSquare, Square, ExternalLink } from 'lucide-react'
+import { CheckSquare, Square, ExternalLink, MessageCircle } from 'lucide-react'
 
 const MATERIALS = [
   { title: 'Mindset del Trader — Guida PDF', type: 'PDF', icon: '📄', done: true },
@@ -17,9 +18,24 @@ const TASKS = [
 ]
 
 export default function StudentMentalCoach() {
+  const navigate = useNavigate()
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      <PageHeader title="Area Mental Coach" subtitle="Sofia Verdi — Mental Coach IST" />
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <PageHeader title="Area Mental Coach" subtitle="Sofia Verdi — Mental Coach IST" />
+        <button
+          onClick={() => navigate('/student/chat', { state: { tab: 'direct' } })}
+          className="flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-semibold flex-shrink-0 transition-all hover:-translate-y-0.5 active:scale-[0.97]"
+          style={{
+            background: 'linear-gradient(135deg, #5A9AB1, #286680)',
+            color: 'white',
+            boxShadow: '0 4px 14px rgba(40,102,128,0.28)',
+          }}
+        >
+          <MessageCircle size={15} strokeWidth={2} />
+          Scrivi
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         {[
