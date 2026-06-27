@@ -115,6 +115,11 @@
     margin: 0;
   }
 
+  /* Prevent iOS Safari auto-zoom on input focus */
+  input, textarea, select {
+    font-size: max(16px, 1em);
+  }
+
   ::selection {
     background: rgba(124, 187, 208, 0.32);
     color: #ffffff;
