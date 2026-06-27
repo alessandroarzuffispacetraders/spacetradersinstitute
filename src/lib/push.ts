@@ -31,7 +31,7 @@ export async function subscribeToPush(userId: string): Promise<boolean> {
 
     const { error } = await supabase
       .from('push_subscriptions')
-      .upsert({ user_id: userId, endpoint, keys }, { onConflict: 'endpoint' })
+      .upsert({ user_id: userId, endpoint, keys }, { onConflict: 'user_id,endpoint' })
 
     return !error
   } catch (err) {
