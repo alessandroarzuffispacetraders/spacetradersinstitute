@@ -28,6 +28,7 @@ const STUDENT_NAV: NavItem[] = [
 const COACH_NAV: NavItem[] = [
   { label: 'Dashboard', shortLabel: 'Home', path: '/coach', icon: 'LayoutDashboard' },
   { label: 'Studenti', path: '/coach/studenti', icon: 'Users' },
+  { label: 'Chat', path: '/coach/chat', icon: 'MessageCircle' },
   { label: 'Review', path: '/coach/review', icon: 'ClipboardList' },
   { label: 'Segnalazioni', path: '/coach/segnalazioni', icon: 'AlertTriangle' },
 ]
@@ -35,9 +36,9 @@ const COACH_NAV: NavItem[] = [
 const MENTAL_COACH_NAV: NavItem[] = [
   { label: 'Dashboard', shortLabel: 'Home', path: '/mental-coach', icon: 'LayoutDashboard' },
   { label: 'Studenti', path: '/mental-coach/studenti', icon: 'Users' },
+  { label: 'Chat', path: '/mental-coach/chat', icon: 'MessageCircle' },
   { label: 'Sessioni', path: '/mental-coach/sessioni', icon: 'CalendarDays' },
   { label: 'Note', path: '/mental-coach/note', icon: 'FileText' },
-  { label: 'Chat', path: '/mental-coach/chat', icon: 'MessageCircle' },
 ]
 
 const ADMIN_NAV: NavItem[] = [

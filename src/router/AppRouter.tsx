@@ -10,12 +10,14 @@ import StudentCorsi from '../pages/student/StudentCorsi'
 import StudentCategoryDetail from '../pages/student/StudentCategoryDetail'
 import StudentLezione from '../pages/student/StudentLezione'
 import StudentDiario from '../pages/student/StudentDiario'
-import StudentChat from '../pages/student/StudentChat'
 import StudentMentalCoach from '../pages/student/StudentMentalCoach'
 import StudentLive from '../pages/student/StudentLive'
 import StudentLivePlayer from '../pages/student/StudentLivePlayer'
 import StudentProgressi from '../pages/student/StudentProgressi'
 import StudentJournal from '../pages/student/StudentJournal'
+
+// Shared
+import ChatPage from '../pages/shared/ChatPage'
 
 // Coach pages
 import CoachDashboard from '../pages/coach/CoachDashboard'
@@ -28,7 +30,6 @@ import MentalCoachDashboard from '../pages/mental-coach/MentalCoachDashboard'
 import MentalCoachStudenti from '../pages/mental-coach/MentalCoachStudenti'
 import MentalCoachSessioni from '../pages/mental-coach/MentalCoachSessioni'
 import MentalCoachNote from '../pages/mental-coach/MentalCoachNote'
-import MentalCoachChat from '../pages/mental-coach/MentalCoachChat'
 
 // Admin pages
 import AdminDashboard from '../pages/admin/AdminDashboard'
@@ -59,7 +60,7 @@ function PrivateRoutes() {
         <Route path="/student/corsi/lezione/:lessonId" element={<StudentLezione />} />
         <Route path="/student/corsi/:categoryId" element={<StudentCategoryDetail />} />
         <Route path="/student/diario" element={<StudentDiario />} />
-        <Route path="/student/chat" element={<StudentChat />} />
+        <Route path="/student/chat" element={<ChatPage />} />
         <Route path="/student/mental-coach" element={<StudentMentalCoach />} />
         <Route path="/student/live" element={<StudentLive />} />
         <Route path="/student/live/:liveId" element={<StudentLivePlayer />} />
@@ -71,13 +72,14 @@ function PrivateRoutes() {
         <Route path="/coach/studenti" element={<CoachStudenti />} />
         <Route path="/coach/review" element={<CoachReview />} />
         <Route path="/coach/segnalazioni" element={<CoachSegnalazioni />} />
+        <Route path="/coach/chat" element={<ChatPage />} />
 
         {/* Mental Coach */}
         <Route path="/mental-coach" element={<MentalCoachDashboard />} />
         <Route path="/mental-coach/studenti" element={<MentalCoachStudenti />} />
         <Route path="/mental-coach/sessioni" element={<MentalCoachSessioni />} />
         <Route path="/mental-coach/note" element={<MentalCoachNote />} />
-        <Route path="/mental-coach/chat" element={<MentalCoachChat />} />
+        <Route path="/mental-coach/chat" element={<ChatPage />} />
 
         {/* Admin */}
         <Route path="/admin" element={<AdminDashboard />} />

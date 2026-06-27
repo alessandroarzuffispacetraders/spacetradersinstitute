@@ -1233,7 +1233,7 @@ function BachecaArea({
 
 // ─── main component ───────────────────────────────────────────────────────────
 
-export default function StudentChat() {
+export default function ChatPage() {
   const { user } = useAuth()
   const { setHideBottomNav } = useUI()
   const location = useLocation()
