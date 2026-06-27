@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import {
   Hash, Megaphone, ChevronDown, ChevronRight,
-  Send, ArrowLeft, Search, Pin, Check, Users, MessageCircle, UsersRound, Loader2,
+  Send, ArrowLeft, Search, Pin, Check, Users, MessageCircle, UsersRound, Loader2, X,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
@@ -76,6 +76,76 @@ function UnreadBadge({ count }: { count: number }) {
     >
       {count}
     </span>
+  )
+}
+
+// ─── user card popup ─────────────────────────────────────────────────────────
+
+interface UserCardProps {
+  userId: string
+  name: string
+  role: MemberRole
+  canDm: boolean
+  onStartDm: () => void
+  onClose: () => void
+}
+
+function UserCard({ name, role, canDm, onStartDm, onClose }: UserCardProps) {
+  return (
+    <>
+      <div className="fixed inset-0 z-[200]" onClick={onClose} />
+      <div
+        className="fixed z-[201] left-1/2 bottom-32 -translate-x-1/2 w-[220px] rounded-3xl p-4 flex flex-col gap-3"
+        style={{
+          background: 'var(--ist-nav-bg)',
+          border: '1px solid var(--ist-nav-border)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          boxShadow: '0 16px 48px rgba(0,0,0,0.40)',
+        }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold"
+              style={{ background: DM_AVATAR_GRADIENT[role] ?? DM_AVATAR_GRADIENT.student, color: 'white' }}
+            >
+              {name.charAt(0)}
+            </div>
+            <div>
+              <p className="text-sm font-semibold leading-tight" style={{ color: 'var(--ist-text)' }}>{name}</p>
+              <span
+                className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                style={{ background: ROLE_COLOR[role], color: ROLE_TEXT[role] }}
+              >
+                {ROLE_LABEL[role]}
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+            style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+          >
+            <X size={12} strokeWidth={2.5} />
+          </button>
+        </div>
+        {canDm && (
+          <button
+            onClick={() => { onStartDm(); onClose() }}
+            className="w-full py-2 rounded-2xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-[0.97]"
+            style={{
+              background: 'linear-gradient(135deg, #5A9AB1, #286680)',
+              color: 'white',
+              boxShadow: '0 4px 14px rgba(40,102,128,0.30)',
+            }}
+          >
+            <MessageCircle size={13} strokeWidth={2} />
+            Messaggio privato
+          </button>
+        )}
+      </div>
+    </>
   )
 }
 
@@ -241,8 +311,11 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, dmUsers, un
               <p className="text-xs px-3 py-4 text-center" style={{ color: 'var(--ist-text-dim)' }}>
                 Nessuna chat privata
               </p>
-            ) : (
-              filteredDms.map(u => {
+            ) : (() => {
+              const pinned = filteredDms.filter(u => u.role === 'coach' || u.role === 'mental_coach')
+              const others = filteredDms.filter(u => u.role !== 'coach' && u.role !== 'mental_coach')
+
+              const renderUser = (u: DmUser) => {
                 const chId = dmChannelId(userId, u.id)
                 const dmUnread = unreadCounts[chId] ?? 0
                 return (
@@ -273,8 +346,34 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, dmUsers, un
                     )}
                   </button>
                 )
-              })
-            )}
+              }
+
+              return (
+                <>
+                  {pinned.length > 0 && (
+                    <>
+                      <p className="text-[10px] font-bold uppercase tracking-wider px-2 pt-2 pb-1" style={{ color: 'var(--ist-text-muted)' }}>
+                        Il tuo team
+                      </p>
+                      {pinned.map(renderUser)}
+                      {others.length > 0 && (
+                        <div className="my-2 mx-2 h-px" style={{ background: 'var(--ist-w8)' }} />
+                      )}
+                    </>
+                  )}
+                  {others.length > 0 && (
+                    <>
+                      {pinned.length > 0 && (
+                        <p className="text-[10px] font-bold uppercase tracking-wider px-2 pb-1" style={{ color: 'var(--ist-text-muted)' }}>
+                          Altri
+                        </p>
+                      )}
+                      {others.map(renderUser)}
+                    </>
+                  )}
+                </>
+              )
+            })()}
           </div>
         )}
 
@@ -334,12 +433,15 @@ interface ChatAreaProps {
   userRole: MemberRole
   userId: string
   userName: string
+  dmUsers: DmUser[]
+  onStartDm: (targetUserId: string) => void
   onBack?: () => void
   isMobile?: boolean
 }
 
-function ChatArea({ channel, userRole, userId, userName, onBack, isMobile }: ChatAreaProps) {
+function ChatArea({ channel, userRole, userId, userName, dmUsers, onStartDm, onBack, isMobile }: ChatAreaProps) {
   const [input, setInput] = useState('')
+  const [userCard, setUserCard] = useState<{ userId: string; name: string; role: MemberRole } | null>(null)
   const { messages, loading, sendMessage: sendToDb } = useChatMessages(channel.id)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -378,6 +480,7 @@ function ChatArea({ channel, userRole, userId, userName, onBack, isMobile }: Cha
 
   interface MessageGroup {
     author: string
+    authorId: string
     authorRole: MemberRole
     own: boolean
     messages: { id: string; text: string }[]
@@ -398,6 +501,7 @@ function ChatArea({ channel, userRole, userId, userName, onBack, isMobile }: Cha
     } else {
       groups.push({
         author: msg.author_name,
+        authorId: msg.user_id,
         authorRole: msg.author_role,
         own,
         messages: [{ id: msg.id, text: msg.content }],
@@ -411,6 +515,16 @@ function ChatArea({ channel, userRole, userId, userName, onBack, isMobile }: Cha
 
   return (
     <div className="flex flex-col h-full">
+      {userCard && (
+        <UserCard
+          userId={userCard.userId}
+          name={userCard.name}
+          role={userCard.role}
+          canDm={dmUsers.some(u => u.id === userCard.userId)}
+          onStartDm={() => onStartDm(userCard.userId)}
+          onClose={() => setUserCard(null)}
+        />
+      )}
       {/* Header */}
       <div
         className="flex items-center gap-3 px-4 py-3 flex-shrink-0"
@@ -510,15 +624,16 @@ function ChatArea({ channel, userRole, userId, userName, onBack, isMobile }: Cha
               )}
 
               <div className={`flex gap-2.5 mt-2 ${group.own ? 'flex-row-reverse' : ''}`}>
-                <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 mt-0.5"
+                <button
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 mt-0.5 transition-opacity hover:opacity-80 active:opacity-60"
                   style={group.own
                     ? { background: 'linear-gradient(135deg, #5A9AB1, #286680)', color: 'white' }
                     : { background: DM_AVATAR_GRADIENT[group.authorRole] ?? 'var(--ist-w12)', color: 'white' }
                   }
+                  onClick={() => !group.own && setUserCard({ userId: group.authorId, name: group.author, role: group.authorRole })}
                 >
                   {group.author.charAt(0)}
-                </div>
+                </button>
 
                 <div className={`flex flex-col gap-0.5 min-w-0 max-w-[72%] ${group.own ? 'items-end' : 'items-start'}`}>
                   <div className={`flex items-baseline gap-2 ${group.own ? 'flex-row-reverse' : ''}`}>
@@ -1030,6 +1145,11 @@ export default function StudentChat() {
             userRole={userRole}
             userId={userId}
             userName={userName}
+            dmUsers={dmUsers}
+            onStartDm={(targetId) => {
+              const ch = dmChannelId(userId, targetId)
+              selectChannel(ch)
+            }}
             onBack={goBack}
             isMobile={mobileView === 'chat'}
           />
