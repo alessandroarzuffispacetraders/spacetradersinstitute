@@ -1381,7 +1381,7 @@ export default function StudentChat() {
           userId={userCard.userId}
           name={userCard.name}
           role={userCard.role}
-          canDm={dmUsers.some(u => u.id === userCard.userId)}
+          canDm={userCard.userId !== userId}
           onStartDm={() => { const ch = dmChannelId(userId, userCard.userId); selectChannel(ch) }}
           onClose={() => setUserCard(null)}
         />

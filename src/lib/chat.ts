@@ -350,25 +350,22 @@ export function useUnreadCounts(
   return { counts, markRead }
 }
 
-export function useDmUsers(currentUserId: string, currentRole: UserRole) {
+export function useDmUsers(currentUserId: string, _currentRole: UserRole) {
   const [users, setUsers] = useState<DmUser[]>([])
 
   useEffect(() => {
     if (!currentUserId) return
 
-    let query = supabase
+    // Tutti possono scrivere a tutti: nessun filtro per ruolo.
+    supabase
       .from('profiles')
       .select('id, name, role')
       .neq('id', currentUserId)
-
-    if (currentRole === 'student') {
-      query = query.in('role', ['coach', 'mental_coach', 'admin'])
-    }
-
-    query.order('role').then(({ data }) => {
-      if (data) setUsers(data as DmUser[])
-    })
-  }, [currentUserId, currentRole])
+      .order('role')
+      .then(({ data }) => {
+        if (data) setUsers(data as DmUser[])
+      })
+  }, [currentUserId])
 
   return users
 }
