@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import {
   Hash, Megaphone, ChevronDown, ChevronRight,
   Send, ArrowLeft, Search, Pin, Check, Users, MessageCircle, UsersRound, Loader2,
@@ -9,7 +9,7 @@ import {
   CHANNELS, BACHECA_POSTS,
   Channel, BachecaPost, MemberRole,
 } from '../../data/chatData'
-import { useChatMessages, useDmUsers, dmChannelId, DmUser } from '../../lib/chat'
+import { useChatMessages, useDmUsers, useUnreadCounts, dmChannelId, DmUser } from '../../lib/chat'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -81,16 +81,14 @@ function UnreadBadge({ count }: { count: number }) {
 
 // ─── channel row (groups) ────────────────────────────────────────────────────
 
-function ChannelRow({ channel, active, onSelect }: { channel: Channel; active: boolean; onSelect: (id: string) => void }) {
+function ChannelRow({ channel, active, unread, onSelect }: { channel: Channel; active: boolean; unread: number; onSelect: (id: string) => void }) {
   return (
     <button
       onClick={() => onSelect(channel.id)}
       className="w-full flex items-center gap-2 px-2 py-2 rounded-xl text-left transition-all duration-100"
       style={active
         ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' }
-        : {
-          color: (channel.unread ?? 0) > 0 ? 'var(--ist-text)' : 'var(--ist-text-muted)',
-        }
+        : { color: unread > 0 ? 'var(--ist-text)' : 'var(--ist-text-muted)' }
       }
     >
       <span className="flex-shrink-0 opacity-70" style={{ color: active ? 'var(--ist-accent-text)' : 'inherit' }}>
@@ -99,8 +97,8 @@ function ChannelRow({ channel, active, onSelect }: { channel: Channel; active: b
       <span className="text-sm truncate flex-1 font-medium">
         {channel.name}
       </span>
-      {(channel.unread ?? 0) > 0 && !active && (
-        <UnreadBadge count={channel.unread!} />
+      {unread > 0 && !active && (
+        <UnreadBadge count={unread} />
       )}
     </button>
   )
@@ -115,9 +113,10 @@ interface SidebarProps {
   userRole: MemberRole
   userId: string
   dmUsers: DmUser[]
+  unreadCounts: Record<string, number>
 }
 
-function ChannelSidebar({ activeChannel, onSelect, userRole, userId, dmUsers }: SidebarProps) {
+function ChannelSidebar({ activeChannel, onSelect, userRole, userId, dmUsers, unreadCounts }: SidebarProps) {
   const [tab, setTab] = useState<'groups' | 'direct'>('groups')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [search, setSearch] = useState('')
@@ -143,8 +142,8 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, dmUsers }: 
     setCollapsed(p => ({ ...p, [cat]: !p[cat] }))
   }
 
-  const groupUnread = groupChannels.reduce((n, ch) => n + (ch.unread ?? 0), 0)
-  const directUnread = 0
+  const groupUnread = groupChannels.reduce((n, ch) => n + (unreadCounts[ch.id] ?? 0), 0)
+  const directUnread = dmUsers.reduce((n, u) => n + (unreadCounts[dmChannelId(userId, u.id)] ?? 0), 0)
 
   return (
     <div
@@ -245,6 +244,7 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, dmUsers }: 
             ) : (
               filteredDms.map(u => {
                 const chId = dmChannelId(userId, u.id)
+                const dmUnread = unreadCounts[chId] ?? 0
                 return (
                   <button
                     key={u.id}
@@ -268,6 +268,9 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, dmUsers }: 
                         {ROLE_LABEL[u.role]}
                       </p>
                     </div>
+                    {dmUnread > 0 && activeChannel !== chId && (
+                      <UnreadBadge count={dmUnread} />
+                    )}
                   </button>
                 )
               })
@@ -280,7 +283,7 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, dmUsers }: 
           filteredGroups ? (
             <div className="px-1 py-1">
               {filteredGroups.map(ch => (
-                <ChannelRow key={ch.id} channel={ch} active={activeChannel === ch.id} onSelect={onSelect} />
+                <ChannelRow key={ch.id} channel={ch} active={activeChannel === ch.id} unread={unreadCounts[ch.id] ?? 0} onSelect={onSelect} />
               ))}
               {filteredGroups.length === 0 && (
                 <p className="text-xs px-3 py-4 text-center" style={{ color: 'var(--ist-text-dim)' }}>
@@ -310,7 +313,7 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, dmUsers }: 
                   {!isCollapsed && (
                     <div className="px-1">
                       {channels.map(ch => (
-                        <ChannelRow key={ch.id} channel={ch} active={activeChannel === ch.id} onSelect={onSelect} />
+                        <ChannelRow key={ch.id} channel={ch} active={activeChannel === ch.id} unread={unreadCounts[ch.id] ?? 0} onSelect={onSelect} />
                       ))}
                     </div>
                   )}
@@ -941,16 +944,27 @@ export default function StudentChat() {
   const [activeChannelId, setActiveChannelId] = useState(firstGroup?.id ?? 'generale')
   const [mobileView, setMobileView] = useState<'channels' | 'chat'>('channels')
 
+  // Lista di tutti i channel ID noti (gruppi + DM)
+  const allChannelIds = useMemo(() => [
+    ...visibleChannels.map(ch => ch.id),
+    ...dmUsers.map(u => dmChannelId(userId, u.id)),
+  ], [visibleChannels.map(ch => ch.id).join(','), dmUsers.map(u => u.id).join(',')])
+
+  const { counts: unreadCounts, markRead } = useUnreadCounts(userId, allChannelIds, activeChannelId)
+
   useEffect(() => {
     setHideBottomNav(mobileView === 'chat')
     return () => setHideBottomNav(false)
   }, [mobileView, setHideBottomNav])
 
-  // Il canale attivo può essere un canale gruppo (da CHANNELS) o una DM (generata da userId)
+  // Segna come letto il canale iniziale al mount
+  useEffect(() => {
+    if (userId && activeChannelId) markRead(activeChannelId)
+  }, [userId])
+
   const activeGroupChannel = CHANNELS.find(ch => ch.id === activeChannelId)
   const isDmChannel = activeChannelId.startsWith('dm_')
 
-  // Costruisce un oggetto canale virtuale per le DM
   const activeDmUser = isDmChannel
     ? dmUsers.find(u => dmChannelId(userId, u.id) === activeChannelId)
     : null
@@ -975,6 +989,7 @@ export default function StudentChat() {
   const selectChannel = (id: string) => {
     setActiveChannelId(id)
     setMobileView('chat')
+    markRead(id)
   }
 
   const goBack = () => setMobileView('channels')
@@ -992,6 +1007,7 @@ export default function StudentChat() {
           userRole={userRole}
           userId={userId}
           dmUsers={dmUsers}
+          unreadCounts={unreadCounts}
         />
       </div>
 

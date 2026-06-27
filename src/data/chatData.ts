@@ -55,7 +55,6 @@ export const CHANNELS: Channel[] = [
     categoryIcon: '📢',
     roles: ['student', 'coach', 'mental_coach', 'admin'],
     canPost: ['admin'],
-    unread: 2,
     pinned: true,
   },
   {
@@ -81,7 +80,6 @@ export const CHANNELS: Channel[] = [
     categoryIcon: '💬',
     roles: ['student', 'coach', 'mental_coach', 'admin'],
     canPost: ['student', 'coach', 'mental_coach', 'admin'],
-    unread: 4,
   },
   {
     id: 'trading-ideas',
@@ -106,7 +104,6 @@ export const CHANNELS: Channel[] = [
     categoryIcon: '🎯',
     roles: ['student', 'coach', 'admin'],
     canPost: ['student', 'coach', 'admin'],
-    unread: 1,
   },
 
   // Direct messages — auto-generated with all staff
@@ -120,7 +117,6 @@ export const CHANNELS: Channel[] = [
     categoryIcon: '',
     roles: ['student', 'coach', 'admin'],
     canPost: ['student', 'coach', 'admin'],
-    unread: 3,
     dmWith: { name: 'Laura Bianchi', role: 'coach', online: true },
   },
   {

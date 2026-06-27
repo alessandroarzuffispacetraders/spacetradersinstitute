@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase } from './supabase'
 import { UserRole } from '../types'
 import { triggerPushNotifications } from './push'
@@ -36,7 +36,6 @@ export function useChatMessages(channelId: string | null) {
     setLoading(true)
     setMessages([])
 
-    // Carica messaggi iniziali
     supabase
       .from('messages')
       .select('*')
@@ -48,7 +47,6 @@ export function useChatMessages(channelId: string | null) {
         setLoading(false)
       })
 
-    // Sottoscrive al Realtime
     const sub = supabase
       .channel(`chat:${channelId}`)
       .on(
@@ -57,9 +55,7 @@ export function useChatMessages(channelId: string | null) {
         (payload) => {
           const newMsg = payload.new as DbMessage
           setMessages(prev => {
-            // Evita duplicati: il messaggio potrebbe essere già stato aggiunto in modo ottimistico
             if (prev.some(m => m.id === newMsg.id)) return prev
-            // Sostituisce eventuali messaggi temporanei con stesso contenuto/autore
             const withoutTemp = prev.filter(m => !(
               m.id.startsWith('temp_') &&
               m.user_id === newMsg.user_id &&
@@ -86,7 +82,6 @@ export function useChatMessages(channelId: string | null) {
   ) => {
     if (!channelId || !content.trim()) return
 
-    // Ottimistic update — messaggio visibile istantaneamente
     const tempId = `temp_${Date.now()}`
     const optimistic: DbMessage = {
       id: tempId,
@@ -101,7 +96,6 @@ export function useChatMessages(channelId: string | null) {
 
     const trimmed = content.trim()
 
-    // Insert in background — nessun await, non blocca l'UI
     supabase
       .from('messages')
       .insert({
@@ -113,11 +107,9 @@ export function useChatMessages(channelId: string | null) {
       })
       .then(({ error }) => {
         if (error) {
-          // Rollback ottimistico se l'insert fallisce
           setMessages(prev => prev.filter(m => m.id !== tempId))
           return
         }
-        // Invia push notifications agli altri utenti
         triggerPushNotifications({ channel_id: channelId, user_id: userId, author_name: authorName, content: trimmed })
       })
   }
@@ -125,7 +117,101 @@ export function useChatMessages(channelId: string | null) {
   return { messages, loading, sendMessage }
 }
 
-// Hook: carica tutti gli utenti con cui si può fare DM (non studenti, o tutti tranne se stessi)
+// Hook: traccia i messaggi non letti per canale e permette di azzerarli
+export function useUnreadCounts(
+  userId: string,
+  channelIds: string[],
+  activeChannelId: string | null
+) {
+  const [counts, setCounts] = useState<Record<string, number>>({})
+  const channelIdsKey = channelIds.join(',')
+  const activeRef = useRef(activeChannelId)
+
+  useEffect(() => {
+    activeRef.current = activeChannelId
+  }, [activeChannelId])
+
+  // Carica i contatori iniziali
+  useEffect(() => {
+    if (!userId || channelIds.length === 0) return
+
+    async function load() {
+      const { data: reads } = await supabase
+        .from('channel_reads')
+        .select('channel_id, last_read_at')
+        .eq('user_id', userId)
+
+      const readMap: Record<string, string> = {}
+      for (const r of reads ?? []) readMap[r.channel_id] = r.last_read_at
+
+      // Baseline: 30 giorni fa per canali mai visitati
+      const baseline = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+
+      const results = await Promise.all(
+        channelIds.map(async (chId) => {
+          const { count } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('channel_id', chId)
+            .neq('user_id', userId)
+            .gt('created_at', readMap[chId] ?? baseline)
+          return [chId, count ?? 0] as const
+        })
+      )
+
+      setCounts(Object.fromEntries(results))
+    }
+
+    load()
+  }, [userId, channelIdsKey])
+
+  // Realtime: aggiorna i contatori in tempo reale
+  useEffect(() => {
+    if (!userId) return
+
+    const sub = supabase
+      .channel('unread-tracker')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        async (payload) => {
+          const msg = payload.new as DbMessage
+          if (msg.user_id === userId) return
+          if (!channelIds.includes(msg.channel_id)) return
+
+          if (msg.channel_id === activeRef.current) {
+            // L'utente sta guardando questo canale: segna come letto
+            await supabase
+              .from('channel_reads')
+              .upsert(
+                { user_id: userId, channel_id: msg.channel_id, last_read_at: new Date().toISOString() },
+                { onConflict: 'user_id,channel_id' }
+              )
+          } else {
+            setCounts(prev => ({ ...prev, [msg.channel_id]: (prev[msg.channel_id] ?? 0) + 1 }))
+          }
+        }
+      )
+      .subscribe()
+
+    return () => { sub.unsubscribe() }
+  }, [userId, channelIdsKey])
+
+  const markRead = useCallback(async (channelId: string) => {
+    if (!userId || !channelId) return
+    setCounts(prev => ({ ...prev, [channelId]: 0 }))
+    await supabase
+      .from('channel_reads')
+      .upsert(
+        { user_id: userId, channel_id: channelId, last_read_at: new Date().toISOString() },
+        { onConflict: 'user_id,channel_id' }
+      )
+  }, [userId])
+
+  return { counts, markRead }
+}
+
+// Hook: carica tutti gli utenti con cui si può fare DM
 export function useDmUsers(currentUserId: string, currentRole: UserRole) {
   const [users, setUsers] = useState<DmUser[]>([])
 
@@ -137,7 +223,6 @@ export function useDmUsers(currentUserId: string, currentRole: UserRole) {
       .select('id, name, role')
       .neq('id', currentUserId)
 
-    // Gli studenti vedono solo staff
     if (currentRole === 'student') {
       query = query.in('role', ['coach', 'mental_coach', 'admin'])
     }
