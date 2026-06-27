@@ -48,7 +48,13 @@ export default function AppPrompts() {
 
   // Per iOS e fallback notifiche (dopo 4s dall'apertura)
   useEffect(() => {
-    if (isStandalone()) return
+    if (isStandalone()) {
+      // App aperta dall'icona home: mostra prompt notifiche se non ancora abilitato
+      const t = setTimeout(() => {
+        if (shouldShowNotification()) show('notification')
+      }, 3000)
+      return () => clearTimeout(t)
+    }
     const t = setTimeout(() => {
       if (localStorage.getItem(LS_INSTALL_DISMISSED)) {
         if (shouldShowNotification()) show('notification')
