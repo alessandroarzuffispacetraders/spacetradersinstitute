@@ -68,6 +68,23 @@ Deno.serve(async (req) => {
 
     const sent = results.filter((r) => r.status === 'fulfilled').length
 
+    // Rimuovi gli endpoint morti (410 Gone / 404) così non restano duplicati
+    const dead = results
+      .map((r, i) => (r.status === 'rejected' && [404, 410].includes((r.reason as { statusCode?: number })?.statusCode ?? 0) ? subscriptions[i].endpoint : null))
+      .filter((e): e is string => e !== null)
+
+    if (dead.length > 0) {
+      await Promise.all(dead.map((endpoint) =>
+        fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, {
+          method: 'DELETE',
+          headers: {
+            apikey: SUPABASE_SERVICE_KEY,
+            Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+          },
+        }).catch(() => {/* ignora */})
+      ))
+    }
+
     return new Response(JSON.stringify({ sent, total: subscriptions.length }), {
       headers: { ...CORS, 'Content-Type': 'application/json' },
     })
