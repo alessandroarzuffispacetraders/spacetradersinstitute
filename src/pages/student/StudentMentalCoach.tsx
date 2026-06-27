@@ -2,6 +2,17 @@ import { useNavigate } from 'react-router-dom'
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
 import { CheckSquare, Square, ExternalLink, MessageCircle } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
+import { useStudentSessions } from '../../lib/coaching'
+
+const SESSION_SUBLABELS: Record<number, string> = {
+  1: 'Valutazione iniziale',
+  2: 'Follow-up e strategie',
+}
+
+function formatSessionDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })
+}
 
 const MATERIALS = [
   { title: 'Mindset del Trader — Guida PDF', type: 'PDF', icon: '📄', done: true },
@@ -19,6 +30,8 @@ const TASKS = [
 
 export default function StudentMentalCoach() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const { sessions } = useStudentSessions(user?.id ?? '')
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="flex items-start justify-between gap-4 mb-6">
@@ -38,37 +51,43 @@ export default function StudentMentalCoach() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-        {[
-          { label: 'Sessione 1', sublabel: 'Valutazione iniziale', done: true, date: '15 Giu 2024' },
-          { label: 'Sessione 2', sublabel: 'Follow-up e strategie', done: false, date: 'Da programmare' },
-        ].map((s, i) => (
-          <Card key={i} className="p-5">
-            <div className="flex items-center gap-3 mb-3">
-              <div
-                className="w-10 h-10 rounded-2xl flex items-center justify-center text-lg"
-                style={s.done
-                  ? { background: 'rgba(70,211,154,0.14)', border: '1px solid rgba(70,211,154,0.24)' }
-                  : { background: 'var(--ist-w6)', border: '1px solid var(--ist-w10)' }
-                }
-              >
-                📅
+        {[1, 2].map((num) => {
+          const sess = sessions.find(s => s.session_number === num)
+          const done = sess?.status === 'completed'
+          const dateText = done && sess?.completed_at
+            ? `Completata · ${formatSessionDate(sess.completed_at)}`
+            : sess?.scheduled_at
+              ? `Programmata · ${formatSessionDate(sess.scheduled_at)}`
+              : 'Da programmare'
+          return (
+            <Card key={num} className="p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div
+                  className="w-10 h-10 rounded-2xl flex items-center justify-center text-lg"
+                  style={done
+                    ? { background: 'rgba(70,211,154,0.14)', border: '1px solid rgba(70,211,154,0.24)' }
+                    : { background: 'var(--ist-w6)', border: '1px solid var(--ist-w10)' }
+                  }
+                >
+                  📅
+                </div>
+                <div>
+                  <p className="font-semibold text-white">Sessione {num}</p>
+                  <p className="text-xs" style={{ color: '#8495A3' }}>{SESSION_SUBLABELS[num]}</p>
+                </div>
               </div>
-              <div>
-                <p className="font-semibold text-white">{s.label}</p>
-                <p className="text-xs" style={{ color: '#8495A3' }}>{s.sublabel}</p>
+              <div className="flex items-center gap-2">
+                <div
+                  className={`w-2 h-2 rounded-full ${done ? '' : 'animate-pulse'}`}
+                  style={{ background: done ? '#46D39A' : '#5A9AB1' }}
+                />
+                <span className="text-sm" style={{ color: done ? '#46D39A' : '#7CBBD0' }}>
+                  {dateText}
+                </span>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-2 h-2 rounded-full ${s.done ? '' : 'animate-pulse'}`}
-                style={{ background: s.done ? '#46D39A' : '#5A9AB1' }}
-              />
-              <span className="text-sm" style={{ color: s.done ? '#46D39A' : '#7CBBD0' }}>
-                {s.done ? `Completata · ${s.date}` : s.date}
-              </span>
-            </div>
-          </Card>
-        ))}
+            </Card>
+          )
+        })}
       </div>
 
       <Card className="p-5 mb-6">
