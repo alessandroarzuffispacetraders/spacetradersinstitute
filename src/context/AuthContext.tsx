@@ -36,6 +36,8 @@ async function fetchProfile(userId: string): Promise<User | null> {
     status: data.status ?? undefined,
     phase: data.phase ?? undefined,
     permissions: data.permissions ?? undefined,
+    assignedCoachId: data.assigned_coach_id ?? null,
+    assignedMentalCoachId: data.assigned_mental_coach_id ?? null,
   }
 }
 

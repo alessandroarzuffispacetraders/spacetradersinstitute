@@ -13,6 +13,8 @@ interface Profile {
   status: StudentStatus | null
   phase: StudentPhase | null
   permissions: UserPermissions | null
+  assigned_coach_id: string | null
+  assigned_mental_coach_id: string | null
   created_at: string
 }
 
@@ -73,8 +75,10 @@ function PermToggle({ icon, label, description, checked, onChange }: {
 
 // ── Edit Modal ──────────────────────────────────────────────────────────────
 
-function EditModal({ user, onClose, onSave }: {
+function EditModal({ user, coaches, mentalCoaches, onClose, onSave }: {
   user: Profile
+  coaches: Profile[]
+  mentalCoaches: Profile[]
   onClose: () => void
   onSave: (updated: Profile) => void
 }) {
@@ -83,6 +87,8 @@ function EditModal({ user, onClose, onSave }: {
   const [status, setStatus] = useState<StudentStatus | null>(user.status)
   const [phase, setPhase] = useState<StudentPhase | null>(user.phase)
   const [permissions, setPermissions] = useState<UserPermissions>(user.permissions ?? {})
+  const [assignedCoach, setAssignedCoach] = useState<string | null>(user.assigned_coach_id)
+  const [assignedMental, setAssignedMental] = useState<string | null>(user.assigned_mental_coach_id)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -101,17 +107,20 @@ function EditModal({ user, onClose, onSave }: {
     setError(null)
 
     const allRoles = Array.from(new Set([role, ...extraRoles]))
+    const isStudent = role === 'student'
 
     const { error } = await supabase
       .from('profiles')
       .update({
         role,
         roles: allRoles.length > 1 ? allRoles : null,
-        status: role === 'student' ? status : null,
-        phase: role === 'student' ? phase : null,
+        status: isStudent ? status : null,
+        phase: isStudent ? phase : null,
         permissions: (role === 'coach' || role === 'mental_coach' || allRoles.includes('coach') || allRoles.includes('mental_coach'))
           ? permissions
           : null,
+        assigned_coach_id: isStudent ? assignedCoach : null,
+        assigned_mental_coach_id: isStudent ? assignedMental : null,
       })
       .eq('id', user.id)
 
@@ -121,7 +130,11 @@ function EditModal({ user, onClose, onSave }: {
       return
     }
 
-    onSave({ ...user, role, roles: allRoles.length > 1 ? allRoles : null, status, phase, permissions })
+    onSave({
+      ...user, role, roles: allRoles.length > 1 ? allRoles : null, status, phase, permissions,
+      assigned_coach_id: isStudent ? assignedCoach : null,
+      assigned_mental_coach_id: isStudent ? assignedMental : null,
+    })
     onClose()
   }
 
@@ -201,6 +214,26 @@ function EditModal({ user, onClose, onSave }: {
               <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--ist-text-dim)' }}>Fase</label>
               <select value={phase ?? 'onboarding'} onChange={e => setPhase(e.target.value as StudentPhase)} style={selectStyle}>
                 {ALL_PHASES.map(p => <option key={p} value={p} style={{ textTransform: 'capitalize' }}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* Assegnazione coach / mental coach — solo studenti */}
+        {role === 'student' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--ist-text-dim)' }}>Coach assegnato</label>
+              <select value={assignedCoach ?? ''} onChange={e => setAssignedCoach(e.target.value || null)} style={selectStyle}>
+                <option value="">— Nessuno —</option>
+                {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--ist-text-dim)' }}>Mental coach assegnato</label>
+              <select value={assignedMental ?? ''} onChange={e => setAssignedMental(e.target.value || null)} style={selectStyle}>
+                <option value="">— Nessuno —</option>
+                {mentalCoaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
           </div>
@@ -364,6 +397,10 @@ export default function AdminUtenti() {
       })
   }, [])
 
+  const hasRole = (u: Profile, r: UserRole) => u.role === r || (u.roles ?? []).includes(r)
+  const coaches = users.filter(u => hasRole(u, 'coach'))
+  const mentalCoaches = users.filter(u => hasRole(u, 'mental_coach'))
+
   const filtered = users.filter(u => {
     const matchSearch = u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
     const matchRole = roleFilter === 'all' || u.role === roleFilter
@@ -445,6 +482,8 @@ export default function AdminUtenti() {
       {editingUser && (
         <EditModal
           user={editingUser}
+          coaches={coaches}
+          mentalCoaches={mentalCoaches}
           onClose={() => setEditingUser(null)}
           onSave={handleSave}
         />

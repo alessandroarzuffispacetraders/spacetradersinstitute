@@ -20,6 +20,8 @@ export interface User {
   status?: StudentStatus
   phase?: StudentPhase
   permissions?: UserPermissions
+  assignedCoachId?: string | null
+  assignedMentalCoachId?: string | null
 }
 
 export interface NavItem {
