@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import {
   Hash, Megaphone, ChevronDown, ChevronRight,
   Send, ArrowLeft, Search, Pin, Check, Users, MessageCircle, UsersRound, Loader2, X,
@@ -1255,6 +1255,14 @@ export default function StudentChat() {
   const [mobileView, setMobileView] = useState<'channels' | 'chat'>('channels')
   const [userCard, setUserCard] = useState<{ userId: string; name: string; role: MemberRole } | null>(null)
 
+  // Cache id→{name,role} per costruire la DM anche se il partner non è in dmUsers
+  // (es. RLS su profiles che nasconde gli altri studenti). Popolata aprendo la card.
+  const [knownUsers, setKnownUsers] = useState<Record<string, { name: string; role: MemberRole }>>({})
+  const showUserCard = useCallback((card: { userId: string; name: string; role: MemberRole }) => {
+    setKnownUsers(prev => ({ ...prev, [card.userId]: { name: card.name, role: card.role } }))
+    setUserCard(card)
+  }, [])
+
   // Lista di tutti i channel ID noti (gruppi + DM)
   const allChannelIds = useMemo(() => [
     ...visibleChannels.map(ch => ch.id),
@@ -1292,8 +1300,15 @@ export default function StudentChat() {
   const activeGroupChannel = CHANNELS.find(ch => ch.id === activeChannelId)
   const isDmChannel = activeChannelId.startsWith('dm_')
 
+  const dmPartnerId = isDmChannel
+    ? activeChannelId.replace('dm_', '').split('_').find(id => id !== userId) ?? null
+    : null
+
   const activeDmUser = isDmChannel
-    ? dmUsers.find(u => dmChannelId(userId, u.id) === activeChannelId)
+    ? (dmUsers.find(u => u.id === dmPartnerId)
+       ?? (dmPartnerId && knownUsers[dmPartnerId]
+           ? { id: dmPartnerId, name: knownUsers[dmPartnerId].name, role: knownUsers[dmPartnerId].role }
+           : null))
     : null
 
   const activeDmChannel: Channel | null = activeDmUser
@@ -1358,7 +1373,7 @@ export default function StudentChat() {
             userRole={userRole}
             userId={userId}
             userName={userName}
-            onShowUserCard={setUserCard}
+            onShowUserCard={showUserCard}
             onBack={goBack}
             isMobile={mobileView === 'chat'}
           />
