@@ -570,8 +570,12 @@ function ChatArea({ channel, userRole, userId, userName, onBack, isMobile }: Cha
       {/* Input bar */}
       {canPost ? (
         <div
-          className="flex items-end gap-2 px-3 py-3 flex-shrink-0"
-          style={{ borderTop: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)' }}
+          className="flex items-end gap-2 px-3 pt-3 flex-shrink-0"
+          style={{
+            borderTop: '1px solid var(--ist-w8)',
+            background: 'var(--ist-nav-bg)',
+            paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+          }}
         >
           <textarea
             ref={textareaRef}
@@ -604,8 +608,12 @@ function ChatArea({ channel, userRole, userId, userName, onBack, isMobile }: Cha
         </div>
       ) : (
         <div
-          className="flex items-center justify-center gap-2 px-4 py-3 flex-shrink-0"
-          style={{ borderTop: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)' }}
+          className="flex items-center justify-center gap-2 px-4 pt-3 flex-shrink-0"
+          style={{
+            borderTop: '1px solid var(--ist-w8)',
+            background: 'var(--ist-nav-bg)',
+            paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+          }}
         >
           <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>
             🔒 Solo lettura — non puoi scrivere in questo canale
