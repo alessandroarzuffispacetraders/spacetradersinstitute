@@ -1,15 +1,16 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
   Brain, Radio, TrendingUp, ExternalLink, Users, ClipboardList,
   AlertTriangle, CalendarDays, FileText, Package, BarChart3,
-  LogOut, Sun, Moon, type LucideIcon,
+  LogOut, Sun, Moon, Compass, SlidersHorizontal, type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useUI } from '../../context/UIContext'
-import { getNavSections } from '../../router/navConfig'
-import { UserRole } from '../../types'
+import {
+  getNavForMode, getHomeForMode, hasManagement, normalizeRoles,
+} from '../../router/navConfig'
 import ISTLogo from '../ui/ISTLogo'
 import UserAvatar from '../ui/UserAvatar'
 
@@ -32,22 +33,23 @@ const STATUS_COLORS: Record<string, string> = {
   blocked: '#FF6B7A',
 }
 
-const SECTION_ACCENT: Record<UserRole, string> = {
-  admin:        '#46D39A',
-  coach:        '#7CBBD0',
-  mental_coach: '#A078FF',
-  student:      '#5A9AB1',
-}
-
 export default function Sidebar() {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
-  const { setProfileOpen } = useUI()
+  const { setProfileOpen, navMode, setNavMode } = useUI()
+  const navigate = useNavigate()
   if (!user) return null
 
-  const roles   = user.roles && user.roles.length > 0 ? user.roles : [user.role]
-  const sections = getNavSections(roles)
-  const isMultiRole = sections.length > 1
+  const roles     = normalizeRoles(user.role, user.roles)
+  const canManage = hasManagement(roles)
+  const mode      = canManage ? navMode : 'use'
+  const items     = getNavForMode(mode, roles)
+
+  const switchMode = (target: 'use' | 'manage') => {
+    if (target === mode) return
+    setNavMode(target)
+    navigate(getHomeForMode(target, roles))
+  }
 
   return (
     <aside
@@ -84,46 +86,46 @@ export default function Sidebar() {
         )}
       </button>
 
-      {/* Nav — grouped by role section when multi-role */}
-      <nav className="flex-1 py-2 overflow-y-auto no-scrollbar">
-        {sections.map((section, si) => (
-          <div key={section.role}>
-            {/* Section divider for multi-role */}
-            {isMultiRole && si > 0 && (
-              <div className="mx-3 my-1.5 flex items-center gap-1.5">
-                <div className="flex-1 h-px" style={{ background: 'var(--ist-w8)' }} />
-                <span
-                  className="text-[7px] font-bold uppercase tracking-widest px-1"
-                  style={{ color: SECTION_ACCENT[section.role] }}
-                >
-                  {section.label}
-                </span>
-                <div className="flex-1 h-px" style={{ background: 'var(--ist-w8)' }} />
-              </div>
-            )}
+      {/* Mode switch — only for users with a management role */}
+      {canManage && (
+        <div className="px-1.5 pt-2 pb-1 flex flex-col gap-1" style={{ borderBottom: '1px solid var(--ist-w8)' }}>
+          <ModeButton
+            active={mode === 'use'}
+            icon={<Compass size={16} strokeWidth={2} />}
+            label="Usa"
+            onClick={() => switchMode('use')}
+          />
+          <ModeButton
+            active={mode === 'manage'}
+            icon={<SlidersHorizontal size={16} strokeWidth={2} />}
+            label="Gestisci"
+            onClick={() => switchMode('manage')}
+          />
+        </div>
+      )}
 
-            {section.items.map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                end={HOME_PATHS.has(item.path)}
-                style={({ isActive }) => isActive ? {
-                  background: 'var(--ist-nav-active-bg)',
-                  border: '1px solid var(--ist-nav-active-border)',
-                  color: 'var(--ist-nav-active-text)',
-                } : {
-                  color: 'var(--ist-nav-text)',
-                  border: '1px solid transparent',
-                }}
-                className="flex flex-col items-center gap-0.5 mx-1.5 px-1 py-2 rounded-2xl transition-all duration-150 w-[calc(100%-12px)]"
-              >
-                <NavIcon name={item.icon} />
-                <span className="text-[9px] font-medium truncate w-full text-center leading-none mt-0.5">
-                  {item.shortLabel ?? item.label}
-                </span>
-              </NavLink>
-            ))}
-          </div>
+      {/* Nav for the active mode (deduplicated) */}
+      <nav className="flex-1 py-2 overflow-y-auto no-scrollbar">
+        {items.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            end={HOME_PATHS.has(item.path)}
+            style={({ isActive }) => isActive ? {
+              background: 'var(--ist-nav-active-bg)',
+              border: '1px solid var(--ist-nav-active-border)',
+              color: 'var(--ist-nav-active-text)',
+            } : {
+              color: 'var(--ist-nav-text)',
+              border: '1px solid transparent',
+            }}
+            className="flex flex-col items-center gap-0.5 mx-1.5 px-1 py-2 rounded-2xl transition-all duration-150 w-[calc(100%-12px)]"
+          >
+            <NavIcon name={item.icon} />
+            <span className="text-[9px] font-medium truncate w-full text-center leading-none mt-0.5">
+              {item.shortLabel ?? item.label}
+            </span>
+          </NavLink>
         ))}
       </nav>
 
@@ -147,5 +149,21 @@ export default function Sidebar() {
         </button>
       </div>
     </aside>
+  )
+}
+
+function ModeButton({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center gap-0.5 px-1 py-1.5 rounded-2xl transition-all duration-150"
+      style={active
+        ? { background: 'var(--ist-nav-active-bg)', border: '1px solid var(--ist-nav-active-border)', color: 'var(--ist-nav-active-text)' }
+        : { background: 'var(--ist-w6)', border: '1px solid transparent', color: 'var(--ist-nav-text)' }
+      }
+    >
+      {icon}
+      <span className="text-[9px] font-semibold leading-none mt-0.5">{label}</span>
+    </button>
   )
 }

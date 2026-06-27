@@ -4,13 +4,16 @@ import {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
   Brain, Radio, TrendingUp, ExternalLink, Users, ClipboardList,
   AlertTriangle, CalendarDays, FileText, Package, BarChart3,
-  MoreHorizontal, X, Sun, Moon, LogOut,
+  MoreHorizontal, X, Sun, Moon, LogOut, Compass, SlidersHorizontal,
   type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
 import { useTheme } from '../../context/ThemeContext'
-import { getMobileNavConfig, NavItem } from '../../router/navConfig'
+import {
+  getMobileNavConfig, getHomeForMode, hasManagement, normalizeRoles,
+  NavItem, NavMode,
+} from '../../router/navConfig'
 import UserAvatar from '../ui/UserAvatar'
 
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -26,9 +29,15 @@ function NavIcon({ name, size = 20 }: { name: string; size?: number }) {
 
 function OverflowSheet({
   items,
+  canManage,
+  navMode,
+  onSwitchMode,
   onClose,
 }: {
   items: NavItem[]
+  canManage: boolean
+  navMode: NavMode
+  onSwitchMode: (m: NavMode) => void
   onClose: () => void
 }) {
   const navigate = useNavigate()
@@ -72,6 +81,16 @@ function OverflowSheet({
             <X size={14} strokeWidth={2.5} />
           </button>
         </div>
+
+        {/* Mode switch — only for management roles */}
+        {canManage && (
+          <div className="px-4 pt-3">
+            <div className="flex gap-1 p-1 rounded-2xl" style={{ background: 'var(--ist-w6)' }}>
+              <SheetModeButton active={navMode === 'use'} icon={<Compass size={15} strokeWidth={2} />} label="Usa" onClick={() => onSwitchMode('use')} />
+              <SheetModeButton active={navMode === 'manage'} icon={<SlidersHorizontal size={15} strokeWidth={2} />} label="Gestisci" onClick={() => onSwitchMode('manage')} />
+            </div>
+          </div>
+        )}
 
         {/* Items grid */}
         <div className="p-4 grid grid-cols-3 gap-2">
@@ -170,21 +189,55 @@ function OverflowSheet({
   )
 }
 
+function SheetModeButton({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all"
+      style={active
+        ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' }
+        : { color: 'var(--ist-text-muted)' }
+      }
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
+
 export default function BottomNav() {
   const { user } = useAuth()
-  const { hideBottomNav } = useUI()
+  const { hideBottomNav, navMode, setNavMode } = useUI()
+  const navigate = useNavigate()
   const [moreOpen, setMoreOpen] = useState(false)
 
   if (!user) return null
 
-  const { primary, overflow } = getMobileNavConfig(user)
+  const roles     = normalizeRoles(user.role, user.roles)
+  const canManage = hasManagement(roles)
+  const mode      = canManage ? navMode : 'use'
+  const { primary, overflow } = getMobileNavConfig(mode, roles)
   const homePath = primary[0]?.path
-  const hasOverflow = overflow.length > 0
+  const hasOverflow = overflow.length > 0 || canManage
+
+  const switchMode = (target: NavMode) => {
+    if (target !== mode) {
+      setNavMode(target)
+      navigate(getHomeForMode(target, roles))
+    }
+    setMoreOpen(false)
+  }
 
   return (
     <>
-      {moreOpen && overflow.length > 0 && (
-        <OverflowSheet items={overflow} onClose={() => setMoreOpen(false)} />
+      {moreOpen && (
+        <OverflowSheet
+          items={overflow}
+          canManage={canManage}
+          navMode={mode}
+          onSwitchMode={switchMode}
+          onClose={() => setMoreOpen(false)}
+        />
       )}
 
       <nav

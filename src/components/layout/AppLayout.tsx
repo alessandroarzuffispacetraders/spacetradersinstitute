@@ -2,10 +2,11 @@ import { useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
-import { UIProvider, useUI } from '../../context/UIContext'
+import { UIProvider, useUI, hasStoredNavMode } from '../../context/UIContext'
 import ProfileModal from '../ui/ProfileModal'
 import AppPrompts from '../ui/AppPrompts'
 import { useAuth } from '../../context/AuthContext'
+import { hasManagement, normalizeRoles } from '../../router/navConfig'
 import { supabase } from '../../lib/supabase'
 
 // Ascolta tutti i nuovi messaggi e mostra notifiche browser per quelli altrui
@@ -53,7 +54,17 @@ function NotificationManager() {
 }
 
 function AppShell() {
-  const { profileOpen, setProfileOpen } = useUI()
+  const { profileOpen, setProfileOpen, setNavMode } = useUI()
+  const { user } = useAuth()
+
+  // Default modalità: lo staff (chi ha un ruolo gestionale) parte in "Gestisci"
+  // al primo accesso; poi rispetta la scelta manuale memorizzata.
+  useEffect(() => {
+    if (!user || hasStoredNavMode()) return
+    const roles = normalizeRoles(user.role, user.roles)
+    if (hasManagement(roles)) setNavMode('manage')
+  }, [user?.id])
+
   return (
     <div className="app-shell" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <Sidebar />
