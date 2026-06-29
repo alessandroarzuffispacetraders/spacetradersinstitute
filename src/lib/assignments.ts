@@ -72,6 +72,14 @@ export async function exerciseFileUrl(objectKey: string): Promise<string | null>
   return data.signedUrl
 }
 
+// Download the bytes (for the annotator): a blob: URL is same-origin, so the
+// canvas stays untainted and can be exported to PNG.
+export async function downloadExerciseBlob(objectKey: string): Promise<Blob | null> {
+  const { data, error } = await supabase.storage.from(BUCKET).download(objectKey)
+  if (error || !data) return null
+  return data
+}
+
 const ASSIGNMENT_SELECT = '*, submissions(*, submission_files(*))'
 
 // ─── Coach side ─────────────────────────────────────────────────────────────────

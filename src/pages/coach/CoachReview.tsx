@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Loader2, Plus, Trash2, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Loader2, Plus, Trash2, CheckCircle2, AlertTriangle, Pencil } from 'lucide-react'
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
 import ExerciseImage from '../../components/ui/ExerciseImage'
+import ImageAnnotator from '../../components/ui/ImageAnnotator'
 import { useAuth } from '../../context/AuthContext'
 import { useAssignedStudents } from '../../lib/coaching'
 import { useCoachAssignments, displayStatus, Assignment, Submission } from '../../lib/assignments'
@@ -84,14 +85,17 @@ function AssignForm({ students, onCreate, onClose }: {
 
 // ─── Submission review ───────────────────────────────────────────────────────
 
-function SubmissionReview({ sub, assignmentId, onReview }: {
+function SubmissionReview({ sub, assignmentId, onReview, onMarkup }: {
   sub: Submission
   assignmentId: string
   onReview: (submissionId: string, assignmentId: string, feedback: string, blocked: boolean) => Promise<boolean>
+  onMarkup: (submissionId: string, blob: Blob, sourceFileId: string | null) => Promise<boolean>
 }) {
   const [feedback, setFeedback] = useState('')
   const [saving, setSaving] = useState(false)
+  const [annotating, setAnnotating] = useState<{ objectKey: string; fileId: string } | null>(null)
   const studentImgs = (sub.submission_files ?? []).filter(f => f.kind === 'student')
+  const markups = (sub.submission_files ?? []).filter(f => f.kind === 'coach_markup')
 
   const send = async (blocked: boolean) => {
     if (saving) return
@@ -106,10 +110,33 @@ function SubmissionReview({ sub, assignmentId, onReview }: {
       {sub.note && <p className="text-sm mb-3" style={{ color: '#C7D3DD' }}>{sub.note}</p>}
 
       {studentImgs.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-3">
-          {studentImgs.map(f => (
-            <ExerciseImage key={f.id} objectKey={f.object_key} className="w-28 h-28 rounded-lg object-cover" style={{ border: '1px solid var(--ist-border)' }} />
-          ))}
+        <div className="mb-3">
+          <p className="text-[11px] mb-1.5" style={{ color: 'var(--ist-text-dim)' }}>Immagini dello studente — tocca "Annota" per correggere:</p>
+          <div className="flex flex-wrap gap-3">
+            {studentImgs.map(f => (
+              <div key={f.id} className="flex flex-col items-center gap-1">
+                <ExerciseImage objectKey={f.object_key} className="w-28 h-28 rounded-lg object-cover" style={{ border: '1px solid var(--ist-border)' }} />
+                <button
+                  onClick={() => setAnnotating({ objectKey: f.object_key, fileId: f.id })}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full transition-colors hover:bg-white/[0.05]"
+                  style={{ border: '1px solid var(--ist-border)', color: 'var(--ist-accent-text)' }}
+                >
+                  <Pencil size={11} strokeWidth={2} /> Annota
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {markups.length > 0 && (
+        <div className="mb-3">
+          <p className="text-[11px] mb-1.5" style={{ color: '#46D39A' }}>Immagini annotate (visibili allo studente):</p>
+          <div className="flex flex-wrap gap-2">
+            {markups.map(f => (
+              <ExerciseImage key={f.id} objectKey={f.object_key} className="w-28 h-28 rounded-lg object-cover" style={{ border: '1px solid rgba(70,211,154,0.3)' }} />
+            ))}
+          </div>
         </div>
       )}
 
@@ -137,9 +164,6 @@ function SubmissionReview({ sub, assignmentId, onReview }: {
               Feedback + segnala bloccato
             </button>
           </div>
-          <p className="text-[11px] mt-2" style={{ color: 'var(--ist-text-dim)' }}>
-            L'annotazione a mano libera sulle immagini arriva nel prossimo step.
-          </p>
         </div>
       ) : (
         <div className="pt-1">
@@ -155,13 +179,22 @@ function SubmissionReview({ sub, assignmentId, onReview }: {
           {sub.coach_feedback && <p className="text-sm" style={{ color: '#C7D3DD' }}>{sub.coach_feedback}</p>}
         </div>
       )}
+
+      {annotating && (
+        <ImageAnnotator
+          objectKey={annotating.objectKey}
+          onSave={async (blob) => { await onMarkup(sub.id, blob, annotating.fileId) }}
+          onClose={() => setAnnotating(null)}
+        />
+      )}
     </div>
   )
 }
 
-function AssignmentRow({ assignment, onReview, onDelete }: {
+function AssignmentRow({ assignment, onReview, onMarkup, onDelete }: {
   assignment: Assignment
   onReview: (submissionId: string, assignmentId: string, feedback: string, blocked: boolean) => Promise<boolean>
+  onMarkup: (submissionId: string, blob: Blob, sourceFileId: string | null) => Promise<boolean>
   onDelete: (id: string) => void
 }) {
   const status = displayStatus(assignment)
@@ -194,7 +227,7 @@ function AssignmentRow({ assignment, onReview, onDelete }: {
 
       {submissions.length > 0 ? (
         <div className="mt-4 space-y-2">
-          {submissions.map(s => <SubmissionReview key={s.id} sub={s} assignmentId={assignment.id} onReview={onReview} />)}
+          {submissions.map(s => <SubmissionReview key={s.id} sub={s} assignmentId={assignment.id} onReview={onReview} onMarkup={onMarkup} />)}
         </div>
       ) : (
         <p className="text-xs mt-3" style={{ color: 'var(--ist-text-dim)' }}>In attesa della consegna dello studente.</p>
@@ -209,7 +242,7 @@ export default function CoachReview() {
   const { user } = useAuth()
   const coachId = user?.id ?? ''
   const { students } = useAssignedStudents('coach', coachId)
-  const { assignments, loading, createAssignment, deleteAssignment, reviewSubmission } = useCoachAssignments(coachId)
+  const { assignments, loading, createAssignment, deleteAssignment, reviewSubmission, addMarkup } = useCoachAssignments(coachId)
   const [assigning, setAssigning] = useState(false)
 
   return (
@@ -249,7 +282,7 @@ export default function CoachReview() {
       ) : (
         <div className="space-y-3">
           {assignments.map(a => (
-            <AssignmentRow key={a.id} assignment={a} onReview={reviewSubmission} onDelete={deleteAssignment} />
+            <AssignmentRow key={a.id} assignment={a} onReview={reviewSubmission} onMarkup={addMarkup} onDelete={deleteAssignment} />
           ))}
         </div>
       )}
