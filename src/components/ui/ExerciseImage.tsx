@@ -20,7 +20,7 @@ export default function ExerciseImage({ objectKey, className, style, onClick, al
   }, [objectKey])
 
   if (!url) {
-    return <div className={className} style={{ ...style, background: 'var(--ist-w8)' }} />
+    return <div onClick={onClick} className={className} style={{ ...style, background: 'var(--ist-w8)' }} />
   }
   return <img src={url} alt={alt ?? ''} onClick={onClick} className={className} style={style} />
 }

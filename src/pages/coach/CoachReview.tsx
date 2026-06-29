@@ -4,6 +4,7 @@ import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
 import ExerciseImage from '../../components/ui/ExerciseImage'
 import ImageAnnotator from '../../components/ui/ImageAnnotator'
+import ImageLightbox from '../../components/ui/ImageLightbox'
 import { useAuth } from '../../context/AuthContext'
 import { useAssignedStudents } from '../../lib/coaching'
 import { useCoachAssignments, displayStatus, Assignment, Submission } from '../../lib/assignments'
@@ -94,6 +95,7 @@ function SubmissionReview({ sub, assignmentId, onReview, onMarkup }: {
   const [feedback, setFeedback] = useState('')
   const [saving, setSaving] = useState(false)
   const [annotating, setAnnotating] = useState<{ objectKey: string; fileId: string } | null>(null)
+  const [lightbox, setLightbox] = useState<string | null>(null)
   const studentImgs = (sub.submission_files ?? []).filter(f => f.kind === 'student')
   const markups = (sub.submission_files ?? []).filter(f => f.kind === 'coach_markup')
 
@@ -115,7 +117,11 @@ function SubmissionReview({ sub, assignmentId, onReview, onMarkup }: {
           <div className="flex flex-wrap gap-3">
             {studentImgs.map(f => (
               <div key={f.id} className="flex flex-col items-center gap-1">
-                <ExerciseImage objectKey={f.object_key} className="w-28 h-28 rounded-lg object-cover" style={{ border: '1px solid var(--ist-border)' }} />
+                <ExerciseImage
+                  objectKey={f.object_key} onClick={() => setLightbox(f.object_key)}
+                  className="w-28 h-28 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                  style={{ border: '1px solid var(--ist-border)' }}
+                />
                 <button
                   onClick={() => setAnnotating({ objectKey: f.object_key, fileId: f.id })}
                   className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full transition-colors hover:bg-white/[0.05]"
@@ -134,7 +140,11 @@ function SubmissionReview({ sub, assignmentId, onReview, onMarkup }: {
           <p className="text-[11px] mb-1.5" style={{ color: '#46D39A' }}>Immagini annotate (visibili allo studente):</p>
           <div className="flex flex-wrap gap-2">
             {markups.map(f => (
-              <ExerciseImage key={f.id} objectKey={f.object_key} className="w-28 h-28 rounded-lg object-cover" style={{ border: '1px solid rgba(70,211,154,0.3)' }} />
+              <ExerciseImage
+                key={f.id} objectKey={f.object_key} onClick={() => setLightbox(f.object_key)}
+                className="w-28 h-28 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                style={{ border: '1px solid rgba(70,211,154,0.3)' }}
+              />
             ))}
           </div>
         </div>
@@ -182,6 +192,8 @@ function SubmissionReview({ sub, assignmentId, onReview, onMarkup }: {
           {sub.coach_feedback && <p className="text-sm" style={{ color: '#C7D3DD' }}>{sub.coach_feedback}</p>}
         </div>
       )}
+
+      {lightbox && <ImageLightbox objectKey={lightbox} onClose={() => setLightbox(null)} />}
 
       {annotating && (
         <ImageAnnotator

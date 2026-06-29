@@ -3,6 +3,7 @@ import { Loader2, ImagePlus, X, CheckCircle2, AlertTriangle } from 'lucide-react
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
 import ExerciseImage from '../../components/ui/ExerciseImage'
+import ImageLightbox from '../../components/ui/ImageLightbox'
 import { useAuth } from '../../context/AuthContext'
 import { useStudentAssignments, displayStatus, Assignment, Submission } from '../../lib/assignments'
 
@@ -42,6 +43,7 @@ function LocalThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
 function SubmissionBlock({ sub }: { sub: Submission }) {
   const studentImgs = (sub.submission_files ?? []).filter(f => f.kind === 'student')
   const markups     = (sub.submission_files ?? []).filter(f => f.kind === 'coach_markup')
+  const [lightbox, setLightbox] = useState<string | null>(null)
   return (
     <div className="rounded-2xl p-4" style={{ background: 'var(--ist-w5)', border: '1px solid var(--ist-border)' }}>
       <div className="flex items-center gap-2 mb-2">
@@ -56,9 +58,11 @@ function SubmissionBlock({ sub }: { sub: Submission }) {
       {studentImgs.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-2">
           {studentImgs.map(f => (
-            <a key={f.id} href="#" onClick={e => e.preventDefault()}>
-              <ExerciseImage objectKey={f.object_key} className="w-24 h-24 rounded-lg object-cover" style={{ border: '1px solid var(--ist-border)' }} />
-            </a>
+            <ExerciseImage
+              key={f.id} objectKey={f.object_key} onClick={() => setLightbox(f.object_key)}
+              className="w-24 h-24 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
+              style={{ border: '1px solid var(--ist-border)' }}
+            />
           ))}
         </div>
       )}
@@ -77,16 +81,22 @@ function SubmissionBlock({ sub }: { sub: Submission }) {
           {sub.coach_feedback && <p className="text-sm" style={{ color: '#C7D3DD' }}>{sub.coach_feedback}</p>}
           {markups.length > 0 && (
             <>
-              <p className="text-[11px] mt-3 mb-1.5" style={{ color: 'var(--ist-text-dim)' }}>Immagini corrette dal coach:</p>
+              <p className="text-[11px] mt-3 mb-1.5" style={{ color: 'var(--ist-text-dim)' }}>Immagini corrette dal coach — tocca per ingrandire:</p>
               <div className="flex flex-wrap gap-2">
                 {markups.map(f => (
-                  <ExerciseImage key={f.id} objectKey={f.object_key} className="w-28 h-28 rounded-lg object-cover" style={{ border: '1px solid rgba(70,211,154,0.3)' }} />
+                  <ExerciseImage
+                    key={f.id} objectKey={f.object_key} onClick={() => setLightbox(f.object_key)}
+                    className="w-28 h-28 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                    style={{ border: '1px solid rgba(70,211,154,0.3)' }}
+                  />
                 ))}
               </div>
             </>
           )}
         </div>
       )}
+
+      {lightbox && <ImageLightbox objectKey={lightbox} onClose={() => setLightbox(null)} />}
     </div>
   )
 }
