@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ChevronLeft, CheckCircle2, Play, Pause, Paperclip, Download,
-  FileText, Sheet, Presentation, Archive, File, ChevronRight,
+  FileText, Sheet, Presentation, Archive, File, ChevronRight, Loader2,
 } from 'lucide-react'
-import { findLesson, Attachment } from '../../data/coursesData'
+import { useStudentCatalog, Attachment } from '../../lib/content'
 import { useUI } from '../../context/UIContext'
+import { useAuth } from '../../context/AuthContext'
 
 // ─── file type helpers ────────────────────────────────────────────────────────
 
@@ -229,7 +230,7 @@ function PlaylistPanel({
   accent,
   onSelect,
 }: {
-  course: import('../../data/coursesData').Course
+  course: import('../../lib/content').Course
   currentId: string
   accent: string
   onSelect: (id: string) => void
@@ -304,7 +305,10 @@ export default function StudentLezione() {
   const { lessonId } = useParams<{ lessonId: string }>()
   const navigate     = useNavigate()
   const { setHideBottomNav } = useUI()
+  const { user } = useAuth()
+  const { findLesson, markDone, loading } = useStudentCatalog(user?.id ?? '')
   const [mobileTab, setMobileTab] = useState<MobileTab>('playlist')
+  const [marking, setMarking] = useState(false)
 
   const found = findLesson(lessonId ?? '')
 
@@ -312,6 +316,14 @@ export default function StudentLezione() {
     setHideBottomNav(true)
     return () => setHideBottomNav(false)
   }, [setHideBottomNav])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} />
+      </div>
+    )
+  }
 
   if (!found) {
     return (
@@ -328,6 +340,12 @@ export default function StudentLezione() {
   const lessonIdx  = course.lessons.findIndex(l => l.id === lesson.id)
   const prevLesson = course.lessons[lessonIdx - 1] ?? null
   const nextLesson = course.lessons[lessonIdx + 1] ?? null
+
+  const handleToggleDone = async () => {
+    setMarking(true)
+    await markDone(lesson.id, !lesson.done)
+    setMarking(false)
+  }
 
   return (
     <div className="flex flex-col lg:flex-row min-h-screen">
@@ -395,6 +413,22 @@ export default function StudentLezione() {
           <p className="text-sm leading-relaxed" style={{ color: 'var(--ist-text-muted)' }}>
             {lesson.description}
           </p>
+
+          {/* Mark complete / re-review toggle */}
+          <button
+            onClick={handleToggleDone}
+            disabled={marking}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold transition-all hover:-translate-y-0.5 disabled:opacity-50"
+            style={lesson.done
+              ? { background: 'var(--ist-w6)', border: '1px solid var(--ist-border)', color: 'var(--ist-text-muted)' }
+              : { background: 'linear-gradient(135deg, #46D39A 0%, #2BA877 100%)', border: '1px solid rgba(70,211,154,0.30)', color: '#fff' }
+            }
+          >
+            {marking
+              ? <Loader2 size={14} className="animate-spin" />
+              : <CheckCircle2 size={14} strokeWidth={2.5} />}
+            {lesson.done ? 'Segna come da rivedere' : 'Segna come completata'}
+          </button>
         </div>
 
         {/* Allegati — desktop */}

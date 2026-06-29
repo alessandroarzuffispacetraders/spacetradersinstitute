@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronDown, CheckCircle2, Play, Paperclip, BookOpen } from 'lucide-react'
-import { findCategory, getCourseStats, getCategoryStats } from '../../data/coursesData'
+import { ChevronLeft, ChevronDown, CheckCircle2, Play, Paperclip, BookOpen, Loader2 } from 'lucide-react'
+import { useStudentCatalog, getCourseStats, getCategoryStats } from '../../lib/content'
+import { useAuth } from '../../context/AuthContext'
 
 const PHASE_STYLE: Record<string, { bg: string; text: string; border: string }> = {
   Onboarding: { bg: 'rgba(124,187,208,0.12)', text: '#7CBBD0',  border: 'rgba(124,187,208,0.22)' },
@@ -13,8 +14,23 @@ const PHASE_STYLE: Record<string, { bg: string; text: string; border: string }> 
 export default function StudentCategoryDetail() {
   const { categoryId } = useParams<{ categoryId: string }>()
   const navigate       = useNavigate()
+  const { user } = useAuth()
+  const { findCategory, loading } = useStudentCatalog(user?.id ?? '')
   const cat            = findCategory(categoryId ?? '')
-  const [expandedCourse, setExpandedCourse] = useState<string | null>(cat?.courses[0]?.id ?? null)
+  const [expandedCourse, setExpandedCourse] = useState<string | null>(null)
+
+  // Default-expand the first course once the category has loaded.
+  useEffect(() => {
+    setExpandedCourse(cat?.courses[0]?.id ?? null)
+  }, [cat])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} />
+      </div>
+    )
+  }
 
   if (!cat) {
     return (

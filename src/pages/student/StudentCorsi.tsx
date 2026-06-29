@@ -1,7 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import PageHeader from '../../components/ui/PageHeader'
-import { CATEGORIES, getCategoryStats, getCourseStats } from '../../data/coursesData'
-import { BookOpen, ChevronRight, Play, CheckCircle2, Layers } from 'lucide-react'
+import { useStudentCatalog, getCategoryStats, getCourseStats } from '../../lib/content'
+import { useAuth } from '../../context/AuthContext'
+import { BookOpen, ChevronRight, Play, CheckCircle2, Layers, Loader2 } from 'lucide-react'
 
 const PHASE_STYLE: Record<string, { bg: string; text: string; border: string }> = {
   Onboarding: { bg: 'rgba(124,187,208,0.12)', text: '#7CBBD0',  border: 'rgba(124,187,208,0.22)' },
@@ -12,12 +13,22 @@ const PHASE_STYLE: Record<string, { bg: string; text: string; border: string }> 
 
 export default function StudentCorsi() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const { categories, loading } = useStudentCatalog(user?.id ?? '')
 
-  const allLessons  = CATEGORIES.flatMap(c => c.courses.flatMap(cr => cr.lessons))
-  const totalDone   = allLessons.filter(l => l.done).length
+  const allLessons   = categories.flatMap(c => c.courses.flatMap(cr => cr.lessons))
+  const totalDone    = allLessons.filter(l => l.done).length
   const totalLessons = allLessons.length
-  const totalPct    = totalLessons ? Math.round((totalDone / totalLessons) * 100) : 0
-  const totalCourses = CATEGORIES.reduce((s, c) => s + c.courses.length, 0)
+  const totalPct     = totalLessons ? Math.round((totalDone / totalLessons) * 100) : 0
+  const totalCourses = categories.reduce((s, c) => s + c.courses.length, 0)
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} />
+      </div>
+    )
+  }
 
   return (
     <div className="p-5 lg:p-8 max-w-5xl mx-auto">
@@ -56,7 +67,7 @@ export default function StudentCorsi() {
         </div>
         <div className="flex gap-6">
           {[
-            { value: CATEGORIES.length, label: 'Categorie', icon: <Layers size={13} strokeWidth={2} /> },
+            { value: categories.length, label: 'Categorie', icon: <Layers size={13} strokeWidth={2} /> },
             { value: totalCourses,      label: 'Corsi',     icon: <BookOpen size={13} strokeWidth={2} /> },
             { value: totalLessons,      label: 'Lezioni',   icon: <Play size={13} strokeWidth={2} /> },
             { value: totalDone,         label: 'Completate', icon: <CheckCircle2 size={13} strokeWidth={2} /> },
@@ -79,7 +90,17 @@ export default function StudentCorsi() {
 
       {/* ── Category cards ── */}
       <div className="space-y-4">
-        {CATEGORIES.map((cat) => {
+        {categories.length === 0 && (
+          <div
+            className="rounded-3xl p-10 text-center"
+            style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)' }}
+          >
+            <p className="text-sm" style={{ color: 'var(--ist-text-dim)' }}>
+              Nessun videocorso disponibile al momento.
+            </p>
+          </div>
+        )}
+        {categories.map((cat) => {
           const stats     = getCategoryStats(cat)
           const phaseStyle = PHASE_STYLE[cat.phase] ?? PHASE_STYLE.Build
 
