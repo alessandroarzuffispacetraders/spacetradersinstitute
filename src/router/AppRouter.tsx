@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import AppLayout from '../components/layout/AppLayout'
+import RequireRole from '../components/auth/RequireRole'
 import LoginPage from '../pages/auth/LoginPage'
 
 // Student pages
@@ -67,26 +68,32 @@ function PrivateRoutes() {
         <Route path="/student/progressi" element={<StudentProgressi />} />
         <Route path="/student/journal" element={<StudentJournal />} />
 
-        {/* Coach */}
-        <Route path="/coach" element={<CoachDashboard />} />
-        <Route path="/coach/studenti" element={<CoachStudenti />} />
-        <Route path="/coach/review" element={<CoachReview />} />
-        <Route path="/coach/segnalazioni" element={<CoachSegnalazioni />} />
-        <Route path="/coach/chat" element={<ChatPage />} />
+        {/* Coach — solo ruolo coach */}
+        <Route element={<RequireRole roles={['coach']} />}>
+          <Route path="/coach" element={<CoachDashboard />} />
+          <Route path="/coach/studenti" element={<CoachStudenti />} />
+          <Route path="/coach/review" element={<CoachReview />} />
+          <Route path="/coach/segnalazioni" element={<CoachSegnalazioni />} />
+          <Route path="/coach/chat" element={<ChatPage />} />
+        </Route>
 
-        {/* Mental Coach */}
-        <Route path="/mental-coach" element={<MentalCoachDashboard />} />
-        <Route path="/mental-coach/studenti" element={<MentalCoachStudenti />} />
-        <Route path="/mental-coach/sessioni" element={<MentalCoachSessioni />} />
-        <Route path="/mental-coach/note" element={<MentalCoachNote />} />
-        <Route path="/mental-coach/chat" element={<ChatPage />} />
+        {/* Mental Coach — solo ruolo mental_coach */}
+        <Route element={<RequireRole roles={['mental_coach']} />}>
+          <Route path="/mental-coach" element={<MentalCoachDashboard />} />
+          <Route path="/mental-coach/studenti" element={<MentalCoachStudenti />} />
+          <Route path="/mental-coach/sessioni" element={<MentalCoachSessioni />} />
+          <Route path="/mental-coach/note" element={<MentalCoachNote />} />
+          <Route path="/mental-coach/chat" element={<ChatPage />} />
+        </Route>
 
-        {/* Admin */}
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/admin/utenti" element={<AdminUtenti />} />
-        <Route path="/admin/contenuti" element={<AdminContenuti />} />
-        <Route path="/admin/statistiche" element={<AdminStatistiche />} />
-        <Route path="/admin/chat" element={<AdminChat />} />
+        {/* Admin — solo ruolo admin */}
+        <Route element={<RequireRole roles={['admin']} />}>
+          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/utenti" element={<AdminUtenti />} />
+          <Route path="/admin/contenuti" element={<AdminContenuti />} />
+          <Route path="/admin/statistiche" element={<AdminStatistiche />} />
+          <Route path="/admin/chat" element={<AdminChat />} />
+        </Route>
 
         <Route path="*" element={<Navigate to={defaultPath} replace />} />
       </Route>
