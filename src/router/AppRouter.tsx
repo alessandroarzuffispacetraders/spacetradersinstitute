@@ -11,6 +11,7 @@ import StudentCorsi from '../pages/student/StudentCorsi'
 import StudentCategoryDetail from '../pages/student/StudentCategoryDetail'
 import StudentLezione from '../pages/student/StudentLezione'
 import StudentDiario from '../pages/student/StudentDiario'
+import StudentCompiti from '../pages/student/StudentCompiti'
 import StudentMentalCoach from '../pages/student/StudentMentalCoach'
 import StudentLive from '../pages/student/StudentLive'
 import StudentLivePlayer from '../pages/student/StudentLivePlayer'
@@ -61,6 +62,7 @@ function PrivateRoutes() {
         <Route path="/student/corsi/lezione/:lessonId" element={<StudentLezione />} />
         <Route path="/student/corsi/:categoryId" element={<StudentCategoryDetail />} />
         <Route path="/student/diario" element={<StudentDiario />} />
+        <Route path="/student/compiti" element={<StudentCompiti />} />
         <Route path="/student/chat" element={<ChatPage />} />
         <Route path="/student/mental-coach" element={<StudentMentalCoach />} />
         <Route path="/student/live" element={<StudentLive />} />

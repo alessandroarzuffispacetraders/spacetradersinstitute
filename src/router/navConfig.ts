@@ -16,6 +16,7 @@ const USE_NAV: NavItem[] = [
   { label: 'Percorso', path: '/student/percorso', icon: 'Map' },
   { label: 'Videocorsi', shortLabel: 'Corsi', path: '/student/corsi', icon: 'BookOpen' },
   { label: 'Diario', path: '/student/diario', icon: 'BookMarked' },
+  { label: 'Compiti', path: '/student/compiti', icon: 'ClipboardList' },
   { label: 'Community', path: '/student/chat', icon: 'MessageCircle' },
   { label: 'Mental Coach', shortLabel: 'Mental', path: '/student/mental-coach', icon: 'Brain' },
   { label: 'Live & Replay', shortLabel: 'Live', path: '/student/live', icon: 'Radio' },
@@ -30,7 +31,7 @@ const MANAGE_BY_ROLE: Record<UserRole, NavItem[]> = {
   student: [],
   coach: [
     { label: 'Studenti', path: '/coach/studenti', icon: 'Users' },
-    { label: 'Review', path: '/coach/review', icon: 'ClipboardList' },
+    { label: 'Compiti', path: '/coach/review', icon: 'ClipboardList' },
     { label: 'Segnalazioni', shortLabel: 'Segnal.', path: '/coach/segnalazioni', icon: 'AlertTriangle' },
   ],
   mental_coach: [
