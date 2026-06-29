@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
 import PageHeader from '../../components/ui/PageHeader'
-import { ChevronDown, Radio, Upload, Shield, X, Loader2 } from 'lucide-react'
+import { ChevronDown, Radio, Upload, Shield, X, Loader2, Mail, KeyRound } from 'lucide-react'
 import { UserPermissions, UserRole, StudentStatus, StudentPhase } from '../../types'
 import { supabase } from '../../lib/supabase'
+import { updateUserAuth } from '../../lib/adminUsers'
+
+const STAFF_ROLES: UserRole[] = ['coach', 'mental_coach', 'admin']
 
 interface Profile {
   id: string
@@ -89,6 +92,8 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave }: {
   const [permissions, setPermissions] = useState<UserPermissions>(user.permissions ?? {})
   const [assignedCoach, setAssignedCoach] = useState<string | null>(user.assigned_coach_id)
   const [assignedMental, setAssignedMental] = useState<string | null>(user.assigned_mental_coach_id)
+  const [email, setEmail] = useState(user.email)
+  const [newPassword, setNewPassword] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -108,6 +113,17 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave }: {
 
     const allRoles = Array.from(new Set([role, ...extraRoles]))
     const isStudent = role === 'student'
+    const isStaffTarget = STAFF_ROLES.includes(role) || extraRoles.some(r => STAFF_ROLES.includes(r))
+    const emailChanged = email.trim() !== user.email
+
+    // Email/password vanno cambiate via edge function (API admin, lato server)
+    if (isStaffTarget && (emailChanged || newPassword.length > 0)) {
+      const { error: authErr } = await updateUserAuth(user.id, {
+        email: emailChanged ? email.trim() : undefined,
+        password: newPassword.length > 0 ? newPassword : undefined,
+      })
+      if (authErr) { setError(authErr); setSaving(false); return }
+    }
 
     const { error } = await supabase
       .from('profiles')
@@ -132,6 +148,7 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave }: {
 
     onSave({
       ...user, role, roles: allRoles.length > 1 ? allRoles : null, status, phase, permissions,
+      email: emailChanged ? email.trim() : user.email,
       assigned_coach_id: isStudent ? assignedCoach : null,
       assigned_mental_coach_id: isStudent ? assignedMental : null,
     })
@@ -200,6 +217,34 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave }: {
             })}
           </div>
         </div>
+
+        {/* Account di accesso — solo staff (coach / mental coach / admin) */}
+        {(STAFF_ROLES.includes(role) || extraRoles.some(r => STAFF_ROLES.includes(r))) && (
+          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: 'var(--ist-w5)', border: '1px solid var(--ist-border)' }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--ist-text-dim)' }}>
+              <KeyRound size={10} strokeWidth={2.5} /> Account di accesso
+            </p>
+            <div className="flex flex-col gap-2">
+              <label className="text-xs flex items-center gap-1.5" style={{ color: 'var(--ist-text-dim)' }}>
+                <Mail size={11} strokeWidth={2} /> Email
+              </label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={selectStyle} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-xs flex items-center gap-1.5" style={{ color: 'var(--ist-text-dim)' }}>
+                <KeyRound size={11} strokeWidth={2} /> Nuova password
+              </label>
+              <input
+                type="text"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="Lascia vuoto per non cambiarla"
+                style={selectStyle}
+              />
+              <p className="text-[10px]" style={{ color: 'var(--ist-text-dim)' }}>Min. 6 caratteri. Comunica tu la nuova password all'utente.</p>
+            </div>
+          </div>
+        )}
 
         {/* Stato e fase — solo studenti */}
         {role === 'student' && (
