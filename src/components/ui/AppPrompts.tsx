@@ -125,11 +125,11 @@ export default function AppPrompts() {
 
   return (
     <div
-      className="fixed bottom-0 left-0 right-0 z-[95] flex justify-center px-4"
+      className="fixed bottom-0 left-0 right-0 z-[95] flex justify-center px-4 pointer-events-none"
       style={{ paddingBottom: 'max(80px, calc(env(safe-area-inset-bottom) + 80px))' }}
     >
       <div
-        className="w-full rounded-[24px] overflow-hidden transition-all duration-300"
+        className="w-full rounded-[24px] overflow-hidden transition-all duration-300 pointer-events-auto"
         style={{
           maxWidth: 480,
           background: 'var(--ist-nav-bg)',
