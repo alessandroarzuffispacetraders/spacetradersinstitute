@@ -3,12 +3,14 @@ import PageHeader from '../../components/ui/PageHeader'
 import {
   ChevronDown, Plus, Edit2, Trash2,
   Paperclip, Video, FolderOpen, BookOpen, Radio, Clock, Users,
-  ChevronUp, Eye, EyeOff, Loader2, X,
+  ChevronUp, Eye, EyeOff, Loader2, X, Upload,
 } from 'lucide-react'
 import {
   useContentAdmin, Category, Course, Lesson,
   CategoryInput, CourseInput, LessonInput,
 } from '../../lib/content'
+import { parseVimeo } from '../../lib/vimeo'
+import { uploadAttachment, deleteAttachment } from '../../lib/storage'
 import { LIVE_EVENTS, LiveEvent } from '../../data/liveData'
 
 type Tab = 'corsi' | 'live'
@@ -112,6 +114,16 @@ function MoveBtns({ onUp, onDown, isFirst, isLast }: {
   )
 }
 
+function findAdminLesson(cats: Category[], id: string): Lesson | null {
+  for (const c of cats) {
+    for (const cr of c.courses) {
+      const l = cr.lessons.find(x => x.id === id)
+      if (l) return l
+    }
+  }
+  return null
+}
+
 // ─── Editor modal ─────────────────────────────────────────────────────────────
 
 function EditorModal({ state, admin, onClose }: {
@@ -133,13 +145,23 @@ function EditorModal({ state, admin, onClose }: {
   const [minutes, setMinutes] = useState<string>(
     state.kind === 'lesson' && entity ? String(Math.round((entity as Lesson).durationSeconds / 60)) : '',
   )
+  const [vimeoUrl, setVimeoUrl] = useState<string>(
+    state.kind === 'lesson' && entity ? ((entity as Lesson).vimeoId ?? '') : '',
+  )
+  const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  // Live lesson from the tree, so the attachments list reflects uploads/deletes.
+  const liveLesson = isLesson && state.mode === 'edit'
+    ? findAdminLesson(admin.categories, state.id)
+    : null
+  const vimeoInvalid = isLesson && vimeoUrl.trim() !== '' && !parseVimeo(vimeoUrl)
 
   const noun = isCategory ? 'categoria' : isCourse ? 'corso' : 'lezione'
   const heading = `${state.mode === 'create' ? 'Nuova' : 'Modifica'} ${noun}`
 
   const submit = async () => {
-    if (!title.trim() || saving) return
+    if (!title.trim() || saving || vimeoInvalid) return
     setSaving(true)
     let ok = false
     if (isCategory) {
@@ -149,7 +171,7 @@ function EditorModal({ state, admin, onClose }: {
       const input: CourseInput = { title, description, phase }
       ok = state.mode === 'create' ? await admin.createCourse(state.parentId, input) : await admin.updateCourse(state.id, input)
     } else {
-      const input: LessonInput = { title, description, durationMinutes: Number(minutes) || 0 }
+      const input: LessonInput = { title, description, durationMinutes: Number(minutes) || 0, vimeoId: vimeoUrl }
       ok = state.mode === 'create' ? await admin.createLesson(state.parentId, input) : await admin.updateLesson(state.id, input)
     }
     setSaving(false)
@@ -221,6 +243,66 @@ function EditorModal({ state, admin, onClose }: {
               />
             </div>
           )}
+
+          {isLesson && (
+            <div>
+              <label className="text-xs block mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>Link o ID Vimeo</label>
+              <input
+                value={vimeoUrl} onChange={e => setVimeoUrl(e.target.value)}
+                placeholder="https://vimeo.com/123456789"
+                className="px-3 py-2.5 text-sm" style={inputStyle}
+              />
+              {vimeoInvalid
+                ? <p className="text-[11px] mt-1" style={{ color: '#FF6B7A' }}>Link Vimeo non riconosciuto.</p>
+                : <p className="text-[11px] mt-1" style={{ color: 'var(--ist-text-dim)' }}>Incolla l'URL del video Vimeo (o solo l'ID). Vuoto = nessun video.</p>}
+            </div>
+          )}
+
+          {isLesson && state.mode === 'edit' && (
+            <div>
+              <label className="text-xs block mb-2" style={{ color: 'var(--ist-text-muted)' }}>Allegati</label>
+              <div className="space-y-1.5">
+                {liveLesson?.attachments.map(att => (
+                  <div key={att.id} className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-border)' }}>
+                    <Paperclip size={12} strokeWidth={2} style={{ color: 'var(--ist-text-dim)', flexShrink: 0 }} />
+                    <span className="flex-1 text-xs truncate" style={{ color: 'var(--ist-text)' }}>{att.name}</span>
+                    <span className="text-[10px] flex-shrink-0" style={{ color: 'var(--ist-text-dim)' }}>{att.size}</span>
+                    <button
+                      onClick={async () => { if (confirm(`Eliminare "${att.name}"?`)) { await deleteAttachment(att.id, att.objectKey); await admin.reload() } }}
+                      className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors hover:bg-white/[0.06]"
+                      style={{ color: 'rgba(255,107,122,0.7)' }}
+                    >
+                      <Trash2 size={12} strokeWidth={2} />
+                    </button>
+                  </div>
+                ))}
+                {(!liveLesson || liveLesson.attachments.length === 0) && (
+                  <p className="text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>Nessun allegato.</p>
+                )}
+              </div>
+              <label
+                className="mt-2 inline-flex items-center gap-2 px-3 py-2 rounded-full text-xs font-medium cursor-pointer transition-colors hover:bg-white/[0.04]"
+                style={{ border: '1px dashed var(--ist-border-strong)', color: 'var(--ist-accent-text)', opacity: uploading ? 0.5 : 1 }}
+              >
+                {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} strokeWidth={2} />}
+                {uploading ? 'Caricamento…' : 'Carica allegato'}
+                <input
+                  type="file" className="hidden" disabled={uploading}
+                  accept=".pdf,.xlsx,.xls,.csv,.docx,.doc,.pptx,.ppt,.zip"
+                  onChange={async e => {
+                    const file = e.target.files?.[0]
+                    e.target.value = ''
+                    if (!file) return
+                    setUploading(true)
+                    const ok = await uploadAttachment(state.id, file, liveLesson?.attachments.length ?? 0)
+                    if (ok) await admin.reload()
+                    setUploading(false)
+                    if (!ok) alert('Upload non riuscito.')
+                  }}
+                />
+              </label>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-3 px-6 py-4" style={{ borderTop: '1px solid var(--ist-border)' }}>
@@ -258,10 +340,10 @@ function LessonRow({ lesson, courseId, isLast, isFirst, admin, onEdit }: {
       />
       <div
         className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
-        style={lesson.videoKey
+        style={lesson.vimeoId
           ? { background: 'rgba(70,211,154,0.12)', color: '#46D39A' }
           : { background: 'var(--ist-w8)', color: 'var(--ist-text-dim)' }}
-        title={lesson.videoKey ? 'Video caricato' : 'Nessun video (caricalo in C4)'}
+        title={lesson.vimeoId ? 'Video Vimeo collegato' : 'Nessun video (aggiungi il link Vimeo)'}
       >
         <Video size={9} strokeWidth={2} />
       </div>

@@ -20,7 +20,7 @@ export interface Lesson {
   description: string
   duration: string          // formatted, e.g. "18 min" (from duration_seconds)
   durationSeconds: number
-  videoKey: string | null   // R2 key; null until uploaded (Phase C4)
+  vimeoId: string | null    // raw Vimeo URL/id pasted by the admin (null if none)
   done: boolean             // per-student, from lesson_progress
   lastPositionSeconds: number
   attachments: Attachment[]
@@ -98,7 +98,7 @@ interface RawAttachment {
 }
 interface RawLesson {
   id: string; course_id: string; title: string; description: string
-  duration_seconds: number; video_key: string | null; published: boolean
+  duration_seconds: number; vimeo_id: string | null; published: boolean
   position: number; attachments: RawAttachment[] | null
 }
 interface RawCourse {
@@ -115,7 +115,7 @@ const SELECT = `
   courses (
     id, category_id, title, description, phase, published, position,
     lessons (
-      id, course_id, title, description, duration_seconds, video_key, published, position,
+      id, course_id, title, description, duration_seconds, vimeo_id, published, position,
       attachments ( id, lesson_id, name, type, size_bytes, object_key, position )
     )
   )
@@ -163,7 +163,7 @@ function buildTree(
                 description: les.description,
                 duration: formatDuration(les.duration_seconds),
                 durationSeconds: les.duration_seconds,
-                videoKey: les.video_key,
+                vimeoId: les.vimeo_id,
                 done: pr?.done ?? false,
                 lastPositionSeconds: pr?.pos ?? 0,
                 attachments: (les.attachments ?? [])
@@ -270,7 +270,7 @@ export function useStudentCatalog(userId: string) {
 
 export interface CategoryInput { title: string; description: string; accent: string; phase: string }
 export interface CourseInput   { title: string; description: string; phase: string }
-export interface LessonInput   { title: string; description: string; durationMinutes: number }
+export interface LessonInput   { title: string; description: string; durationMinutes: number; vimeoId?: string }
 
 type ContentTable = 'categories' | 'courses' | 'lessons'
 
@@ -349,6 +349,7 @@ export function useContentAdmin() {
     const { error } = await supabase.from('lessons').insert({
       course_id: courseId, title: input.title.trim(), description: input.description.trim(),
       duration_seconds: Math.max(0, Math.round(input.durationMinutes * 60)),
+      vimeo_id: input.vimeoId?.trim() || null,
       position: count, published: true,
     })
     if (!error) await load(true)
@@ -359,6 +360,7 @@ export function useContentAdmin() {
     const { error } = await supabase.from('lessons').update({
       title: input.title.trim(), description: input.description.trim(),
       duration_seconds: Math.max(0, Math.round(input.durationMinutes * 60)),
+      vimeo_id: input.vimeoId?.trim() || null,
     }).eq('id', id)
     if (!error) await load(true)
     return !error

@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ChevronLeft, CheckCircle2, Play, Pause, Paperclip, Download,
+  ChevronLeft, CheckCircle2, Play, Paperclip, Download,
   FileText, Sheet, Presentation, Archive, File, ChevronRight, Loader2,
 } from 'lucide-react'
 import { useStudentCatalog, Attachment } from '../../lib/content'
+import { attachmentUrl } from '../../lib/storage'
+import VimeoPlayer from '../../components/ui/VimeoPlayer'
 import { useUI } from '../../context/UIContext'
 import { useAuth } from '../../context/AuthContext'
 
@@ -20,11 +22,24 @@ const FILE_COLORS: Record<string, string> = {
 function AttachmentCard({ att }: { att: Attachment }) {
   const Icon  = FILE_ICONS[att.type] ?? File
   const color = FILE_COLORS[att.type] ?? '#8495A3'
+  const [busy, setBusy] = useState(false)
+  const downloadable = !!att.objectKey
+
+  const open = async () => {
+    if (!downloadable || busy) return
+    setBusy(true)
+    const url = await attachmentUrl(att.objectKey as string)
+    setBusy(false)
+    if (url) window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
   return (
-    <a
-      href="#"
-      onClick={e => e.preventDefault()}
-      className="flex items-center gap-3 px-4 py-3 rounded-2xl transition-all hover:translate-x-0.5 group"
+    <button
+      type="button"
+      onClick={open}
+      disabled={!downloadable || busy}
+      title={downloadable ? 'Scarica' : 'File non ancora disponibile'}
+      className="w-full text-left flex items-center gap-3 px-4 py-3 rounded-2xl transition-all hover:translate-x-0.5 group disabled:opacity-60 disabled:hover:translate-x-0"
       style={{
         background: 'var(--ist-w6)',
         border: '1px solid var(--ist-border)',
@@ -44,181 +59,16 @@ function AttachmentCard({ att }: { att: Attachment }) {
           {att.type} · {att.size}
         </p>
       </div>
-      <Download
-        size={14}
-        strokeWidth={2}
-        className="flex-shrink-0 opacity-0 group-hover:opacity-60 transition-opacity"
-        style={{ color: 'var(--ist-text-muted)' }}
-      />
-    </a>
-  )
-}
-
-// ─── Video Player ─────────────────────────────────────────────────────────────
-// Always dark (data-inverted) — video players are universally dark-background
-
-function VideoPlayer({
-  accent,
-  duration,
-  onPrev,
-  onNext,
-}: {
-  accent: string
-  duration: string
-  onPrev?: () => void
-  onNext?: () => void
-}) {
-  const [playing, setPlaying]   = useState(false)
-  const [progress, setProgress] = useState(0)
-  const interval = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  useEffect(() => {
-    if (playing) {
-      interval.current = setInterval(() => setProgress(p => {
-        if (p >= 100) { setPlaying(false); return 100 }
-        return p + 0.22
-      }), 150)
-    } else {
-      if (interval.current) clearInterval(interval.current)
-    }
-    return () => { if (interval.current) clearInterval(interval.current) }
-  }, [playing])
-
-  const durationSec = parseInt(duration) * 60
-  const elapsed     = Math.round((progress / 100) * durationSec)
-  const fmt         = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
-
-  return (
-    <div
-      data-inverted="true"
-      className="relative w-full rounded-2xl lg:rounded-3xl overflow-hidden"
-      style={{
-        aspectRatio: '16/9',
-        background: `radial-gradient(ellipse at 20% 30%, ${accent}28 0%, transparent 55%), #07090f`,
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 24px 64px rgba(0,0,0,0.55)',
-      }}
-    >
-      {/* Subtle grid texture */}
-      <div
-        className="absolute inset-0 opacity-[0.025]"
-        style={{
-          backgroundImage: 'linear-gradient(rgba(255,255,255,1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,1) 1px, transparent 1px)',
-          backgroundSize: '48px 48px',
-        }}
-      />
-
-      {/* Play/Pause overlay */}
-      {!playing ? (
-        <button
-          onClick={() => setPlaying(true)}
-          className="absolute inset-0 flex flex-col items-center justify-center gap-3 group"
-        >
-          <div
-            className="w-16 h-16 lg:w-[72px] lg:h-[72px] rounded-full flex items-center justify-center transition-transform duration-200 group-hover:scale-110"
-            style={{
-              background: `linear-gradient(135deg, ${accent}, ${accent}bb)`,
-              boxShadow: `0 0 40px ${accent}55, 0 8px 32px rgba(0,0,0,0.50)`,
-            }}
-          >
-            <Play size={26} strokeWidth={2} fill="white" color="white" style={{ marginLeft: 3 }} />
-          </div>
-          {progress === 0 ? (
-            <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.35)' }}>
-              Player · integrazione Cloudflare R2
-            </p>
-          ) : (
-            <p className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.55)' }}>
-              Riprendi da {fmt(elapsed)}
-            </p>
-          )}
-        </button>
-      ) : (
-        <button
-          onClick={() => setPlaying(false)}
-          className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
-        >
-          <div className="flex gap-2">
-            <div className="w-2.5 h-9 rounded-full" style={{ background: 'rgba(255,255,255,0.85)' }} />
-            <div className="w-2.5 h-9 rounded-full" style={{ background: 'rgba(255,255,255,0.85)' }} />
-          </div>
-        </button>
-      )}
-
-      {/* Duration badge */}
-      <div
-        className="absolute top-3 right-3 text-xs font-semibold px-2.5 py-1 rounded-full"
-        style={{ background: 'rgba(0,0,0,0.55)', color: 'rgba(255,255,255,0.75)', backdropFilter: 'blur(8px)' }}
-      >
-        {duration}
-      </div>
-
-      {/* Bottom controls */}
-      <div
-        className="absolute bottom-0 left-0 right-0 px-4 pb-4 pt-12"
-        style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.78))' }}
-      >
-        {/* Scrubber */}
-        <div
-          className="h-1.5 rounded-full mb-3 cursor-pointer relative"
-          style={{ background: 'rgba(255,255,255,0.18)' }}
-          onClick={e => {
-            const rect = e.currentTarget.getBoundingClientRect()
-            setProgress(Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100)))
-            setPlaying(false)
-          }}
-        >
-          <div
-            className="h-full rounded-full"
-            style={{ width: `${progress}%`, background: accent, minWidth: progress > 0 ? 6 : 0 }}
-          >
-            {progress > 0 && (
-              <div
-                className="absolute right-0 top-1/2 w-3.5 h-3.5 rounded-full shadow-lg"
-                style={{ background: 'white', transform: 'translateY(-50%) translateX(50%)' }}
-              />
-            )}
-          </div>
-        </div>
-
-        {/* Controls row */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.60)' }}>
-            {fmt(elapsed)} / {duration}
-          </span>
-          <div className="flex items-center gap-4">
-            {onPrev && (
-              <button
-                onClick={onPrev}
-                className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70"
-                style={{ color: 'rgba(255,255,255,0.55)' }}
-              >
-                <ChevronLeft size={13} strokeWidth={2} /> Prec.
-              </button>
-            )}
-            <button
-              onClick={() => setPlaying(p => !p)}
-              className="flex items-center gap-1.5 text-xs transition-opacity hover:opacity-70"
-              style={{ color: 'rgba(255,255,255,0.70)' }}
-            >
-              {playing
-                ? <><Pause size={12} strokeWidth={2} /> Pausa</>
-                : <><Play size={12} strokeWidth={2} /> Riproduci</>
-              }
-            </button>
-            {onNext && (
-              <button
-                onClick={onNext}
-                className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70"
-                style={{ color: 'rgba(255,255,255,0.55)' }}
-              >
-                Succ. <ChevronRight size={13} strokeWidth={2} />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+      {busy
+        ? <Loader2 size={14} className="animate-spin flex-shrink-0" style={{ color: 'var(--ist-text-muted)' }} />
+        : <Download
+            size={14}
+            strokeWidth={2}
+            className="flex-shrink-0 opacity-0 group-hover:opacity-60 transition-opacity"
+            style={{ color: 'var(--ist-text-muted)' }}
+          />
+      }
+    </button>
   )
 }
 
@@ -338,7 +188,6 @@ export default function StudentLezione() {
 
   const { lesson, course, category } = found
   const lessonIdx  = course.lessons.findIndex(l => l.id === lesson.id)
-  const prevLesson = course.lessons[lessonIdx - 1] ?? null
   const nextLesson = course.lessons[lessonIdx + 1] ?? null
 
   const handleToggleDone = async () => {
@@ -387,12 +236,7 @@ export default function StudentLezione() {
         </nav>
 
         {/* Video player */}
-        <VideoPlayer
-          accent={category.accent}
-          duration={lesson.duration}
-          onPrev={prevLesson ? () => navigate(`/student/corsi/lezione/${prevLesson.id}`) : undefined}
-          onNext={nextLesson ? () => navigate(`/student/corsi/lezione/${nextLesson.id}`) : undefined}
-        />
+        <VimeoPlayer vimeoId={lesson.vimeoId} accent={category.accent} />
 
         {/* Lesson info */}
         <div>
