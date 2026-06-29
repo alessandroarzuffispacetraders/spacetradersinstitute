@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import PageHeader from '../../components/ui/PageHeader'
-import { ChevronDown, Radio, Upload, Shield, X, Loader2, Mail, KeyRound } from 'lucide-react'
+import { ChevronDown, Radio, Upload, Shield, X, Loader2, Mail, KeyRound, Trash2 } from 'lucide-react'
 import { UserPermissions, UserRole, StudentStatus, StudentPhase } from '../../types'
 import { supabase } from '../../lib/supabase'
-import { updateUserAuth } from '../../lib/adminUsers'
+import { updateUserAuth, deleteUserAccount } from '../../lib/adminUsers'
 
 const STAFF_ROLES: UserRole[] = ['coach', 'mental_coach', 'admin']
 
@@ -78,12 +78,13 @@ function PermToggle({ icon, label, description, checked, onChange }: {
 
 // ── Edit Modal ──────────────────────────────────────────────────────────────
 
-function EditModal({ user, coaches, mentalCoaches, onClose, onSave }: {
+function EditModal({ user, coaches, mentalCoaches, onClose, onSave, onDelete }: {
   user: Profile
   coaches: Profile[]
   mentalCoaches: Profile[]
   onClose: () => void
   onSave: (updated: Profile) => void
+  onDelete: (id: string) => void
 }) {
   const [role, setRole] = useState<UserRole>(user.role)
   const [extraRoles, setExtraRoles] = useState<UserRole[]>(user.roles ?? [])
@@ -96,6 +97,17 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave }: {
   const [newPassword, setNewPassword] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    setError(null)
+    const { error } = await deleteUserAccount(user.id)
+    if (error) { setError(error); setDeleting(false); return }
+    onDelete(user.id)
+    onClose()
+  }
 
   const ALL_ROLES: UserRole[] = ['student', 'coach', 'mental_coach', 'admin']
   const ALL_STATUSES: StudentStatus[] = ['active', 'expired', 'blocked']
@@ -309,6 +321,41 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave }: {
 
         {error && <p className="text-sm text-red-400 text-center">{error}</p>}
 
+        {/* Danger zone — elimina utente */}
+        {confirmDelete ? (
+          <div className="p-3 rounded-2xl" style={{ background: 'rgba(255,107,122,0.08)', border: '1px solid rgba(255,107,122,0.22)' }}>
+            <p className="text-xs mb-2.5" style={{ color: '#FF6B7A' }}>
+              Eliminare definitivamente <strong>{user.name}</strong>? L'account e i suoi dati verranno rimossi. Irreversibile.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all disabled:opacity-60 flex items-center gap-1.5"
+                style={{ background: '#E5484D' }}
+              >
+                {deleting && <Loader2 size={12} className="animate-spin" />}
+                {deleting ? 'Elimino...' : 'Conferma eliminazione'}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold"
+                style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+              >
+                Annulla
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="self-start text-xs font-medium flex items-center gap-1.5 transition-colors hover:opacity-80"
+            style={{ color: '#FF6B7A' }}
+          >
+            <Trash2 size={13} strokeWidth={2} /> Elimina utente
+          </button>
+        )}
+
         {/* Azioni */}
         <div className="flex gap-3">
           <button
@@ -456,6 +503,10 @@ export default function AdminUtenti() {
     setUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
   }
 
+  const handleDelete = (id: string) => {
+    setUsers(prev => prev.filter(u => u.id !== id))
+  }
+
   const handleUpdatePerms = async (id: string, perms: UserPermissions) => {
     await supabase.from('profiles').update({ permissions: perms }).eq('id', id)
     setUsers(prev => prev.map(u => u.id === id ? { ...u, permissions: perms } : u))
@@ -531,6 +582,7 @@ export default function AdminUtenti() {
           mentalCoaches={mentalCoaches}
           onClose={() => setEditingUser(null)}
           onSave={handleSave}
+          onDelete={handleDelete}
         />
       )}
     </div>

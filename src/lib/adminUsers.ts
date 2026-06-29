@@ -24,3 +24,23 @@ export async function updateUserAuth(
     return { error: 'Errore di rete' }
   }
 }
+
+// Elimina definitivamente un utente (account + dati collegati) via edge function.
+export async function deleteUserAccount(userId: string): Promise<{ error: string | null }> {
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) return { error: 'Sessione scaduta. Rifai il login.' }
+
+  try {
+    const res = await fetch(`${FUNCTIONS_URL}/admin-delete-user`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ userId }),
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) return { error: body?.error || 'Errore eliminazione utente' }
+    return { error: null }
+  } catch {
+    return { error: 'Errore di rete' }
+  }
+}
