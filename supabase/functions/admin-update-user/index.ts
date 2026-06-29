@@ -38,8 +38,12 @@ Deno.serve(async (req) => {
     const { userId, email, password } = await req.json() as { userId?: string; email?: string; password?: string }
     if (!userId) return json({ error: 'userId mancante' }, 400)
 
-    const updates: { email?: string; password?: string; email_confirm?: boolean } = {}
-    if (email && email.trim()) { updates.email = email.trim(); updates.email_confirm = true }
+    const updates: { email?: string; password?: string; email_confirm?: boolean } = {
+      // Un admin che modifica un account lo rende sempre utilizzabile:
+      // conferma l'email (un self-signup resta altrimenti non confermato e non logga).
+      email_confirm: true,
+    }
+    if (email && email.trim()) updates.email = email.trim()
     if (password && password.length > 0) updates.password = password
     if (!updates.email && !updates.password) return json({ error: 'Nessuna modifica richiesta' }, 400)
 
