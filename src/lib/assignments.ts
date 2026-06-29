@@ -88,16 +88,18 @@ export function useCoachAssignments(coachId: string) {
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [loading, setLoading] = useState(true)
 
-  const load = useCallback(async () => {
+  // silent=true skips the full-page spinner (so an in-progress feedback textarea
+  // isn't unmounted when a markup upload triggers a refresh).
+  const load = useCallback(async (silent = false) => {
     if (!coachId) { setLoading(false); return }
-    setLoading(true)
+    if (!silent) setLoading(true)
     const { data } = await supabase
       .from('assignments')
       .select(`${ASSIGNMENT_SELECT}, student:student_id(name)`)
       .eq('coach_id', coachId)
       .order('created_at', { ascending: false })
     setAssignments((data as Assignment[]) ?? [])
-    setLoading(false)
+    if (!silent) setLoading(false)
   }, [coachId])
 
   useEffect(() => { load() }, [load])
@@ -140,7 +142,7 @@ export function useCoachAssignments(coachId: string) {
       submission_id: submissionId, uploaded_by: coachId, kind: 'coach_markup',
       object_key: key, source_file_id: sourceFileId,
     })
-    if (!error) await load()
+    if (!error) await load(true)   // silent: keep the open review form intact
     return !error
   }, [coachId, load])
 

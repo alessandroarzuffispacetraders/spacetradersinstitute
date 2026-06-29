@@ -144,26 +144,29 @@ function SubmissionReview({ sub, assignmentId, onReview, onMarkup }: {
         <div>
           <textarea
             value={feedback} onChange={e => setFeedback(e.target.value)} rows={3}
-            placeholder="Scrivi il feedback per lo studente..."
+            placeholder="Scrivi il feedback per lo studente (facoltativo se hai annotato un'immagine)..."
             className="px-3 py-2.5 text-sm placeholder:text-[#56636F] resize-none mb-3" style={inputStyle}
           />
           <div className="flex gap-2 flex-wrap">
             <button
-              onClick={() => send(false)} disabled={saving || !feedback.trim()}
+              onClick={() => send(false)} disabled={saving || (!feedback.trim() && markups.length === 0)}
               className="px-4 py-2 text-white text-xs font-bold rounded-full transition-all hover:-translate-y-0.5 disabled:opacity-50 flex items-center gap-2"
               style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)', border: '1px solid var(--ist-w14)' }}
             >
               {saving && <Loader2 size={13} className="animate-spin" />}
-              Invia feedback
+              Invia allo studente
             </button>
             <button
-              onClick={() => send(true)} disabled={saving || !feedback.trim()}
+              onClick={() => send(true)} disabled={saving || (!feedback.trim() && markups.length === 0)}
               className="px-4 py-2 text-xs font-semibold rounded-full transition-all disabled:opacity-50"
               style={{ background: 'rgba(255,107,122,0.12)', color: '#FF6B7A', border: '1px solid rgba(255,107,122,0.22)' }}
             >
-              Feedback + segnala bloccato
+              Invia + segnala bloccato
             </button>
           </div>
+          <p className="text-[11px] mt-2" style={{ color: 'var(--ist-text-dim)' }}>
+            Puoi inviare solo le immagini annotate, solo il testo, o entrambi.
+          </p>
         </div>
       ) : (
         <div className="pt-1">
