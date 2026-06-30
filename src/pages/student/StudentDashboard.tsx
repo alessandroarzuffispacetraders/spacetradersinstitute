@@ -1,7 +1,14 @@
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabase'
 import { GradientCard } from '../../components/ui/Card'
 import { BookOpen, MessageCircle, Radio, TrendingUp, Brain, CalendarDays } from 'lucide-react'
+import { usePath } from '../../lib/path'
+import { useStudentCatalog } from '../../lib/content'
+import { useStudentBadges } from '../../lib/badges'
+import { useLiveEvents, liveDateLabel } from '../../lib/live'
+import { useStudentSessions } from '../../lib/coaching'
 
 // ─── data ─────────────────────────────────────────────────────────────────────
 
@@ -12,35 +19,15 @@ const PHASES = [
   { label: 'Deploy',     key: 'deploy' },
 ]
 
-const COURSES = [
-  {
-    title: 'Analisi Tecnica',
-    tag: 'Build · Modulo 2',
-    gradient: 'from-[#5A9AB1] via-[#286680] to-[#0A3346]',
-    blob1: 'bg-[#7CBBD0]/50', blob2: 'bg-[#155A72]/70',
-    lessons: 4, done: 2, path: '/student/corsi',
-  },
-  {
-    title: 'Risk Management',
-    tag: 'Build · Modulo 3',
-    gradient: 'from-[#155A72] via-[#0F455C] to-[#061D2A]',
-    blob1: 'bg-[#5A9AB1]/40', blob2: 'bg-[#0A3346]/80',
-    lessons: 3, done: 0, path: '/student/corsi',
-  },
-  {
-    title: 'Psicologia del Trading',
-    tag: 'Build · Modulo 4',
-    gradient: 'from-[#286680] via-[#0A3346] to-[#070812]',
-    blob1: 'bg-[#7CBBD0]/35', blob2: 'bg-[#0F455C]/80',
-    lessons: 3, done: 0, path: '/student/corsi',
-  },
-]
+const PHASE_LABEL: Record<string, string> = {
+  onboarding: 'Onboarding', build: 'Build', test: 'Test', deploy: 'Deploy',
+}
 
-const QUICK = [
-  { label: 'Videocorsi',    icon: BookOpen,      path: '/student/corsi',     desc: '14 lezioni disponibili' },
-  { label: 'Community',     icon: MessageCircle, path: '/student/chat',      desc: '3 messaggi non letti' },
-  { label: 'Sessioni Live', icon: Radio,         path: '/student/live',      desc: 'Prossima: Gio 27' },
-  { label: 'Progressi',     icon: TrendingUp,    path: '/student/progressi', desc: '5 badge ottenuti' },
+// Palette gradienti per le card corsi (ciclata).
+const GRADIENTS = [
+  { gradient: 'from-[#5A9AB1] via-[#286680] to-[#0A3346]', blob1: 'bg-[#7CBBD0]/50', blob2: 'bg-[#155A72]/70' },
+  { gradient: 'from-[#155A72] via-[#0F455C] to-[#061D2A]', blob1: 'bg-[#5A9AB1]/40', blob2: 'bg-[#0A3346]/80' },
+  { gradient: 'from-[#286680] via-[#0A3346] to-[#070812]', blob1: 'bg-[#7CBBD0]/35', blob2: 'bg-[#0F455C]/80' },
 ]
 
 // ─── progress ring ─────────────────────────────────────────────────────────────
@@ -99,12 +86,73 @@ function PremiumCard({ children, className = '' }: { children: React.ReactNode; 
 export default function StudentDashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const userId = user?.id ?? ''
 
-  const firstName     = user?.name?.split(' ')[0] ?? 'Trader'
-  const initial       = user?.name?.charAt(0) ?? 'T'
-  const phaseIdx      = Math.max(0, PHASES.findIndex(p => p.key === user?.phase) === -1 ? 1 : PHASES.findIndex(p => p.key === user?.phase))
-  const progress      = 58
-  const programDay    = 34
+  const { phase, phases } = usePath(userId)
+  const { categories } = useStudentCatalog(userId)
+  const { stats } = useStudentBadges(userId)
+  const { events } = useLiveEvents()
+  const { sessions: mySessions } = useStudentSessions(userId)
+
+  // created_at + nomi coach/mental (query leggere sul proprio profilo)
+  const [meta, setMeta] = useState<{ createdAt: string | null; coachName: string | null; mentalName: string | null }>({ createdAt: null, coachName: null, mentalName: null })
+  useEffect(() => {
+    if (!user) return
+    let active = true
+    ;(async () => {
+      const [own, co, me] = await Promise.all([
+        supabase.from('profiles').select('created_at').eq('id', user.id).maybeSingle(),
+        user.assignedCoachId ? supabase.from('profiles').select('name').eq('id', user.assignedCoachId).maybeSingle() : Promise.resolve({ data: null as { name: string } | null }),
+        user.assignedMentalCoachId ? supabase.from('profiles').select('name').eq('id', user.assignedMentalCoachId).maybeSingle() : Promise.resolve({ data: null as { name: string } | null }),
+      ])
+      if (!active) return
+      setMeta({
+        createdAt: (own.data as { created_at?: string } | null)?.created_at ?? null,
+        coachName: (co.data as { name?: string } | null)?.name ?? null,
+        mentalName: (me.data as { name?: string } | null)?.name ?? null,
+      })
+    })()
+    return () => { active = false }
+  }, [user])
+
+  const firstName = user?.name?.split(' ')[0] ?? 'Trader'
+  const initial   = user?.name?.charAt(0) ?? 'T'
+
+  // Progresso reale dal percorso
+  const allSteps  = phases.flatMap(p => p.steps)
+  const doneSteps = allSteps.filter(s => s.done).length
+  const progress  = allSteps.length ? Math.round((doneSteps / allSteps.length) * 100) : 0
+  const phaseIdx  = Math.max(0, PHASES.findIndex(p => p.key === phase))
+  const activePhase = phases.find(p => p.id === phase)
+  const activeDone  = activePhase ? activePhase.steps.filter(s => s.done).length : 0
+  const activeTotal = activePhase ? activePhase.steps.length : 0
+
+  const programDay = meta.createdAt
+    ? Math.max(1, Math.floor((Date.now() - new Date(meta.createdAt).getTime()) / 86_400_000) + 1)
+    : null
+
+  // Corsi della fase corrente (fallback: primi 3 in assoluto)
+  const allCourses = categories.flatMap(c => c.courses)
+  const phaseCourses = allCourses.filter(c => c.phase === PHASE_LABEL[phase])
+  const courses = (phaseCourses.length ? phaseCourses : allCourses).slice(0, 3).map((c, i) => ({
+    id: c.id,
+    title: c.title,
+    tag: `${c.phase} · Corso`,
+    done: c.lessons.filter(l => l.done).length,
+    lessons: c.lessons.length,
+    ...GRADIENTS[i % GRADIENTS.length],
+  }))
+
+  const totalLessons = allCourses.reduce((n, c) => n + c.lessons.length, 0)
+  const nextLive = events.find(e => e.status === 'live') ?? events.find(e => e.status === 'upcoming') ?? null
+  const completedSessions = mySessions.filter(s => s.status === 'completed').length
+
+  const QUICK = [
+    { label: 'Videocorsi',    icon: BookOpen,      path: '/student/corsi',     desc: totalLessons ? `${totalLessons} lezioni disponibili` : 'Sfoglia i corsi' },
+    { label: 'Community',     icon: MessageCircle, path: '/student/chat',      desc: 'Vai alla community' },
+    { label: 'Sessioni Live', icon: Radio,         path: '/student/live',      desc: nextLive ? `Prossima: ${liveDateLabel(nextLive)}` : 'Nessuna in arrivo' },
+    { label: 'Progressi',     icon: TrendingUp,    path: '/student/progressi', desc: `${stats.earnedCount} badge ottenuti` },
+  ]
 
   return (
     <div className="min-h-screen">
@@ -114,7 +162,7 @@ export default function StudentDashboard() {
         <header className="flex items-center justify-between gap-4">
           <div>
             <p className="text-sm mb-1" style={{ color: 'var(--ist-text-muted)' }}>
-              Giorno {programDay} del programma
+              {programDay ? `Giorno ${programDay} del programma` : 'Il tuo programma'}
             </p>
             <h1 className="text-3xl lg:text-4xl font-extrabold leading-none" style={{ color: 'var(--ist-text)' }}>
               Ciao, {firstName} 👋
@@ -151,11 +199,14 @@ export default function StudentDashboard() {
                     Percorso completato
                   </p>
                   <p className="text-sm mt-1" style={{ color: 'var(--ist-text-muted)' }}>
-                    Fase <strong style={{ color: 'var(--ist-accent-text)' }}>Build</strong> · Modulo 3 di 4
+                    Fase <strong style={{ color: 'var(--ist-accent-text)' }}>{PHASE_LABEL[phase] ?? phase}</strong>
+                    {activeTotal > 0 && <> · {activeDone}/{activeTotal} passi</>}
                   </p>
-                  <p className="text-xs mt-2 px-2.5 py-1 rounded-full inline-block" style={{ background: 'rgba(70,211,154,0.14)', color: '#46D39A' }}>
-                    🔥 7 giorni consecutivi
-                  </p>
+                  {stats.diaryStreak > 0 && (
+                    <p className="text-xs mt-2 px-2.5 py-1 rounded-full inline-block" style={{ background: 'rgba(70,211,154,0.14)', color: '#46D39A' }}>
+                      🔥 {stats.diaryStreak} {stats.diaryStreak === 1 ? 'giorno' : 'giorni'} consecutivi
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -169,11 +220,11 @@ export default function StudentDashboard() {
 
               {/* Fasi del percorso */}
               <div className="flex items-center gap-0">
-                {PHASES.map((phase, i) => {
+                {PHASES.map((p, i) => {
                   const done   = i < phaseIdx
                   const active = i === phaseIdx
                   return (
-                    <div key={phase.key} className="flex items-center flex-1 min-w-0">
+                    <div key={p.key} className="flex items-center flex-1 min-w-0">
                       <div className="flex flex-col items-center gap-1.5 flex-1 min-w-0">
                         <div
                           className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
@@ -189,7 +240,7 @@ export default function StudentDashboard() {
                           className="text-xs font-semibold truncate w-full text-center"
                           style={{ color: done ? '#46D39A' : active ? 'var(--ist-accent-text)' : 'var(--ist-text-dim)' }}
                         >
-                          {phase.label}
+                          {p.label}
                         </span>
                       </div>
                       {i < PHASES.length - 1 && (
@@ -214,30 +265,38 @@ export default function StudentDashboard() {
                 </button>
               </div>
 
-              {/* Mobile: scroll */}
-              <div className="flex lg:hidden gap-4 overflow-x-auto no-scrollbar -mx-5 px-5 pb-1">
-                {COURSES.map(c => (
-                  <div key={c.title} className="flex-shrink-0 w-56">
-                    <GradientCard {...c} onClick={() => navigate(c.path)} className="h-40">
-                      <p className="text-white/60 text-xs mt-1">{c.done}/{c.lessons} lezioni</p>
-                    </GradientCard>
-                  </div>
-                ))}
-              </div>
-
-              {/* Desktop: 3 colonne */}
-              <div className="hidden lg:grid grid-cols-3 gap-4">
-                {COURSES.map(c => (
-                  <GradientCard key={c.title} {...c} onClick={() => navigate(c.path)} className="h-44">
-                    <div className="mt-2 flex items-center gap-2">
-                      <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.18)' }}>
-                        <div className="h-full rounded-full bg-white/70" style={{ width: c.lessons > 0 ? `${(c.done/c.lessons)*100}%` : '0%' }}/>
+              {courses.length === 0 ? (
+                <Card className="p-6">
+                  <p className="text-sm" style={{ color: 'var(--ist-text-muted)' }}>Nessun corso ancora disponibile.</p>
+                </Card>
+              ) : (
+                <>
+                  {/* Mobile: scroll */}
+                  <div className="flex lg:hidden gap-4 overflow-x-auto no-scrollbar -mx-5 px-5 pb-1">
+                    {courses.map(c => (
+                      <div key={c.id} className="flex-shrink-0 w-56">
+                        <GradientCard {...c} onClick={() => navigate('/student/corsi')} className="h-40">
+                          <p className="text-white/60 text-xs mt-1">{c.done}/{c.lessons} lezioni</p>
+                        </GradientCard>
                       </div>
-                      <span className="text-white/60 text-[11px]">{c.done}/{c.lessons}</span>
-                    </div>
-                  </GradientCard>
-                ))}
-              </div>
+                    ))}
+                  </div>
+
+                  {/* Desktop: 3 colonne */}
+                  <div className="hidden lg:grid grid-cols-3 gap-4">
+                    {courses.map(c => (
+                      <GradientCard key={c.id} {...c} onClick={() => navigate('/student/corsi')} className="h-44">
+                        <div className="mt-2 flex items-center gap-2">
+                          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.18)' }}>
+                            <div className="h-full rounded-full bg-white/70" style={{ width: c.lessons > 0 ? `${(c.done/c.lessons)*100}%` : '0%' }}/>
+                          </div>
+                          <span className="text-white/60 text-[11px]">{c.done}/{c.lessons}</span>
+                        </div>
+                      </GradientCard>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* ACCESSO RAPIDO */}
@@ -270,20 +329,37 @@ export default function StudentDashboard() {
                 <span className="inline-flex w-2 h-2 rounded-full bg-red-500 animate-pulse"/>
                 <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#f87171' }}>Live in arrivo</p>
               </div>
-              <p className="text-xl font-extrabold leading-tight mb-1" style={{ color: 'var(--ist-text)' }}>
-                Review Trade
-              </p>
-              <div className="flex items-center gap-2 mb-5" style={{ color: 'var(--ist-text-muted)' }}>
-                <CalendarDays size={13} strokeWidth={2}/>
-                <p className="text-sm">Giovedì 27 Giugno · 18:00</p>
-              </div>
-              <button
-                onClick={() => navigate('/student/live')}
-                className="w-full py-3 rounded-2xl text-sm font-bold transition-all hover:-translate-y-0.5"
-                style={{ background: 'linear-gradient(135deg, rgba(239,68,68,0.18), rgba(239,68,68,0.09))', border: '1px solid rgba(239,68,68,0.28)', color: '#f87171' }}
-              >
-                Vedi dettagli →
-              </button>
+              {nextLive ? (
+                <>
+                  <p className="text-xl font-extrabold leading-tight mb-1" style={{ color: 'var(--ist-text)' }}>
+                    {nextLive.title}
+                  </p>
+                  <div className="flex items-center gap-2 mb-5" style={{ color: 'var(--ist-text-muted)' }}>
+                    <CalendarDays size={13} strokeWidth={2}/>
+                    <p className="text-sm">{liveDateLabel(nextLive)}</p>
+                  </div>
+                  <button
+                    onClick={() => navigate(`/student/live/${nextLive.id}`)}
+                    className="w-full py-3 rounded-2xl text-sm font-bold transition-all hover:-translate-y-0.5"
+                    style={{ background: 'linear-gradient(135deg, rgba(239,68,68,0.18), rgba(239,68,68,0.09))', border: '1px solid rgba(239,68,68,0.28)', color: '#f87171' }}
+                  >
+                    Vedi dettagli →
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm mb-5" style={{ color: 'var(--ist-text-muted)' }}>
+                    Nessuna live in programma al momento.
+                  </p>
+                  <button
+                    onClick={() => navigate('/student/live')}
+                    className="w-full py-3 rounded-2xl text-sm font-bold transition-all hover:-translate-y-0.5"
+                    style={{ background: 'var(--ist-w7)', border: '1px solid var(--ist-border)', color: 'var(--ist-text-muted)' }}
+                  >
+                    Vai alle Live →
+                  </button>
+                </>
+              )}
             </Card>
 
             {/* PERCORSO VERTICALE */}
@@ -292,12 +368,12 @@ export default function StudentDashboard() {
                 Il tuo percorso
               </p>
               <div className="space-y-0">
-                {PHASES.map((phase, i) => {
+                {PHASES.map((p, i) => {
                   const done   = i < phaseIdx
                   const active = i === phaseIdx
                   const last   = i === PHASES.length - 1
                   return (
-                    <div key={phase.key} className="flex gap-4">
+                    <div key={p.key} className="flex gap-4">
                       {/* Dot + line */}
                       <div className="flex flex-col items-center">
                         <div
@@ -315,16 +391,16 @@ export default function StudentDashboard() {
                         )}
                       </div>
                       {/* Label */}
-                      <div className={`pb-4 ${last ? '' : ''}`}>
+                      <div className="pb-4">
                         <p
                           className="text-sm font-semibold leading-none mt-1"
                           style={{ color: done ? '#46D39A' : active ? 'var(--ist-text)' : 'var(--ist-text-dim)' }}
                         >
-                          {phase.label}
+                          {p.label}
                         </p>
-                        {active && (
+                        {active && activeTotal > 0 && (
                           <p className="text-xs mt-1" style={{ color: 'var(--ist-accent-text)' }}>
-                            In corso · Modulo 3
+                            In corso · {activeDone}/{activeTotal} passi
                           </p>
                         )}
                         {done && (
@@ -348,7 +424,7 @@ export default function StudentDashboard() {
                 </div>
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>Mental Coach</p>
-                  <p className="text-sm font-bold" style={{ color: 'var(--ist-text)' }}>Sofia Verdi</p>
+                  <p className="text-sm font-bold" style={{ color: 'var(--ist-text)' }}>{meta.mentalName ?? 'Da assegnare'}</p>
                 </div>
               </div>
               <div
@@ -356,34 +432,38 @@ export default function StudentDashboard() {
                 style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.14)' }}
               >
                 <p className="text-xs leading-relaxed" style={{ color: 'var(--ist-text-muted)' }}>
-                  Sessione 1 completata. Prossima sessione ancora da pianificare con Sofia.
+                  {completedSessions > 0
+                    ? `${completedSessions} ${completedSessions === 1 ? 'sessione completata' : 'sessioni completate'}. Apri l'area Mental Coach per i dettagli.`
+                    : 'Nessuna sessione ancora completata. Apri l\'area Mental Coach per iniziare.'}
                 </p>
               </div>
             </Card>
 
-            {/* MESSAGGIO COACH */}
+            {/* COACH */}
             <Card className="p-6">
               <div className="flex items-center gap-3 mb-3">
                 <div
                   className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
                   style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)', color: 'white' }}
                 >
-                  L
+                  {meta.coachName?.charAt(0) ?? 'C'}
                 </div>
                 <div>
-                  <p className="text-xs font-bold" style={{ color: 'var(--ist-accent-text)' }}>Laura Bianchi · Coach</p>
-                  <p className="text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>Oggi alle 15:00</p>
+                  <p className="text-xs font-bold" style={{ color: 'var(--ist-accent-text)' }}>
+                    {meta.coachName ?? 'Coach da assegnare'} · Coach
+                  </p>
+                  <p className="text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>Il tuo coach personale</p>
                 </div>
               </div>
-              <p className="text-sm leading-relaxed mb-4" style={{ color: 'var(--ist-text)' }}>
-                "Ottima analisi su EUR/USD ieri! L'entry era precisa. Continua così 💪"
+              <p className="text-sm leading-relaxed mb-4" style={{ color: 'var(--ist-text-muted)' }}>
+                Hai domande sul percorso o sui tuoi trade? Scrivi al tuo coach in chat.
               </p>
               <button
                 onClick={() => navigate('/student/chat', { state: { tab: 'direct' } })}
                 className="w-full py-2.5 rounded-2xl text-sm font-semibold"
                 style={{ background: 'rgba(90,154,177,0.10)', border: '1px solid rgba(90,154,177,0.18)', color: 'var(--ist-accent-text)' }}
               >
-                Rispondi nella chat
+                Apri la chat
               </button>
             </Card>
 
