@@ -20,6 +20,7 @@ const USE_NAV: NavItem[] = [
   { label: 'Community', path: '/student/chat', icon: 'MessageCircle' },
   { label: 'Mental Coach', shortLabel: 'Mental', path: '/student/mental-coach', icon: 'Brain' },
   { label: 'Live & Replay', shortLabel: 'Live', path: '/student/live', icon: 'Radio' },
+  { label: 'Calendario', path: '/student/calendario', icon: 'CalendarDays' },
   { label: 'Progressi', path: '/student/progressi', icon: 'TrendingUp' },
   { label: 'Protocol Journal', shortLabel: 'Journal', path: '/student/journal', icon: 'ExternalLink' },
 ]

@@ -9,6 +9,7 @@ import { useStudentCatalog } from '../../lib/content'
 import { useStudentBadges } from '../../lib/badges'
 import { useLiveEvents, liveDateLabel } from '../../lib/live'
 import { useStudentSessions } from '../../lib/coaching'
+import LiveCalendar from '../../components/ui/LiveCalendar'
 
 // ─── data ─────────────────────────────────────────────────────────────────────
 
@@ -360,6 +361,19 @@ export default function StudentDashboard() {
                   </button>
                 </>
               )}
+            </Card>
+
+            {/* CALENDARIO (compatto) */}
+            <Card className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--ist-text-muted)' }}>
+                  Calendario
+                </p>
+                <button onClick={() => navigate('/student/calendario')} className="text-xs font-semibold" style={{ color: 'var(--ist-accent-text)' }}>
+                  Apri →
+                </button>
+              </div>
+              <LiveCalendar events={events} compact onPickDay={(de) => de[0] && navigate(`/student/live/${de[0].id}`)} />
             </Card>
 
             {/* PERCORSO VERTICALE */}

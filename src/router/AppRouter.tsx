@@ -15,6 +15,7 @@ import StudentCompiti from '../pages/student/StudentCompiti'
 import StudentMentalCoach from '../pages/student/StudentMentalCoach'
 import StudentLive from '../pages/student/StudentLive'
 import StudentLivePlayer from '../pages/student/StudentLivePlayer'
+import StudentCalendario from '../pages/student/StudentCalendario'
 import StudentProgressi from '../pages/student/StudentProgressi'
 import StudentJournal from '../pages/student/StudentJournal'
 
@@ -67,6 +68,7 @@ function PrivateRoutes() {
         <Route path="/student/mental-coach" element={<StudentMentalCoach />} />
         <Route path="/student/live" element={<StudentLive />} />
         <Route path="/student/live/:liveId" element={<StudentLivePlayer />} />
+        <Route path="/student/calendario" element={<StudentCalendario />} />
         <Route path="/student/progressi" element={<StudentProgressi />} />
         <Route path="/student/journal" element={<StudentJournal />} />
 
