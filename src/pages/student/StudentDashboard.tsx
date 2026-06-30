@@ -145,6 +145,15 @@ export default function StudentDashboard() {
   const nextLive = events.find(e => e.status === 'live') ?? events.find(e => e.status === 'upcoming') ?? null
   const completedSessions = mySessions.filter(s => s.status === 'completed').length
 
+  // Apre direttamente la chat privata (DM) col coach / mental coach assegnato;
+  // se non assegnato, ripiega sulla scheda chat privati.
+  const openCoachChat = () => navigate('/student/chat', {
+    state: user?.assignedCoachId ? { openDm: user.assignedCoachId } : { tab: 'direct' },
+  })
+  const openMentalChat = () => navigate('/student/chat', {
+    state: user?.assignedMentalCoachId ? { openDm: user.assignedMentalCoachId } : { tab: 'direct' },
+  })
+
   return (
     <div className="min-h-screen">
       <div className="px-5 lg:px-10 pt-8 pb-32 lg:pb-12 space-y-6">
@@ -313,8 +322,8 @@ export default function StudentDashboard() {
         {/* ── SECONDARIE: mental coach · coach ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-          {/* MENTAL COACH */}
-          <Card className="p-6" onClick={() => navigate('/student/mental-coach')}>
+          {/* MENTAL COACH — apre la chat privata col mental coach */}
+          <Card className="p-6" onClick={openMentalChat}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(139,92,246,0.16)', border: '1px solid rgba(139,92,246,0.22)' }}>
                 <Brain size={17} strokeWidth={2} style={{ color: '#a78bfa' }}/>
@@ -324,11 +333,12 @@ export default function StudentDashboard() {
                 <p className="text-sm font-bold" style={{ color: 'var(--ist-text)' }}>{meta.mentalName ?? 'Da assegnare'}</p>
               </div>
             </div>
-            <div className="rounded-2xl p-3" style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.14)' }}>
+            <div className="rounded-2xl p-3 flex items-center gap-2" style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.14)' }}>
+              <MessageCircle size={14} strokeWidth={2} style={{ color: '#a78bfa', flexShrink: 0 }} />
               <p className="text-xs leading-relaxed" style={{ color: 'var(--ist-text-muted)' }}>
                 {completedSessions > 0
-                  ? `${completedSessions} ${completedSessions === 1 ? 'sessione completata' : 'sessioni completate'}. Apri l'area Mental Coach.`
-                  : 'Nessuna sessione ancora completata. Apri l\'area Mental Coach per iniziare.'}
+                  ? `${completedSessions} ${completedSessions === 1 ? 'sessione completata' : 'sessioni completate'}. Scrivi al tuo mental coach.`
+                  : 'Scrivi al tuo mental coach in chat privata.'}
               </p>
             </div>
           </Card>
@@ -350,7 +360,7 @@ export default function StudentDashboard() {
               Domande sul percorso o sui tuoi trade? Scrivi al tuo coach in chat.
             </p>
             <button
-              onClick={() => navigate('/student/chat', { state: { tab: 'direct' } })}
+              onClick={openCoachChat}
               className="w-full py-2.5 rounded-2xl text-sm font-semibold"
               style={{ background: 'rgba(90,154,177,0.10)', border: '1px solid rgba(90,154,177,0.18)', color: 'var(--ist-accent-text)' }}
             >
