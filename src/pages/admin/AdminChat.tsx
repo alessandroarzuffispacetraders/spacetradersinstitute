@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Hash, Megaphone, Edit2, Trash2, X, Plus } from 'lucide-react'
+import { Hash, Megaphone, Edit2, Trash2, X, Plus, Loader2 } from 'lucide-react'
 import Card from '../../components/ui/Card'
 import PageHeader from '../../components/ui/PageHeader'
-import { CHANNELS, Channel, ChannelType, MemberRole } from '../../data/chatData'
+import { Channel, ChannelType, MemberRole } from '../../data/chatData'
+import { useChannelsAdmin, ChannelInput } from '../../lib/channels'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -51,11 +52,12 @@ function ChannelModal({
   onClose,
 }: {
   initial?: Partial<ChannelForm>
-  onSave: (form: ChannelForm) => void
+  onSave: (form: ChannelForm) => Promise<string | null>
   onClose: () => void
 }) {
   const [form, setForm] = useState<ChannelForm>({ ...EMPTY_FORM, ...initial })
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const toggleRole = (field: 'roles' | 'canPost', role: MemberRole) => {
     setForm(prev => ({
@@ -66,7 +68,7 @@ function ChannelModal({
     }))
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name.trim()) {
       setError('Il nome del canale è obbligatorio.')
       return
@@ -75,7 +77,11 @@ function ChannelModal({
       setError('Seleziona almeno un ruolo che può vedere il canale.')
       return
     }
-    onSave(form)
+    setSaving(true)
+    const err = await onSave(form)
+    setSaving(false)
+    if (err) { setError(err); return }
+    onClose()
   }
 
   return (
@@ -292,9 +298,11 @@ function ChannelModal({
           </button>
           <button
             onClick={handleSave}
-            className="flex-1 py-2.5 text-sm font-semibold rounded-2xl transition-all hover:-translate-y-0.5 text-white"
+            disabled={saving}
+            className="flex-1 py-2.5 text-sm font-semibold rounded-2xl transition-all hover:-translate-y-0.5 text-white flex items-center justify-center gap-2 disabled:opacity-60"
             style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)', boxShadow: '0 4px 14px rgba(40,102,128,0.30)' }}
           >
+            {saving && <Loader2 size={15} strokeWidth={2.5} className="animate-spin" />}
             {initial?.name ? 'Salva modifiche' : 'Crea canale'}
           </button>
         </div>
@@ -320,7 +328,7 @@ function StatBadge({ label, value, color }: { label: string; value: number; colo
 // ─── main component ───────────────────────────────────────────────────────────
 
 export default function AdminChat() {
-  const [channels, setChannels] = useState<Channel[]>(CHANNELS)
+  const { channels, loading, createChannel, updateChannel, deleteChannel } = useChannelsAdmin()
   const [modal, setModal] = useState<{ open: boolean; editing?: Channel }>({ open: false })
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
@@ -338,31 +346,21 @@ export default function AdminChat() {
   const openEdit = (ch: Channel) => setModal({ open: true, editing: ch })
   const closeModal = () => setModal({ open: false })
 
-  const handleSave = (form: ChannelForm) => {
-    if (modal.editing) {
-      // Edit
-      setChannels(prev =>
-        prev.map(ch =>
-          ch.id === modal.editing!.id
-            ? { ...ch, ...form, id: ch.id, categoryIcon: CATEGORY_ICON[form.category] ?? ch.categoryIcon }
-            : ch
-        )
-      )
-    } else {
-      // New
-      const newCh: Channel = {
-        id: form.name || `ch-${Date.now()}`,
-        categoryIcon: CATEGORY_ICON[form.category] ?? '💬',
-        channelKind: 'group',
-        ...form,
-      }
-      setChannels(prev => [...prev, newCh])
+  // Ritorna un messaggio d'errore (o null in caso di successo); il modal resta
+  // aperto sull'errore e si chiude da solo al successo.
+  const handleSave = async (form: ChannelForm): Promise<string | null> => {
+    const input: ChannelInput = {
+      ...form,
+      categoryIcon: CATEGORY_ICON[form.category] ?? '💬',
     }
-    closeModal()
+    const res = modal.editing
+      ? await updateChannel(modal.editing.id, input)
+      : await createChannel(input)
+    return res.ok ? null : (res.error ?? 'Errore durante il salvataggio.')
   }
 
-  const handleDelete = (id: string) => {
-    setChannels(prev => prev.filter(ch => ch.id !== id))
+  const handleDelete = async (id: string) => {
+    await deleteChannel(id)
     setDeleteConfirm(null)
   }
 
@@ -394,6 +392,11 @@ export default function AdminChat() {
       </div>
 
       {/* Channels by category */}
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 size={22} strokeWidth={2} className="animate-spin" style={{ color: 'var(--ist-text-muted)' }} />
+        </div>
+      ) : (
       <div className="space-y-6">
         {Object.entries(byCategory).map(([cat, chs]) => (
           <Card key={cat} className="p-0 overflow-hidden">
@@ -526,6 +529,7 @@ export default function AdminChat() {
           </Card>
         ))}
       </div>
+      )}
 
       {/* Modal */}
       {modal.open && (

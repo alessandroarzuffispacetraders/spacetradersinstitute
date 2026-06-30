@@ -8,13 +8,14 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
 import {
-  CHANNELS, BACHECA_POSTS,
+  BACHECA_POSTS,
   Channel, BachecaPost, MemberRole,
 } from '../../data/chatData'
 import {
   useChatMessages, useDmUsers, useUnreadCounts, useTypingIndicator,
   dmChannelId, DmUser, DbMessage,
 } from '../../lib/chat'
+import { useChannels } from '../../lib/channels'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -195,17 +196,18 @@ interface SidebarProps {
   onSelect: (id: string) => void
   userRole: MemberRole
   userId: string
+  channels: Channel[]
   dmUsers: DmUser[]
   unreadCounts: Record<string, number>
   initialTab?: 'groups' | 'direct'
 }
 
-function ChannelSidebar({ activeChannel, onSelect, userRole, userId, dmUsers, unreadCounts, initialTab }: SidebarProps) {
+function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, dmUsers, unreadCounts, initialTab }: SidebarProps) {
   const [tab, setTab] = useState<'groups' | 'direct'>(initialTab ?? 'groups')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [search, setSearch] = useState('')
 
-  const groupChannels = CHANNELS.filter(ch => ch.roles.includes(userRole) && ch.channelKind === 'group')
+  const groupChannels = channels.filter(ch => ch.roles.includes(userRole) && ch.channelKind === 'group')
 
   // Group by category (only for groups tab)
   const categories: Record<string, Channel[]> = {}
@@ -1243,10 +1245,10 @@ export default function ChatPage() {
   const userName = user?.name ?? ''
 
   const dmUsers = useDmUsers(userId, userRole)
+  const { channels } = useChannels()
 
-  const visibleChannels = CHANNELS.filter(ch => ch.roles.includes(userRole))
-  const firstGroup = visibleChannels.find(ch => ch.channelKind === 'group')
-  const [activeChannelId, setActiveChannelId] = useState(firstGroup?.id ?? 'generale')
+  const visibleChannels = channels.filter(ch => ch.roles.includes(userRole))
+  const [activeChannelId, setActiveChannelId] = useState('generale')
   const [mobileView, setMobileView] = useState<'channels' | 'chat'>('channels')
   const [userCard, setUserCard] = useState<{ userId: string; name: string; role: MemberRole } | null>(null)
 
@@ -1292,7 +1294,7 @@ export default function ChatPage() {
     }
   }, [navState, userId, initialNavHandled])
 
-  const activeGroupChannel = CHANNELS.find(ch => ch.id === activeChannelId)
+  const activeGroupChannel = channels.find(ch => ch.id === activeChannelId)
   const isDmChannel = activeChannelId.startsWith('dm_')
 
   const dmPartnerId = isDmChannel
@@ -1343,6 +1345,7 @@ export default function ChatPage() {
           onSelect={selectChannel}
           userRole={userRole}
           userId={userId}
+          channels={channels}
           dmUsers={dmUsers}
           unreadCounts={unreadCounts}
           initialTab={navState?.tab === 'direct' ? 'direct' : undefined}
