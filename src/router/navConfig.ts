@@ -45,6 +45,7 @@ const MANAGE_BY_ROLE: Record<UserRole, NavItem[]> = {
   admin: [
     { label: 'Utenti', path: '/admin/utenti', icon: 'Users' },
     { label: 'Contenuti', shortLabel: 'Contenuti', path: '/admin/contenuti', icon: 'Package' },
+    { label: 'Segnalazioni', shortLabel: 'Segnal.', path: '/admin/segnalazioni', icon: 'AlertTriangle' },
     { label: 'Statistiche', shortLabel: 'Stats', path: '/admin/statistiche', icon: 'BarChart3' },
     { label: 'Canali', path: '/admin/chat', icon: 'MessageCircle' },
   ],

@@ -239,6 +239,43 @@ export function useCoachFlags(myId: string) {
   return { flags, loading, addFlag, resolveFlag, deleteFlag, reload: load }
 }
 
+// ─── Admin: vista di TUTTE le segnalazioni (sola lettura) ───────────────────────
+// L'admin supervisiona ma non gestisce: la RLS gli concede solo SELECT
+// ("flags admin read all"). Resolve/delete restano in capo al coach proprietario.
+
+export interface AdminFlag extends StudentFlag {
+  coach?: { name: string } | null
+}
+
+export function useAdminFlags() {
+  const [flags, setFlags] = useState<AdminFlag[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    const { data } = await supabase
+      .from('student_flags')
+      .select('*, student:student_id(name), coach:coach_id(name)')
+      // aperte prima delle risolte, poi più recenti in cima
+      .order('resolved', { ascending: true })
+      .order('created_at', { ascending: false })
+    setFlags((data as AdminFlag[]) ?? [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  // Realtime: le nuove segnalazioni compaiono senza refresh.
+  useEffect(() => {
+    const ch = supabase
+      .channel('admin-flags')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'student_flags' }, () => load())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [load])
+
+  return { flags, loading, reload: load }
+}
+
 // ─── Exercise submissions + feedback (coach review) ─────────────────────────────
 
 export interface ExerciseSubmission {

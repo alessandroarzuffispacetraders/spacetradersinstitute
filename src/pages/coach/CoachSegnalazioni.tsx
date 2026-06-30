@@ -4,6 +4,7 @@ import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
 import { useAuth } from '../../context/AuthContext'
 import { useAssignedStudents, useCoachFlags, FlagSeverity } from '../../lib/coaching'
+import { triggerStudentFlagNotification } from '../../lib/push'
 
 const inputStyle: React.CSSProperties = {
   background: 'var(--ist-w7)',
@@ -36,7 +37,14 @@ export default function CoachSegnalazioni() {
     setSaving(true)
     const ok = await addFlag(sid, issue, severity)
     setSaving(false)
-    if (ok) { setIssue(''); setStudentId(''); setSeverity('high'); setShowForm(false) }
+    if (ok) {
+      // Alta priorità → notifica push agli admin (fire & forget).
+      if (severity === 'high') {
+        const studentName = students.find(s => s.id === sid)?.name ?? null
+        triggerStudentFlagNotification(studentName)
+      }
+      setIssue(''); setStudentId(''); setSeverity('high'); setShowForm(false)
+    }
   }
 
   return (

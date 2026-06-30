@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom'
-import { Loader2 } from 'lucide-react'
+import { Loader2, AlertTriangle, ChevronRight } from 'lucide-react'
 import StatCard from '../../components/ui/StatCard'
 import Card from '../../components/ui/Card'
 import { GradientCard } from '../../components/ui/Card'
 import { useAdminDashboard } from '../../lib/adminStats'
+import { useAdminFlags } from '../../lib/coaching'
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
@@ -24,6 +25,8 @@ const PHASE_ROWS: { key: 'onboarding' | 'build' | 'test' | 'deploy'; label: stri
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const { data, loading } = useAdminDashboard()
+  const { flags } = useAdminFlags()
+  const openHigh = flags.filter(f => !f.resolved && f.severity === 'high').length
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -31,6 +34,29 @@ export default function AdminDashboard() {
         <p className="text-sm font-medium" style={{ color: '#8495A3' }}>Pannello Amministrazione</p>
         <h1 className="text-2xl font-bold text-white mt-0.5">IST Dashboard</h1>
       </div>
+
+      {openHigh > 0 && (
+        <button
+          onClick={() => navigate('/admin/segnalazioni')}
+          className="w-full flex items-center gap-3 p-4 rounded-2xl mb-6 text-left transition-all hover:-translate-y-0.5"
+          style={{
+            background: 'rgba(255,107,122,0.10)',
+            border: '1px solid rgba(255,107,122,0.28)',
+            boxShadow: '0 8px 24px rgba(255,107,122,0.12)',
+          }}
+        >
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255,107,122,0.16)' }}>
+            <AlertTriangle size={18} strokeWidth={2.2} style={{ color: '#FF6B7A' }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>
+              {openHigh} segnalazion{openHigh === 1 ? 'e' : 'i'} alta priorità da rivedere
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--ist-text-dim)' }}>Studenti che richiedono attenzione immediata</p>
+          </div>
+          <ChevronRight size={18} style={{ color: '#FF6B7A' }} />
+        </button>
+      )}
 
       {loading || !data ? (
         <div className="flex items-center justify-center py-24">

@@ -74,3 +74,21 @@ export function triggerPushNotifications(message: {
     }).catch(() => {/* ignora errori di rete */})
   })
 }
+
+// Notifica push agli admin quando un coach apre una segnalazione "alta priorità".
+// Il client passa solo un tipo fisso: testo e destinatari (role=admin) sono decisi
+// server-side dalla edge function, così non si possono inviare push arbitrarie.
+export function triggerStudentFlagNotification(studentName: string | null) {
+  supabase.auth.getSession().then(({ data }) => {
+    const token = data.session?.access_token
+    if (!token) return
+    fetch(`${FUNCTIONS_URL}/send-push`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ notify: { type: 'student_flag_high', studentName } }),
+    }).catch(() => {/* ignora errori di rete */})
+  })
+}
