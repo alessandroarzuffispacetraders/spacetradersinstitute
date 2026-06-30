@@ -15,6 +15,7 @@ export interface LiveEvent {
   status: LiveStatus
   startsAt: string | null        // ISO
   zoomUrl: string | null
+  liveEmbedUrl: string | null    // YouTube/Vimeo live → guarda in-app (opt-in)
   replayVimeoId: string | null
   durationMinutes: number | null
   accent: string
@@ -31,6 +32,7 @@ interface RawLive {
   status: LiveStatus
   starts_at: string | null
   zoom_url: string | null
+  live_embed_url: string | null
   replay_vimeo_id: string | null
   duration_minutes: number | null
   accent: string
@@ -40,7 +42,7 @@ interface RawLive {
 }
 
 const COLS =
-  'id,title,description,host,host_role,status,starts_at,zoom_url,replay_vimeo_id,duration_minutes,accent,accent_end,position,owner_id'
+  'id,title,description,host,host_role,status,starts_at,zoom_url,live_embed_url,replay_vimeo_id,duration_minutes,accent,accent_end,position,owner_id'
 
 function toLive(r: RawLive): LiveEvent {
   return {
@@ -52,6 +54,7 @@ function toLive(r: RawLive): LiveEvent {
     status: r.status,
     startsAt: r.starts_at,
     zoomUrl: r.zoom_url,
+    liveEmbedUrl: r.live_embed_url,
     replayVimeoId: r.replay_vimeo_id,
     durationMinutes: r.duration_minutes,
     accent: r.accent,
@@ -129,6 +132,7 @@ export interface LiveInput {
   status: LiveStatus
   startsAt: string | null
   zoomUrl: string | null
+  liveEmbedUrl: string | null
   replayVimeoId: string | null
   durationMinutes: number | null
   accent: string
@@ -144,6 +148,7 @@ function toRow(input: LiveInput) {
     status: input.status,
     starts_at: input.startsAt,
     zoom_url: input.zoomUrl?.trim() || null,
+    live_embed_url: input.liveEmbedUrl?.trim() || null,
     replay_vimeo_id: input.replayVimeoId?.trim() || null,
     duration_minutes: input.durationMinutes,
     accent: input.accent,

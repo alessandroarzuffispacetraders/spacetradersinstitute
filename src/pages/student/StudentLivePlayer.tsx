@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
 import VimeoPlayer from '../../components/ui/VimeoPlayer'
 import { useLiveEvent, liveDateLabel, LiveRole } from '../../lib/live'
+import { liveEmbedSrc } from '../../lib/liveEmbed'
 import { useChatMessages, DbMessage } from '../../lib/chat'
 import { UserRole } from '../../types'
 
@@ -172,6 +173,47 @@ function LiveStage({ event }: { event: NonNullable<ReturnType<typeof useLiveEven
   }
 
   const isLive = event.status === 'live'
+
+  // Embed in-app: solo quando è davvero in diretta e il link è embeddabile.
+  const embedSrc = isLive ? liveEmbedSrc(event.liveEmbedUrl) : null
+  if (embedSrc) {
+    return (
+      <div className="space-y-2.5">
+        <div
+          data-inverted="true"
+          className="relative w-full rounded-2xl lg:rounded-3xl overflow-hidden"
+          style={{
+            aspectRatio: '16/9',
+            background: '#07090f',
+            border: '1px solid rgba(255,255,255,0.08)',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.55)',
+          }}
+        >
+          <iframe
+            src={embedSrc}
+            title={event.title}
+            className="absolute inset-0 w-full h-full"
+            style={{ border: 0 }}
+            allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+            allowFullScreen
+          />
+        </div>
+        {event.zoomUrl && (
+          <a
+            href={event.zoomUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-1.5 text-xs font-medium transition-opacity hover:opacity-70"
+            style={{ color: 'var(--ist-text-muted)' }}
+          >
+            <ExternalLink size={12} strokeWidth={2} />
+            Preferisci Zoom? Entra nella stanza
+          </a>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div
       data-inverted="true"

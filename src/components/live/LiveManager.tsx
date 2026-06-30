@@ -58,11 +58,11 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
   const [form, setForm] = useState<LiveInput>(initial ? {
     title: initial.title, description: initial.description, host: initial.host,
     hostRole: initial.hostRole, status: initial.status, startsAt: initial.startsAt,
-    zoomUrl: initial.zoomUrl ?? '', replayVimeoId: initial.replayVimeoId ?? '',
+    zoomUrl: initial.zoomUrl ?? '', liveEmbedUrl: initial.liveEmbedUrl ?? '', replayVimeoId: initial.replayVimeoId ?? '',
     durationMinutes: initial.durationMinutes, accent: initial.accent, accentEnd: initial.accentEnd,
   } : {
     title: '', description: '', host: defaultHost ?? '', hostRole: 'coach',
-    status: 'upcoming', startsAt: null, zoomUrl: '', replayVimeoId: '',
+    status: 'upcoming', startsAt: null, zoomUrl: '', liveEmbedUrl: '', replayVimeoId: '',
     durationMinutes: null, accent: '#7CBBD0', accentEnd: '#286680',
   })
   const [error, setError] = useState('')
@@ -157,10 +157,19 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
               </div>
             </div>
           ) : (
-            <div>
-              {label('Link Zoom')}
-              <input value={form.zoomUrl ?? ''} onChange={e => set({ zoomUrl: e.target.value })} placeholder="https://zoom.us/j/..." className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
-            </div>
+            <>
+              <div>
+                {label('Link Zoom')}
+                <input value={form.zoomUrl ?? ''} onChange={e => set({ zoomUrl: e.target.value })} placeholder="https://zoom.us/j/..." className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
+              </div>
+              <div>
+                {label('Link live in-app (YouTube/Vimeo) — opzionale')}
+                <input value={form.liveEmbedUrl ?? ''} onChange={e => set({ liveEmbedUrl: e.target.value })} placeholder="https://youtube.com/live/... o vimeo.com/event/..." className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
+                <p className="text-[11px] mt-1.5 leading-snug" style={{ color: 'var(--ist-text-dim)' }}>
+                  Se compilato, durante la diretta lo studente guarda la live <strong>dentro l'app</strong> accanto alla chat. Altrimenti resta il pulsante Zoom.
+                </p>
+              </div>
+            </>
           )}
 
           <div>
