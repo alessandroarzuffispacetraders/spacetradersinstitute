@@ -33,11 +33,13 @@ const MANAGE_BY_ROLE: Record<UserRole, NavItem[]> = {
   coach: [
     { label: 'Studenti', path: '/coach/studenti', icon: 'Users' },
     { label: 'Compiti', path: '/coach/review', icon: 'ClipboardList' },
+    { label: 'Live', path: '/coach/live', icon: 'Radio' },
     { label: 'Segnalazioni', shortLabel: 'Segnal.', path: '/coach/segnalazioni', icon: 'AlertTriangle' },
   ],
   mental_coach: [
     { label: 'Studenti', path: '/mental-coach/studenti', icon: 'Users' },
     { label: 'Sessioni', path: '/mental-coach/sessioni', icon: 'CalendarDays' },
+    { label: 'Live', path: '/mental-coach/live', icon: 'Radio' },
     { label: 'Note', path: '/mental-coach/note', icon: 'FileText' },
   ],
   admin: [

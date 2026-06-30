@@ -27,12 +27,14 @@ import CoachDashboard from '../pages/coach/CoachDashboard'
 import CoachStudenti from '../pages/coach/CoachStudenti'
 import CoachReview from '../pages/coach/CoachReview'
 import CoachSegnalazioni from '../pages/coach/CoachSegnalazioni'
+import CoachLive from '../pages/coach/CoachLive'
 
 // Mental Coach pages
 import MentalCoachDashboard from '../pages/mental-coach/MentalCoachDashboard'
 import MentalCoachStudenti from '../pages/mental-coach/MentalCoachStudenti'
 import MentalCoachSessioni from '../pages/mental-coach/MentalCoachSessioni'
 import MentalCoachNote from '../pages/mental-coach/MentalCoachNote'
+import MentalCoachLive from '../pages/mental-coach/MentalCoachLive'
 
 // Admin pages
 import AdminDashboard from '../pages/admin/AdminDashboard'
@@ -77,6 +79,7 @@ function PrivateRoutes() {
           <Route path="/coach" element={<CoachDashboard />} />
           <Route path="/coach/studenti" element={<CoachStudenti />} />
           <Route path="/coach/review" element={<CoachReview />} />
+          <Route path="/coach/live" element={<CoachLive />} />
           <Route path="/coach/segnalazioni" element={<CoachSegnalazioni />} />
           <Route path="/coach/chat" element={<ChatPage />} />
         </Route>
@@ -86,6 +89,7 @@ function PrivateRoutes() {
           <Route path="/mental-coach" element={<MentalCoachDashboard />} />
           <Route path="/mental-coach/studenti" element={<MentalCoachStudenti />} />
           <Route path="/mental-coach/sessioni" element={<MentalCoachSessioni />} />
+          <Route path="/mental-coach/live" element={<MentalCoachLive />} />
           <Route path="/mental-coach/note" element={<MentalCoachNote />} />
           <Route path="/mental-coach/chat" element={<ChatPage />} />
         </Route>

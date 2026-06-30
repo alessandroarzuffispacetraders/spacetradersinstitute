@@ -19,6 +19,7 @@ export interface LiveEvent {
   durationMinutes: number | null
   accent: string
   accentEnd: string
+  ownerId: string | null
 }
 
 interface RawLive {
@@ -35,10 +36,11 @@ interface RawLive {
   accent: string
   accent_end: string
   position: number
+  owner_id: string | null
 }
 
 const COLS =
-  'id,title,description,host,host_role,status,starts_at,zoom_url,replay_vimeo_id,duration_minutes,accent,accent_end,position'
+  'id,title,description,host,host_role,status,starts_at,zoom_url,replay_vimeo_id,duration_minutes,accent,accent_end,position,owner_id'
 
 function toLive(r: RawLive): LiveEvent {
   return {
@@ -54,6 +56,7 @@ function toLive(r: RawLive): LiveEvent {
     durationMinutes: r.duration_minutes,
     accent: r.accent,
     accentEnd: r.accent_end,
+    ownerId: r.owner_id,
   }
 }
 
@@ -148,24 +151,33 @@ function toRow(input: LiveInput) {
   }
 }
 
-export function useLiveAdmin() {
+// opts.ownerId: id da assegnare alle live create (e da filtrare se onlyOwn).
+// opts.onlyOwn: true → mostra solo le live di ownerId (vista coach/mental);
+// false/omesso → tutte (vista admin).
+export function useLiveAdmin(opts?: { ownerId?: string; onlyOwn?: boolean }) {
+  const ownerId = opts?.ownerId
+  const onlyOwn = opts?.onlyOwn ?? false
   const [events, setEvents] = useState<LiveEvent[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
-    const { data } = await supabase.from('live_events').select(COLS).order('position')
+    let query = supabase.from('live_events').select(COLS).order('position')
+    if (onlyOwn && ownerId) query = query.eq('owner_id', ownerId)
+    const { data } = await query
     setEvents(((data as RawLive[] | null) ?? []).map(toLive))
     if (!silent) setLoading(false)
-  }, [])
+  }, [onlyOwn, ownerId])
 
   useEffect(() => { load() }, [load])
 
   const createLive = useCallback(async (input: LiveInput): Promise<boolean> => {
-    const { error } = await supabase.from('live_events').insert({ ...toRow(input), position: events.length })
+    const { error } = await supabase.from('live_events').insert({
+      ...toRow(input), position: events.length, owner_id: ownerId ?? null,
+    })
     if (!error) await load(true)
     return !error
-  }, [events.length, load])
+  }, [events.length, load, ownerId])
 
   const updateLive = useCallback(async (id: string, input: LiveInput): Promise<boolean> => {
     const { error } = await supabase.from('live_events').update(toRow(input)).eq('id', id)
@@ -179,5 +191,19 @@ export function useLiveAdmin() {
     return !error
   }, [load])
 
-  return { events, loading, reload: () => load(true), createLive, updateLive, deleteLive }
+  // Azioni ciclo di vita
+  const setLiveStatus = useCallback(async (id: string, status: LiveStatus): Promise<boolean> => {
+    const { error } = await supabase.from('live_events').update({ status }).eq('id', id)
+    if (!error) await load(true)
+    return !error
+  }, [load])
+
+  const setReplay = useCallback(async (id: string, vimeoId: string): Promise<boolean> => {
+    const { error } = await supabase.from('live_events')
+      .update({ replay_vimeo_id: vimeoId.trim() || null, status: 'replay' }).eq('id', id)
+    if (!error) await load(true)
+    return !error
+  }, [load])
+
+  return { events, loading, reload: () => load(true), createLive, updateLive, deleteLive, setLiveStatus, setReplay }
 }
