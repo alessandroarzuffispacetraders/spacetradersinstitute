@@ -37,7 +37,7 @@ export default function CoachStudenti() {
           onChange={e => setSearch(e.target.value)}
           placeholder="Cerca studente..."
           className="w-full max-w-sm px-4 py-2.5 text-sm placeholder:text-[#56636F] focus:outline-none"
-          style={{ background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)', borderRadius: 18, color: '#F7FAFC' }}
+          style={{ background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)', borderRadius: 18, color: 'var(--ist-text)' }}
         />
       </div>
 

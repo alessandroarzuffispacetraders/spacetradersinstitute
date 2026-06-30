@@ -9,7 +9,7 @@ import { useStudentAssignments, displayStatus, Assignment, Submission } from '..
 
 const inputStyle: React.CSSProperties = {
   background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)',
-  borderRadius: 16, color: '#F7FAFC', outline: 'none', width: '100%',
+  borderRadius: 16, color: 'var(--ist-text)', outline: 'none', width: '100%',
 }
 
 const STATUS_STYLE: Record<string, { label: string; css: React.CSSProperties }> = {

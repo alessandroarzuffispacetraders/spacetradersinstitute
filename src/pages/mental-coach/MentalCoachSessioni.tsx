@@ -15,7 +15,7 @@ const STATUS_STYLE: Record<SessionStatus, React.CSSProperties> = {
 }
 
 const selectStyle: React.CSSProperties = {
-  background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)', borderRadius: 12, color: '#F7FAFC', outline: 'none', padding: '6px 10px', fontSize: 12,
+  background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)', borderRadius: 12, color: 'var(--ist-text)', outline: 'none', padding: '6px 10px', fontSize: 12,
 }
 
 // 'YYYY-MM-DDTHH:mm' per <input datetime-local> dal valore ISO
