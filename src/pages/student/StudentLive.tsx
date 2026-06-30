@@ -1,26 +1,41 @@
 import { useNavigate } from 'react-router-dom'
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
-import { Eye, Clock, Radio, Calendar, ChevronRight, Users } from 'lucide-react'
-import { LIVE_EVENTS } from '../../data/liveData'
+import { Clock, Radio, Calendar, ChevronRight, Loader2 } from 'lucide-react'
+import { useLiveEvents, liveDateLabel, liveDurationLabel } from '../../lib/live'
 
 const HOST_ROLE_LABEL: Record<string, string> = {
   coach:        'Coach',
   mental_coach: 'Mental Coach',
   admin:        'Admin',
+  student:      '',
 }
 
 export default function StudentLive() {
   const navigate = useNavigate()
+  const { events, loading } = useLiveEvents()
 
-  const live     = LIVE_EVENTS.filter(e => e.status === 'live')
-  const upcoming = LIVE_EVENTS.filter(e => e.status === 'upcoming')
-  const replays  = LIVE_EVENTS.filter(e => e.status === 'replay')
+  const live     = events.filter(e => e.status === 'live')
+  const upcoming = events.filter(e => e.status === 'upcoming')
+  const replays  = events.filter(e => e.status === 'replay')
 
   return (
     <div className="p-5 lg:p-8 max-w-4xl mx-auto">
       <PageHeader title="Live & Replay" subtitle="Sessioni in diretta e registrazioni" />
 
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 size={22} strokeWidth={2} className="animate-spin" style={{ color: 'var(--ist-text-muted)' }} />
+        </div>
+      ) : events.length === 0 ? (
+        <Card className="p-10 text-center">
+          <Radio size={28} strokeWidth={1.5} className="mx-auto mb-3" style={{ color: 'var(--ist-text-dim)' }} />
+          <p className="text-sm" style={{ color: 'var(--ist-text-muted)' }}>
+            Nessuna live in programma al momento.
+          </p>
+        </Card>
+      ) : (
+      <>
       {/* ── LIVE NOW ── gradient card, always dark */}
       {live.map(event => (
         <button
@@ -60,13 +75,6 @@ export default function StudentLive() {
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-[#FF5050] animate-pulse" />
                     LIVE ORA
-                  </span>
-                  <span
-                    className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 rounded-full"
-                    style={{ background: 'rgba(255,255,255,0.10)', color: 'rgba(255,255,255,0.65)' }}
-                  >
-                    <Users size={10} strokeWidth={2} />
-                    {event.viewers} spettatori
                   </span>
                 </div>
 
@@ -142,7 +150,7 @@ export default function StudentLive() {
                     {event.title}
                   </p>
                   <p className="text-xs" style={{ color: 'var(--ist-text-muted)' }}>
-                    {event.host} · {event.date}
+                    {event.host} · {liveDateLabel(event)}
                   </p>
                 </div>
                 <span
@@ -185,20 +193,15 @@ export default function StudentLive() {
                       {replay.title}
                     </p>
                     <p className="text-xs mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>
-                      {replay.host} · {replay.date}
+                      {replay.host} · {liveDateLabel(replay)}
                     </p>
-                    <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>
-                      {replay.duration && (
+                    {liveDurationLabel(replay) && (
+                      <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>
                         <span className="flex items-center gap-1">
-                          <Clock size={11} strokeWidth={2} /> {replay.duration}
+                          <Clock size={11} strokeWidth={2} /> {liveDurationLabel(replay)}
                         </span>
-                      )}
-                      {replay.views && (
-                        <span className="flex items-center gap-1">
-                          <Eye size={11} strokeWidth={2} /> {replay.views} visualizzazioni
-                        </span>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                   <ChevronRight
                     size={15}
@@ -211,6 +214,8 @@ export default function StudentLive() {
             ))}
           </div>
         </section>
+      )}
+      </>
       )}
     </div>
   )

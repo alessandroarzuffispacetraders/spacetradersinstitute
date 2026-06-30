@@ -2,7 +2,7 @@ import { useState } from 'react'
 import PageHeader from '../../components/ui/PageHeader'
 import {
   ChevronDown, Plus, Edit2, Trash2,
-  Paperclip, Video, FolderOpen, BookOpen, Radio, Clock, Users,
+  Paperclip, Video, FolderOpen, BookOpen, Radio, Clock,
   ChevronUp, Eye, EyeOff, Loader2, X, Upload,
 } from 'lucide-react'
 import {
@@ -11,7 +11,7 @@ import {
 } from '../../lib/content'
 import { parseVimeo } from '../../lib/vimeo'
 import { uploadAttachment, deleteAttachment } from '../../lib/storage'
-import { LIVE_EVENTS, LiveEvent } from '../../data/liveData'
+import { useLiveAdmin, LiveEvent, LiveInput, LiveStatus, LiveRole, liveDateLabel, liveDurationLabel } from '../../lib/live'
 
 type Tab = 'corsi' | 'live'
 type ExpandState = { categories: Set<string>; courses: Set<string> }
@@ -537,7 +537,7 @@ function CoursesTab({ admin, openModal }: { admin: AdminApi; openModal: (s: Moda
   )
 }
 
-// ─── Live Tab (mock — Fase D) ───────────────────────────────────────────────────
+// ─── Live Tab (reale — Fase D2) ─────────────────────────────────────────────────
 
 const LIVE_STATUS: Record<string, { bg: string; text: string; border: string; label: string }> = {
   live:     { bg: 'rgba(255,80,80,0.10)',   text: '#FF5050', border: 'rgba(255,80,80,0.22)',  label: 'In diretta'   },
@@ -545,10 +545,211 @@ const LIVE_STATUS: Record<string, { bg: string; text: string; border: string; la
   replay:   { bg: 'var(--ist-w6)',          text: 'var(--ist-text-dim)', border: 'var(--ist-border)', label: 'Replay' },
 }
 
-function LiveTab({ events }: { events: LiveEvent[] }) {
+const LIVE_ROLES: { id: LiveRole; label: string }[] = [
+  { id: 'coach', label: 'Coach' },
+  { id: 'mental_coach', label: 'Mental Coach' },
+  { id: 'admin', label: 'Admin' },
+]
+
+const EMPTY_LIVE: LiveInput = {
+  title: '', description: '', host: '', hostRole: 'coach',
+  status: 'upcoming', startsAt: null, zoomUrl: '', replayVimeoId: '',
+  durationMinutes: null, accent: '#7CBBD0', accentEnd: '#286680',
+}
+
+// datetime-local <-> ISO (in ora locale)
+function isoToLocal(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+function localToIso(local: string): string | null {
+  return local ? new Date(local).toISOString() : null
+}
+
+function LiveModal({ initial, onSave, onClose }: {
+  initial?: LiveEvent
+  onSave: (input: LiveInput) => Promise<boolean>
+  onClose: () => void
+}) {
+  const [form, setForm] = useState<LiveInput>(initial ? {
+    title: initial.title, description: initial.description, host: initial.host,
+    hostRole: initial.hostRole, status: initial.status, startsAt: initial.startsAt,
+    zoomUrl: initial.zoomUrl ?? '', replayVimeoId: initial.replayVimeoId ?? '',
+    durationMinutes: initial.durationMinutes, accent: initial.accent, accentEnd: initial.accentEnd,
+  } : EMPTY_LIVE)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const set = (patch: Partial<LiveInput>) => setForm(f => ({ ...f, ...patch }))
+  const isReplay = form.status === 'replay'
+
+  const handleSave = async () => {
+    if (!form.title.trim()) { setError('Il titolo è obbligatorio.'); return }
+    setSaving(true)
+    const ok = await onSave(form)
+    setSaving(false)
+    if (!ok) { setError('Errore durante il salvataggio.'); return }
+    onClose()
+  }
+
+  const label = (t: string) => (
+    <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>{t}</label>
+  )
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" style={{ background: 'rgba(0,0,0,0.50)', backdropFilter: 'blur(6px)' }} onClick={onClose} />
+      <div
+        className="fixed z-50 top-4 bottom-4 right-4 w-full max-w-[440px] overflow-hidden rounded-4xl flex flex-col"
+        style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: '0 24px 80px rgba(0,0,0,0.50)', backdropFilter: 'blur(24px)' }}
+      >
+        <div className="flex items-center justify-between px-6 py-5 flex-shrink-0" style={{ borderBottom: '1px solid var(--ist-w8)' }}>
+          <h2 className="text-base font-bold" style={{ color: 'var(--ist-text)' }}>
+            {initial ? 'Modifica live' : 'Nuova live'}
+          </h2>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}>
+            <X size={15} strokeWidth={2.5} />
+          </button>
+        </div>
+
+        <div className="flex-1 px-6 py-5 space-y-4 overflow-y-auto no-scrollbar">
+          {/* Status */}
+          <div>
+            {label('Stato')}
+            <div className="grid grid-cols-3 gap-2">
+              {(['upcoming', 'live', 'replay'] as LiveStatus[]).map(st => (
+                <button
+                  key={st}
+                  onClick={() => set({ status: st })}
+                  className="py-2 rounded-xl text-xs font-semibold transition-all"
+                  style={form.status === st
+                    ? { background: LIVE_STATUS[st].bg, color: LIVE_STATUS[st].text, border: `1px solid ${LIVE_STATUS[st].border}` }
+                    : { background: 'var(--ist-w6)', color: 'var(--ist-text-muted)', border: '1px solid var(--ist-w9)' }}
+                >
+                  {LIVE_STATUS[st].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Title */}
+          <div>
+            {label('Titolo *')}
+            <input value={form.title} onChange={e => set({ title: e.target.value })} placeholder="Es. Analisi mercati settimanale" className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
+          </div>
+
+          {/* Description */}
+          <div>
+            {label('Descrizione')}
+            <textarea value={form.description} onChange={e => set({ description: e.target.value })} rows={3} placeholder="Di cosa si parla nella sessione..." className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F] resize-none" style={inputStyle} />
+          </div>
+
+          {/* Host + role */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              {label('Host')}
+              <input value={form.host} onChange={e => set({ host: e.target.value })} placeholder="Es. Laura Bianchi" className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
+            </div>
+            <div>
+              {label('Ruolo host')}
+              <select value={form.hostRole} onChange={e => set({ hostRole: e.target.value as LiveRole })} className="px-3.5 py-2.5 text-sm" style={inputStyle}>
+                {LIVE_ROLES.map(r => <option key={r.id} value={r.id} style={{ background: '#0d1117' }}>{r.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Date */}
+          <div>
+            {label(isReplay ? 'Data registrazione' : 'Data e ora')}
+            <input type="datetime-local" value={isoToLocal(form.startsAt)} onChange={e => set({ startsAt: localToIso(e.target.value) })} className="px-3.5 py-2.5 text-sm" style={inputStyle} />
+          </div>
+
+          {/* Zoom (live/upcoming) or Vimeo+duration (replay) */}
+          {isReplay ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                {label('Link/ID Vimeo replay')}
+                <input value={form.replayVimeoId ?? ''} onChange={e => set({ replayVimeoId: e.target.value })} placeholder="vimeo.com/..." className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
+              </div>
+              <div>
+                {label('Durata (min)')}
+                <input type="number" min="0" value={form.durationMinutes ?? ''} onChange={e => set({ durationMinutes: e.target.value ? parseInt(e.target.value) : null })} placeholder="60" className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
+              </div>
+            </div>
+          ) : (
+            <div>
+              {label('Link Zoom')}
+              <input value={form.zoomUrl ?? ''} onChange={e => set({ zoomUrl: e.target.value })} placeholder="https://zoom.us/j/..." className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
+            </div>
+          )}
+
+          {/* Accent */}
+          <div>
+            {label('Colore')}
+            <div className="flex gap-2 flex-wrap">
+              {ACCENTS.map(c => (
+                <button
+                  key={c}
+                  onClick={() => set({ accent: c })}
+                  className="w-8 h-8 rounded-full transition-transform hover:scale-110"
+                  style={{ background: c, border: form.accent === c ? '2px solid var(--ist-text)' : '2px solid transparent' }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-3 py-2">{error}</p>
+          )}
+        </div>
+
+        <div className="flex gap-3 px-6 py-4 flex-shrink-0" style={{ borderTop: '1px solid var(--ist-w8)' }}>
+          <button onClick={onClose} className="flex-1 py-2.5 text-sm font-semibold rounded-2xl" style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}>
+            Annulla
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 py-2.5 text-sm font-semibold rounded-2xl text-white flex items-center justify-center gap-2 disabled:opacity-60"
+            style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)', boxShadow: '0 4px 14px rgba(40,102,128,0.30)' }}
+          >
+            {saving && <Loader2 size={15} strokeWidth={2.5} className="animate-spin" />}
+            {initial ? 'Salva modifiche' : 'Crea live'}
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function LiveTab({ api }: { api: ReturnType<typeof useLiveAdmin> }) {
+  const [modal, setModal] = useState<{ open: boolean; editing?: LiveEvent }>({ open: false })
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+
+  if (api.loading) {
+    return <div className="flex items-center justify-center py-24"><Loader2 size={24} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} /></div>
+  }
+
   return (
     <div className="space-y-2.5">
-      {events.map(event => {
+      <button
+        onClick={() => setModal({ open: true })}
+        className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl transition-all hover:bg-black/[0.02] mb-1"
+        style={{ border: '1px dashed var(--ist-border-strong)', color: 'var(--ist-accent-text)' }}
+      >
+        <Plus size={14} strokeWidth={2.5} />
+        <span className="text-sm font-medium">Nuova live</span>
+      </button>
+
+      {api.events.length === 0 && (
+        <p className="text-[11px] text-center py-6" style={{ color: 'var(--ist-text-dim)' }}>
+          Nessuna live. Creane una con il pulsante qui sopra.
+        </p>
+      )}
+
+      {api.events.map(event => {
         const s = LIVE_STATUS[event.status]
         return (
           <div
@@ -565,22 +766,35 @@ function LiveTab({ events }: { events: LiveEvent[] }) {
                 <span className="text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: s.bg, color: s.text, border: `1px solid ${s.border}` }}>{s.label}</span>
               </div>
               <p className="text-xs" style={{ color: 'var(--ist-text-muted)' }}>
-                {event.host} · {event.date}
-                {event.duration && <> · {event.duration}</>}
-                {event.viewers && <span className="ml-2 inline-flex items-center gap-0.5"><Users size={9} strokeWidth={2} /> {event.viewers} live</span>}
-                {event.views && <span className="ml-2 inline-flex items-center gap-0.5"><Users size={9} strokeWidth={2} /> {event.views} visualiz.</span>}
+                {event.host || '—'} · {liveDateLabel(event)}
+                {liveDurationLabel(event) && <> · {liveDurationLabel(event)}</>}
               </p>
             </div>
             <div className="flex items-center gap-0.5 flex-shrink-0">
-              <ActionBtn icon={<Edit2 size={11} strokeWidth={2} />} label="Modifica" />
-              <ActionBtn icon={<Trash2 size={11} strokeWidth={2} />} label="Elimina" danger />
+              {deleteConfirm === event.id ? (
+                <>
+                  <span className="text-[10px] mr-1" style={{ color: 'var(--ist-text-muted)' }}>Eliminare?</span>
+                  <ActionBtn icon={<Trash2 size={11} strokeWidth={2} />} label="Sì" danger onClick={async () => { await api.deleteLive(event.id); setDeleteConfirm(null) }} />
+                  <ActionBtn icon={<X size={11} strokeWidth={2} />} label="No" onClick={() => setDeleteConfirm(null)} />
+                </>
+              ) : (
+                <>
+                  <ActionBtn icon={<Edit2 size={11} strokeWidth={2} />} label="Modifica" onClick={() => setModal({ open: true, editing: event })} />
+                  <ActionBtn icon={<Trash2 size={11} strokeWidth={2} />} label="Elimina" danger onClick={() => setDeleteConfirm(event.id)} />
+                </>
+              )}
             </div>
           </div>
         )
       })}
-      <div className="text-[11px] text-center pt-1" style={{ color: 'var(--ist-text-dim)' }}>
-        Le live diventeranno reali nella Fase D.
-      </div>
+
+      {modal.open && (
+        <LiveModal
+          initial={modal.editing}
+          onSave={input => modal.editing ? api.updateLive(modal.editing.id, input) : api.createLive(input)}
+          onClose={() => setModal({ open: false })}
+        />
+      )}
     </div>
   )
 }
@@ -589,13 +803,14 @@ function LiveTab({ events }: { events: LiveEvent[] }) {
 
 export default function AdminContenuti() {
   const admin = useContentAdmin()
+  const liveAdmin = useLiveAdmin()
   const [tab, setTab] = useState<Tab>('corsi')
   const [modal, setModal] = useState<ModalState | null>(null)
 
   const totalCats    = admin.categories.length
   const totalCourses = admin.categories.reduce((s, c) => s + c.courses.length, 0)
   const totalLessons = admin.categories.reduce((s, c) => s + c.courses.reduce((t, cr) => t + cr.lessons.length, 0), 0)
-  const totalLive    = LIVE_EVENTS.length
+  const totalLive    = liveAdmin.events.length
 
   const tabs = [
     { id: 'corsi' as Tab, label: 'Videocorsi', count: totalCats },
@@ -661,7 +876,7 @@ export default function AdminContenuti() {
           ? <div className="flex items-center justify-center py-24"><Loader2 size={24} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} /></div>
           : <CoursesTab admin={admin} openModal={setModal} />
       )}
-      {tab === 'live' && <LiveTab events={LIVE_EVENTS} />}
+      {tab === 'live' && <LiveTab api={liveAdmin} />}
 
       {modal && <EditorModal key={`${modal.kind}-${modal.mode}-${'id' in modal ? modal.id : 'parentId' in modal ? modal.parentId : 'new'}`} state={modal} admin={admin} onClose={() => setModal(null)} />}
     </div>
