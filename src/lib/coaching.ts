@@ -188,14 +188,17 @@ export type FlagSeverity = 'high' | 'medium'
 
 export interface StudentFlag {
   id: string
-  coach_id: string
-  student_id: string
+  coach_id: string             // AUTORE (coach oppure admin)
+  recipient_id: string | null  // destinatario staff (segnalazioni admin→coach/mental)
+  student_id: string | null
   issue: string
   severity: FlagSeverity
   resolved: boolean
   resolved_at: string | null
   created_at: string
   student?: { name: string } | null
+  author?: { name: string } | null
+  recipient?: { name: string } | null
 }
 
 export function useCoachFlags(myId: string) {
@@ -205,10 +208,12 @@ export function useCoachFlags(myId: string) {
   const load = useCallback(async () => {
     if (!myId) { setLoading(false); return }
     setLoading(true)
+    // Segnalazioni che il coach ha CREATO sui propri studenti (recipient nullo).
     const { data } = await supabase
       .from('student_flags')
       .select('*, student:student_id(name)')
       .eq('coach_id', myId)
+      .is('recipient_id', null)
       .order('created_at', { ascending: false })
     setFlags((data as StudentFlag[]) ?? [])
     setLoading(false)
@@ -239,13 +244,51 @@ export function useCoachFlags(myId: string) {
   return { flags, loading, addFlag, resolveFlag, deleteFlag, reload: load }
 }
 
-// ─── Admin: vista di TUTTE le segnalazioni (sola lettura) ───────────────────────
-// L'admin supervisiona ma non gestisce: la RLS gli concede solo SELECT
-// ("flags admin read all"). Resolve/delete restano in capo al coach proprietario.
+// ─── Segnalazioni RICEVUTE (coach/mental: inviate dall'admin) ────────────────────
 
-export interface AdminFlag extends StudentFlag {
-  coach?: { name: string } | null
+export function useIncomingFlags(myId: string) {
+  const [flags, setFlags] = useState<StudentFlag[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    if (!myId) { setLoading(false); return }
+    setLoading(true)
+    const { data } = await supabase
+      .from('student_flags')
+      .select('*, student:student_id(name), author:coach_id(name)')
+      .eq('recipient_id', myId)
+      .order('resolved', { ascending: true })
+      .order('created_at', { ascending: false })
+    setFlags((data as StudentFlag[]) ?? [])
+    setLoading(false)
+  }, [myId])
+
+  useEffect(() => { load() }, [load])
+
+  // Realtime: le nuove segnalazioni ricevute compaiono senza refresh.
+  useEffect(() => {
+    if (!myId) return
+    const ch = supabase
+      .channel(`incoming-flags-${myId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'student_flags', filter: `recipient_id=eq.${myId}` }, () => load())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [myId, load])
+
+  // Il destinatario può segnare risolta/non risolta (RLS: recipient).
+  const setResolved = useCallback(async (id: string, resolved: boolean): Promise<boolean> => {
+    const { error } = await supabase.from('student_flags')
+      .update({ resolved, resolved_at: resolved ? new Date().toISOString() : null }).eq('id', id)
+    if (!error) await load()
+    return !error
+  }, [load])
+
+  return { flags, loading, setResolved, reload: load }
 }
+
+// ─── Admin: vista di TUTTE le segnalazioni + crea/invia + risolvi/elimina ────────
+
+export type AdminFlag = StudentFlag
 
 export function useAdminFlags() {
   const [flags, setFlags] = useState<AdminFlag[]>([])
@@ -254,7 +297,7 @@ export function useAdminFlags() {
   const load = useCallback(async () => {
     const { data } = await supabase
       .from('student_flags')
-      .select('*, student:student_id(name), coach:coach_id(name)')
+      .select('*, student:student_id(name), author:coach_id(name), recipient:recipient_id(name)')
       // aperte prima delle risolte, poi più recenti in cima
       .order('resolved', { ascending: true })
       .order('created_at', { ascending: false })
@@ -273,7 +316,63 @@ export function useAdminFlags() {
     return () => { supabase.removeChannel(ch) }
   }, [load])
 
-  return { flags, loading, reload: load }
+  // Crea e invia una segnalazione a un coach/mental (studente opzionale).
+  const addAdminFlag = useCallback(async (
+    recipientId: string, studentId: string | null, issue: string, severity: FlagSeverity,
+  ): Promise<boolean> => {
+    if (!recipientId || !issue.trim()) return false
+    const { data: u } = await supabase.auth.getUser()
+    const adminId = u.user?.id
+    if (!adminId) return false
+    const { error } = await supabase.from('student_flags').insert({
+      coach_id: adminId, recipient_id: recipientId, student_id: studentId || null,
+      issue: issue.trim(), severity,
+    })
+    if (!error) await load()
+    return !error
+  }, [load])
+
+  const setResolved = useCallback(async (id: string, resolved: boolean): Promise<boolean> => {
+    const { error } = await supabase.from('student_flags')
+      .update({ resolved, resolved_at: resolved ? new Date().toISOString() : null }).eq('id', id)
+    if (!error) await load()
+    return !error
+  }, [load])
+
+  const deleteFlag = useCallback(async (id: string): Promise<boolean> => {
+    const { error } = await supabase.from('student_flags').delete().eq('id', id)
+    if (!error) await load()
+    return !error
+  }, [load])
+
+  return { flags, loading, reload: load, addAdminFlag, setResolved, deleteFlag }
+}
+
+// ─── Rubrica staff/studenti (per i menu delle segnalazioni admin) ───────────────
+
+export interface DirEntry { id: string; name: string }
+
+export function useStaffDirectory() {
+  const [coaches, setCoaches] = useState<DirEntry[]>([])
+  const [mentals, setMentals] = useState<DirEntry[]>([])
+  const [students, setStudents] = useState<DirEntry[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    supabase.from('profiles').select('id,name,role,roles').order('name').then(({ data }) => {
+      if (!active) return
+      const rows = (data ?? []) as { id: string; name: string; role: string; roles: string[] | null }[]
+      const has = (u: typeof rows[number], r: string) => u.role === r || (u.roles ?? []).includes(r)
+      setCoaches(rows.filter(u => has(u, 'coach')).map(u => ({ id: u.id, name: u.name })))
+      setMentals(rows.filter(u => has(u, 'mental_coach')).map(u => ({ id: u.id, name: u.name })))
+      setStudents(rows.filter(u => has(u, 'student')).map(u => ({ id: u.id, name: u.name })))
+      setLoading(false)
+    })
+    return () => { active = false }
+  }, [])
+
+  return { coaches, mentals, students, loading }
 }
 
 // ─── Exercise submissions + feedback (coach review) ─────────────────────────────

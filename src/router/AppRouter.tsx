@@ -35,6 +35,7 @@ import MentalCoachStudenti from '../pages/mental-coach/MentalCoachStudenti'
 import MentalCoachSessioni from '../pages/mental-coach/MentalCoachSessioni'
 import MentalCoachNote from '../pages/mental-coach/MentalCoachNote'
 import MentalCoachLive from '../pages/mental-coach/MentalCoachLive'
+import MentalCoachSegnalazioni from '../pages/mental-coach/MentalCoachSegnalazioni'
 
 // Admin pages
 import AdminDashboard from '../pages/admin/AdminDashboard'
@@ -93,6 +94,7 @@ function PrivateRoutes() {
           <Route path="/mental-coach/sessioni" element={<MentalCoachSessioni />} />
           <Route path="/mental-coach/live" element={<MentalCoachLive />} />
           <Route path="/mental-coach/note" element={<MentalCoachNote />} />
+          <Route path="/mental-coach/segnalazioni" element={<MentalCoachSegnalazioni />} />
           <Route path="/mental-coach/chat" element={<ChatPage />} />
         </Route>
 

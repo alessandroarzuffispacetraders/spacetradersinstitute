@@ -41,6 +41,7 @@ const MANAGE_BY_ROLE: Record<UserRole, NavItem[]> = {
     { label: 'Sessioni', path: '/mental-coach/sessioni', icon: 'CalendarDays' },
     { label: 'Live', path: '/mental-coach/live', icon: 'Radio' },
     { label: 'Note', path: '/mental-coach/note', icon: 'FileText' },
+    { label: 'Segnalazioni', shortLabel: 'Segnal.', path: '/mental-coach/segnalazioni', icon: 'AlertTriangle' },
   ],
   admin: [
     { label: 'Utenti', path: '/admin/utenti', icon: 'Users' },

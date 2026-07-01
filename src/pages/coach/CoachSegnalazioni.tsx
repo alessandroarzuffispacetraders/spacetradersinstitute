@@ -5,6 +5,7 @@ import Card from '../../components/ui/Card'
 import { useAuth } from '../../context/AuthContext'
 import { useAssignedStudents, useCoachFlags, FlagSeverity } from '../../lib/coaching'
 import { triggerStudentFlagNotification } from '../../lib/push'
+import IncomingFlags from '../../components/ui/IncomingFlags'
 
 const inputStyle: React.CSSProperties = {
   background: 'var(--ist-w7)',
@@ -112,6 +113,14 @@ export default function CoachSegnalazioni() {
         </Card>
       )}
 
+      {/* Ricevute dall'admin */}
+      <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--ist-text)' }}>Ricevute dall'admin</h3>
+      <div className="mb-8">
+        <IncomingFlags userId={myId} emptyText="Nessuna segnalazione ricevuta dall'admin." />
+      </div>
+
+      {/* Segnalazioni create dal coach */}
+      <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--ist-text)' }}>Le tue segnalazioni</h3>
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 size={24} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} />
