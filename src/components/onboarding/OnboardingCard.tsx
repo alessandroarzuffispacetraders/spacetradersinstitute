@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CheckCircle2, ExternalLink, Compass, Eye, FileText } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
@@ -37,6 +38,19 @@ export default function OnboardingCard() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const ob = useOnboarding(user?.id ?? '')
+
+  // Tour AUTOMATICO al primo accesso (una sola volta). Se non completato resta
+  // il reminder qui sotto (step "Fai il tour" finché tutorialDone è false).
+  const autoStarted = useRef(false)
+  useEffect(() => {
+    if (autoStarted.current) return
+    if (user?.role !== 'student' || ob.loading) return
+    if (ob.tutorialDone || ob.tutorialPrompted) return
+    autoStarted.current = true
+    ob.markTutorialPrompted()
+    const t = setTimeout(() => startPlatformTour(() => ob.markTutorialDone()), 700)
+    return () => clearTimeout(t)
+  }, [user?.role, ob.loading, ob.tutorialDone, ob.tutorialPrompted, ob])
 
   if (user?.role !== 'student' || ob.loading || ob.allDone) return null
 

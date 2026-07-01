@@ -14,19 +14,21 @@ export function useOnboarding(userId: string) {
   const [welcomeSeen, setWelcomeSeen] = useState(false)
   const [questionnaireDone, setQuestionnaireDone] = useState(false)
   const [tutorialDone, setTutorialDone] = useState(false)
+  const [tutorialPrompted, setTutorialPrompted] = useState(false)
   const [welcome, setWelcome] = useState<WelcomeLesson | null>(null)
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     if (!userId) { setLoading(false); return }
     const [obRes, wlRes] = await Promise.all([
-      supabase.from('student_onboarding').select('welcome_seen,questionnaire_done,tutorial_done').eq('user_id', userId).maybeSingle(),
+      supabase.from('student_onboarding').select('welcome_seen,questionnaire_done,tutorial_done,tutorial_prompted').eq('user_id', userId).maybeSingle(),
       supabase.from('lessons').select('id,title,vimeo_id').eq('is_welcome', true).maybeSingle(),
     ])
-    const ob = obRes.data as { welcome_seen: boolean; questionnaire_done: boolean; tutorial_done: boolean } | null
+    const ob = obRes.data as { welcome_seen: boolean; questionnaire_done: boolean; tutorial_done: boolean; tutorial_prompted: boolean } | null
     setWelcomeSeen(ob?.welcome_seen ?? false)
     setQuestionnaireDone(ob?.questionnaire_done ?? false)
     setTutorialDone(ob?.tutorial_done ?? false)
+    setTutorialPrompted(ob?.tutorial_prompted ?? false)
     const wl = wlRes.data as { id: string; title: string; vimeo_id: string | null } | null
     setWelcome(wl ? { id: wl.id, title: wl.title, vimeoId: wl.vimeo_id } : null)
     setLoading(false)
@@ -35,12 +37,13 @@ export function useOnboarding(userId: string) {
   useEffect(() => { load() }, [load])
 
   const setFlag = useCallback(async (
-    patch: Partial<{ welcome_seen: boolean; questionnaire_done: boolean; tutorial_done: boolean }>,
+    patch: Partial<{ welcome_seen: boolean; questionnaire_done: boolean; tutorial_done: boolean; tutorial_prompted: boolean }>,
   ) => {
     if (!userId) return
     if (patch.welcome_seen !== undefined) setWelcomeSeen(patch.welcome_seen)
     if (patch.questionnaire_done !== undefined) setQuestionnaireDone(patch.questionnaire_done)
     if (patch.tutorial_done !== undefined) setTutorialDone(patch.tutorial_done)
+    if (patch.tutorial_prompted !== undefined) setTutorialPrompted(patch.tutorial_prompted)
     await supabase.from('student_onboarding').upsert(
       { user_id: userId, ...patch, updated_at: new Date().toISOString() },
       { onConflict: 'user_id' },
@@ -50,15 +53,16 @@ export function useOnboarding(userId: string) {
   const markWelcomeSeen = useCallback(() => setFlag({ welcome_seen: true }), [setFlag])
   const setQuestionnaire = useCallback((done: boolean) => setFlag({ questionnaire_done: done }), [setFlag])
   const markTutorialDone = useCallback(() => setFlag({ tutorial_done: true }), [setFlag])
+  const markTutorialPrompted = useCallback(() => setFlag({ tutorial_prompted: true }), [setFlag])
 
   // Se non c'è un video di benvenuto configurato, quel passo è auto-soddisfatto.
   const welcomeStepDone = welcome ? welcomeSeen : true
   const allDone = welcomeStepDone && questionnaireDone && tutorialDone
 
   return {
-    welcome, welcomeSeen, questionnaireDone, tutorialDone,
+    welcome, welcomeSeen, questionnaireDone, tutorialDone, tutorialPrompted,
     allDone, loading,
-    markWelcomeSeen, setQuestionnaire, markTutorialDone, reload: load,
+    markWelcomeSeen, setQuestionnaire, markTutorialDone, markTutorialPrompted, reload: load,
   }
 }
 

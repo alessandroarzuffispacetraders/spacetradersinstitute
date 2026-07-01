@@ -33,7 +33,9 @@ export function startPlatformTour(onDone?: () => void) {
     steps.push({ element: el, popover: info })
   }
 
-  if (steps.length === 0) { onDone?.(); return }
+  // Nessun elemento nav trovato (es. non ancora renderizzato): non marcare come
+  // completato, così resta il reminder.
+  if (steps.length === 0) return
 
   const d = driver({
     showProgress: true,
