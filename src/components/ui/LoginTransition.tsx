@@ -6,19 +6,25 @@ const HOLD_MS = 3700   // scena visibile
 const FADE_MS = 950    // dissolvenza finale che rivela l'app
 const TOTAL_MS = HOLD_MS + FADE_MS
 
-// Pochi blob (3) MOLTO grandi e sfumati, palette vicina al logo:
-// - viola e blu (colori del brand) ai lati, coprono buona parte dello schermo
-// - un accento caldo/acceso (arancio) che "stacca"
-// - il BLU sta al centro dietro al logo (colore "più vicino") → lo rivela un po' di più.
-// `size` = diametro desktop di riferimento; `spread` = vw per il responsive; `blur` px.
+// Blob di colore: sgargianti e "spaziali", molto sfocati. Si muovono e cambiano
+// forma (keyframe in index.css) passando dietro al logo bianco e rivelandolo.
+// Posizionati attorno al centro così il logo è quasi sempre "svelato" da un colore.
+// `size` = diametro desktop (px); su mobile scala in proporzione alla larghezza
+// (vw con cap ai px) così i blob NON si accatastano/impastano sullo schermo stretto.
 const BLOBS = [
-  { color: '#7c3aed', size: 1320, spread: 132, blur: 100, top: '40%', left: '-4%',  anim: 'istBlobA', dur: 11, delay: -1 }, // viola — sx
-  { color: '#f9683a', size: 1220, spread: 128, blur: 100, top: '62%', left: '104%', anim: 'istBlobD', dur: 13, delay: -5 }, // arancio caldo — dx
-  { color: '#1f7fa6', size: 820,  spread: 88,  blur: 82,  top: '48%', left: '50%',  anim: 'istBlobB', dur: 12, delay: -3 }, // blu del logo — centro, dietro al logo
+  { color: '#7c3aed', size: 620, top: '30%', left: '28%', anim: 'istBlobA', dur: 9,  delay: -1 },  // viola
+  { color: '#06b6d4', size: 560, top: '26%', left: '58%', anim: 'istBlobC', dur: 11, delay: -4 },  // ciano
+  { color: '#ec4899', size: 600, top: '58%', left: '54%', anim: 'istBlobB', dur: 10, delay: -2 },  // magenta
+  { color: '#2563eb', size: 640, top: '54%', left: '30%', anim: 'istBlobD', dur: 12, delay: -6 },  // blu
+  { color: '#14b8a6', size: 480, top: '40%', left: '46%', anim: 'istBlobA', dur: 8,  delay: -3 },  // teal
+  { color: '#f59e0b', size: 420, top: '46%', left: '66%', anim: 'istBlobD', dur: 13, delay: -5 },  // ambra
+  { color: '#4f46e5', size: 500, top: '52%', left: '44%', anim: 'istBlobC', dur: 10, delay: -7 },  // indaco
 ]
 
-const blobDiameter = (size: number, spread: number) =>
-  `clamp(${Math.round(size * 0.34)}px, ${spread}vw, ${size}px)`
+// Diametro proporzionale alla larghezza dello schermo (identico al desktop a ~1200px,
+// scala giù su mobile mantenendo le stesse proporzioni della composizione).
+const blobDiameter = (size: number) =>
+  `clamp(${Math.round(size * 0.32)}px, ${(size / 12).toFixed(1)}vw, ${size}px)`
 
 export default function LoginTransition() {
   const { justLoggedIn, clearJustLoggedIn } = useAuth()
@@ -47,12 +53,12 @@ export default function LoginTransition() {
         pointerEvents: leaving ? 'none' : 'auto',
       }}
     >
-      {/* Strato dei colori: multiply su bianco → tinte piene, grandi e sfumate */}
-      <div className="absolute inset-0" style={{ filter: 'saturate(1.12)' }}>
+      {/* Strato dei colori: multiply su bianco → tinte piene che si mescolano */}
+      <div className="absolute inset-0" style={{ filter: 'saturate(1.15)' }}>
         {BLOBS.map((b, i) => {
-          const d = blobDiameter(b.size, b.spread)
+          const d = blobDiameter(b.size)
           return (
-            // Wrapper: centra il blob sul punto (top,left); responsive.
+            // Wrapper: centra il blob sul punto (top,left) in modo responsive.
             <div
               key={i}
               className="absolute"
@@ -61,8 +67,8 @@ export default function LoginTransition() {
               <div
                 className="w-full h-full"
                 style={{
-                  background: `radial-gradient(circle at 50% 50%, ${b.color} 0%, ${b.color}cc 40%, transparent 74%)`,
-                  filter: `blur(${b.blur}px)`,
+                  background: `radial-gradient(circle at 50% 50%, ${b.color} 0%, ${b.color}cc 38%, transparent 72%)`,
+                  filter: 'blur(72px)',
                   mixBlendMode: 'multiply',
                   willChange: 'transform, border-radius',
                   animation: `${b.anim} ${b.dur}s ease-in-out ${b.delay}s infinite`,
@@ -73,16 +79,13 @@ export default function LoginTransition() {
         })}
       </div>
 
-      {/* Velo bianco centrale LEGGERO: ammorbidisce senza nascondere il logo */}
+      {/* Alone bianco ai bordi per mantenere lo sfondo pulito e arioso */}
       <div
         className="absolute inset-0 pointer-events-none"
-        style={{
-          background:
-            'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.16) 22%, transparent 48%)',
-        }}
+        style={{ background: 'radial-gradient(ellipse at center, transparent 52%, rgba(255,255,255,0.85) 100%)' }}
       />
 
-      {/* Logo bianco al centro: opaco, rivelato dal blu che gli sta dietro */}
+      {/* Logo bianco al centro: opaco, rivelato dai colori che gli passano dietro */}
       <img
         src="/logo-white.png"
         alt=""
@@ -91,8 +94,8 @@ export default function LoginTransition() {
         draggable={false}
         className="relative"
         style={{
-          width: 'clamp(124px, 35vw, 172px)',
-          height: 'clamp(124px, 35vw, 172px)',
+          width: 'clamp(132px, 38vw, 168px)',
+          height: 'clamp(132px, 38vw, 168px)',
           objectFit: 'contain',
           animation: `istLoginLogo ${(TOTAL_MS / 1000).toFixed(2)}s ease-out both`,
         }}
