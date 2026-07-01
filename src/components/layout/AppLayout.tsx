@@ -36,8 +36,8 @@ function NotificationManager() {
           try {
             new Notification(msg.author_name, {
               body: msg.content.length > 80 ? msg.content.slice(0, 80) + '…' : msg.content,
-              icon: '/icon.svg',
-              badge: '/icon.svg',
+              icon: '/icon-192.png',
+              badge: '/icon-192.png',
               tag: msg.channel_id,
             })
           } catch {
