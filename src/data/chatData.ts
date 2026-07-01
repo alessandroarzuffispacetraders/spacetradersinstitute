@@ -295,7 +295,7 @@ export const BACHECA_POSTS: Record<string, BachecaPost[]> = {
       authorRole: 'admin',
       title: 'Benvenuti nella community IST 🚀',
       content:
-        'Questo è lo spazio ufficiale della community Inner Space Traders. Qui troverete tutti gli aggiornamenti importanti, le comunicazioni del team e gli avvisi di sistema.\n\nRicordate le regole base: rispetto reciproco, focus sul trading, condivisione costruttiva. Siamo qui per crescere insieme come trader professionisti.',
+        'Questo è lo spazio ufficiale della community Space Traders Institute. Qui troverete tutti gli aggiornamenti importanti, le comunicazioni del team e gli avvisi di sistema.\n\nRicordate le regole base: rispetto reciproco, focus sul trading, condivisione costruttiva. Siamo qui per crescere insieme come trader professionisti.',
       timestamp: '2026-06-01T09:00:00',
       pinned: true,
       reactions: [

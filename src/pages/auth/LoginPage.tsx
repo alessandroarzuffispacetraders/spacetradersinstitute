@@ -45,6 +45,7 @@ export default function LoginPage() {
 
   return (
     <div
+      data-inverted="true"
       className="min-h-screen flex flex-col items-center justify-center px-6"
       style={{
         background: 'radial-gradient(circle at 20% 10%, rgba(90,154,177,0.28) 0%, transparent 34%), radial-gradient(circle at 80% 20%, rgba(40,102,128,0.22) 0%, transparent 32%), linear-gradient(135deg, #070812 0%, #0B1020 52%, #061D2A 100%)',
@@ -90,20 +91,21 @@ export default function LoginPage() {
           </div>
         ) : (
           <>
-            {/* Toggle login / registrazione */}
+            {/* Toggle login / registrazione — colori fissi (login sempre su sfondo scuro) */}
             <div
               className="mt-8 mb-8 flex rounded-2xl p-1 w-full"
-              style={{ background: 'var(--ist-w8)', border: '1px solid var(--ist-border)' }}
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)' }}
             >
               {(['login', 'signup'] as const).map(m => (
                 <button
                   key={m}
+                  type="button"
                   onClick={() => switchMode(m)}
                   className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
                   style={
                     mode === m
-                      ? { background: 'var(--ist-w16)', color: 'var(--ist-text)' }
-                      : { color: 'var(--ist-text-muted)' }
+                      ? { background: 'rgba(255,255,255,0.16)', color: '#FFFFFF', boxShadow: '0 2px 10px rgba(0,0,0,0.28)' }
+                      : { color: 'rgba(247,250,252,0.58)' }
                   }
                 >
                   {m === 'login' ? 'Accedi' : 'Registrati'}
@@ -121,8 +123,8 @@ export default function LoginPage() {
                     onChange={e => setName(e.target.value)}
                     required
                     placeholder="Il tuo nome"
-                    className="w-full px-4 py-3 rounded-2xl text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-ist-400/50 transition-all"
-                    style={{ background: 'var(--ist-w8)', border: '1px solid var(--ist-border)' }}
+                    className="w-full px-4 py-3 rounded-2xl placeholder:text-white/30 outline-none focus:ring-2 focus:ring-ist-400/50 transition-all"
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#F7FAFC' }}
                   />
                 </div>
               )}

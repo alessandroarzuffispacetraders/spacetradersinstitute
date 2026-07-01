@@ -12,6 +12,8 @@ interface AuthContextType {
   updateProfile: (data: ProfileUpdate) => Promise<void>
   isAuthenticated: boolean
   loading: boolean
+  justLoggedIn: boolean
+  clearJustLoggedIn: () => void
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -44,6 +46,9 @@ async function fetchProfile(userId: string): Promise<User | null> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  // true solo subito dopo un login esplicito → innesca l'animazione di ingresso.
+  // NON viene settato su refresh/ripristino sessione.
+  const [justLoggedIn, setJustLoggedIn] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -73,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string): Promise<{ error: string | null }> => {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) return { error: error.message }
+    setJustLoggedIn(true)
     return { error: null }
   }
 
@@ -104,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, updateProfile, isAuthenticated: !!user, loading }}>
+    <AuthContext.Provider value={{ user, login, signup, logout, updateProfile, isAuthenticated: !!user, loading, justLoggedIn, clearJustLoggedIn: () => setJustLoggedIn(false) }}>
       {children}
     </AuthContext.Provider>
   )

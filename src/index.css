@@ -194,3 +194,37 @@
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
   .text-balance { text-wrap: balance; }
 }
+
+/* ===== Login transition — animazione ingresso "spazio profondo" ===== */
+@keyframes istTwinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1); }
+}
+@keyframes istNebulaDrift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(4%, -3%, 0) scale(1.18); }
+  100% { transform: translate3d(-3%, 4%, 0) scale(1); }
+}
+@keyframes istNebulaDrift2 {
+  0%   { transform: translate3d(0, 0, 0) scale(1.05); }
+  50%  { transform: translate3d(-5%, 3%, 0) scale(0.9); }
+  100% { transform: translate3d(3%, -4%, 0) scale(1.05); }
+}
+@keyframes istLogoIn {
+  0%   { opacity: 0; transform: scale(0.72); filter: blur(6px); }
+  55%  { opacity: 1; transform: scale(1.04); filter: blur(0); }
+  100% { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+@keyframes istLogoGlow {
+  0%, 100% { filter: drop-shadow(0 0 22px rgba(124,187,208,0.45)) drop-shadow(0 0 60px rgba(40,102,128,0.35)); }
+  50%      { filter: drop-shadow(0 0 34px rgba(124,187,208,0.75)) drop-shadow(0 0 90px rgba(40,102,128,0.55)); }
+}
+@keyframes istRingPulse {
+  0%   { opacity: 0.5; transform: scale(0.6); }
+  70%  { opacity: 0; }
+  100% { opacity: 0; transform: scale(2.4); }
+}
+@keyframes istStarfieldFloat {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-24px); }
+}

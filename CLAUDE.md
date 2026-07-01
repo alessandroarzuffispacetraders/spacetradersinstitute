@@ -1,4 +1,4 @@
-# IST — Inner Space Traders
+# IST — Space Traders Institute
 
 ## Cos'è
 Scuola di coaching 1:1 per trader. Programma da 90 giorni con coach dedicato, mental coach, videocorsi, community e sessioni Zoom.
