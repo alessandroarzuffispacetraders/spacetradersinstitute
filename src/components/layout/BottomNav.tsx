@@ -274,6 +274,7 @@ export default function BottomNav() {
           {hasOverflow && (
             <button
               onClick={() => setMoreOpen(o => !o)}
+              data-tour="__more__"
               className="flex flex-col items-center gap-1 py-1 px-2 transition-all duration-150"
               style={{ color: moreOpen ? '#7CBBD0' : 'var(--ist-nav-text)' }}
             >

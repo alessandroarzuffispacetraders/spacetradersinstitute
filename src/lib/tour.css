@@ -1,46 +1,64 @@
-/* Tema scuro IST per i popover di driver.js (tour interattivo) */
+/* Popover del tour (driver.js) allineato al design IST: usa i design token,
+   così si adatta a tema chiaro/scuro e allo stile delle card. */
 .driver-popover.ist-tour {
-  background: #0d1117;
-  color: #e6edf3;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 16px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-  max-width: 320px;
+  background: var(--ist-card-bg-premium, var(--ist-card-bg));
+  color: var(--ist-text);
+  border: 1px solid var(--ist-border);
+  border-radius: 22px;
+  box-shadow: var(--ist-card-shadow-premium, 0 24px 60px rgba(0, 0, 0, 0.4));
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 18px 18px 14px;
+  font-family: inherit;
 }
 .driver-popover.ist-tour .driver-popover-title {
-  color: #ffffff;
+  color: var(--ist-text);
   font-size: 15px;
   font-weight: 700;
+  margin-bottom: 4px;
 }
 .driver-popover.ist-tour .driver-popover-description {
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--ist-text-muted);
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 .driver-popover.ist-tour .driver-popover-progress-text {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--ist-text-dim);
   font-size: 11px;
+  font-weight: 600;
 }
 .driver-popover.ist-tour .driver-popover-close-btn {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--ist-text-dim);
+  transition: color 0.15s;
+}
+.driver-popover.ist-tour .driver-popover-close-btn:hover {
+  color: var(--ist-text);
+}
+.driver-popover.ist-tour .driver-popover-footer {
+  margin-top: 14px;
+  gap: 6px;
 }
 .driver-popover.ist-tour .driver-popover-footer button {
-  background: rgba(255, 255, 255, 0.08);
-  color: #e6edf3;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 10px;
+  background: var(--ist-w8);
+  color: var(--ist-text-muted);
+  border: 1px solid var(--ist-border);
+  border-radius: 12px;
   text-shadow: none;
   font-weight: 600;
-  padding: 5px 12px;
+  font-size: 12px;
+  padding: 6px 14px;
+  transition: all 0.15s;
 }
 .driver-popover.ist-tour .driver-popover-footer button:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--ist-w10);
+  color: var(--ist-text);
 }
-.driver-popover.ist-tour .driver-popover-next-btn {
-  background: linear-gradient(135deg, #5A9AB1, #286680);
+.driver-popover.ist-tour .driver-popover-next-btn,
+.driver-popover.ist-tour .driver-popover-next-btn:hover {
+  background: linear-gradient(135deg, #5A9AB1 0%, #286680 100%);
   color: #ffffff;
   border-color: transparent;
+  box-shadow: 0 4px 14px rgba(40, 102, 128, 0.3);
 }
 .driver-popover.ist-tour .driver-popover-arrow {
-  border-color: #0d1117;
+  border-color: var(--ist-card-bg-premium, var(--ist-card-bg));
 }

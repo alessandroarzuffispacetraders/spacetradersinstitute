@@ -15,6 +15,7 @@ const SECTIONS: Record<string, { title: string; description: string }> = {
   '/student/calendario': { title: '📅 Calendario', description: 'Il calendario delle live, così non ti perdi nulla.' },
   '/student/progressi': { title: '📈 Progressi', description: 'I tuoi badge e traguardi raggiunti man mano che avanzi.' },
   '/student/journal': { title: '🔗 Protocol Journal', description: 'Lo strumento esterno per tracciare le tue performance di trading.' },
+  '__more__': { title: '➕ Altro', description: 'Tocca qui per aprire tutte le altre sezioni della piattaforma.' },
 }
 
 // Avvia il tour interattivo evidenziando le voci di nav VISIBILI (si adatta a
