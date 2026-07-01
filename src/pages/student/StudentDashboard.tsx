@@ -10,6 +10,7 @@ import { useStudentSessions } from '../../lib/coaching'
 import { useDmUsers, useUnreadCounts, dmChannelId } from '../../lib/chat'
 import { UserRole } from '../../types'
 import LiveCalendar from '../../components/ui/LiveCalendar'
+import OnboardingCard from '../../components/onboarding/OnboardingCard'
 
 // ─── data ─────────────────────────────────────────────────────────────────────
 
@@ -157,6 +158,9 @@ export default function StudentDashboard() {
   return (
     <div className="min-h-screen">
       <div className="px-5 lg:px-10 pt-8 pb-32 lg:pb-12 space-y-6">
+
+        {/* ── Primi passi (onboarding, solo finché incompleto) ── */}
+        <OnboardingCard />
 
         {/* ── Header ── */}
         <header className="flex items-center justify-between gap-4">

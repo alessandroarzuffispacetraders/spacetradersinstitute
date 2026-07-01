@@ -259,6 +259,7 @@ export default function BottomNav() {
             <NavLink
               key={item.path}
               to={item.path}
+              data-tour={item.path}
               end={item.path === homePath}
               className="flex flex-col items-center gap-1 py-1 px-2 transition-all duration-150"
               style={({ isActive }) => ({ color: isActive ? '#7CBBD0' : 'var(--ist-nav-text)' })}

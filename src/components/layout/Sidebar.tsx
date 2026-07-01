@@ -111,6 +111,7 @@ export default function Sidebar() {
           <NavLink
             key={item.path}
             to={item.path}
+            data-tour={item.path}
             end={HOME_PATHS.has(item.path)}
             style={({ isActive }) => isActive ? {
               background: 'var(--ist-nav-active-bg)',

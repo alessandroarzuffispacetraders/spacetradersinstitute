@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Loader2, Plus, Trash2, ChevronUp, ChevronDown, Check, X, Pencil } from 'lucide-react'
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
@@ -7,17 +7,19 @@ import {
   useMentalMaterialsAdmin, useMentalChecklistAdmin,
   MentalMaterialType, MaterialInput,
 } from '../../lib/mental'
+import { useWelcomeLessonAdmin } from '../../lib/onboarding'
 
 const inputStyle: React.CSSProperties = {
   background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)',
   borderRadius: 12, color: 'var(--ist-text)', outline: 'none', width: '100%',
 }
 
-type Tab = 'percorso' | 'materiali' | 'checklist'
+type Tab = 'percorso' | 'materiali' | 'checklist' | 'benvenuto'
 const TABS: { id: Tab; label: string }[] = [
   { id: 'percorso', label: 'Percorso' },
   { id: 'materiali', label: 'Materiali Mental' },
   { id: 'checklist', label: 'Checklist Mental' },
+  { id: 'benvenuto', label: 'Video benvenuto' },
 ]
 
 function IconBtn({ icon, onClick, danger, disabled, title }: {
@@ -258,6 +260,54 @@ function ChecklistTab() {
   )
 }
 
+// ─── Tab: Video di benvenuto ────────────────────────────────────────────────────
+
+function BenvenutoTab() {
+  const { lessons, currentId, loading, setWelcome } = useWelcomeLessonAdmin()
+  const [sel, setSel] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => { setSel(currentId) }, [currentId])
+
+  if (loading) return <div className="flex justify-center py-16"><Loader2 size={22} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} /></div>
+
+  const save = async () => {
+    setSaving(true)
+    const ok = await setWelcome(sel)
+    setSaving(false)
+    if (ok) { setSaved(true); setTimeout(() => setSaved(false), 2000) }
+  }
+
+  return (
+    <Card className="p-5">
+      <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--ist-text)' }}>Video di benvenuto</h3>
+      <p className="text-xs mb-4" style={{ color: 'var(--ist-text-dim)' }}>
+        Scegli quale lezione del videocorso è il video di benvenuto: verrà mostrata in cima alla home dei nuovi studenti nei "Primi passi", finché non la guardano (poi resta solo nel videocorso).
+      </p>
+      {lessons.length === 0 ? (
+        <p className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>Nessuna lezione disponibile. Crea prima le lezioni in Contenuti.</p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={sel} onChange={e => setSel(e.target.value)} className="px-3 py-2.5 text-sm flex-1 min-w-[220px]" style={inputStyle}>
+            <option value="">Nessun video di benvenuto</option>
+            {lessons.map(l => <option key={l.id} value={l.id}>{l.title}</option>)}
+          </select>
+          <button
+            onClick={save}
+            disabled={saving || sel === currentId}
+            className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl text-white disabled:opacity-45 flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)' }}
+          >
+            {saving ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} strokeWidth={2.5} /> : null}
+            {saved ? 'Salvato' : 'Salva'}
+          </button>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 // ─── Pagina ─────────────────────────────────────────────────────────────────────
 
 export default function AdminProgramma() {
@@ -285,6 +335,7 @@ export default function AdminProgramma() {
       {tab === 'percorso' && <PercorsoTab />}
       {tab === 'materiali' && <MaterialiTab />}
       {tab === 'checklist' && <ChecklistTab />}
+      {tab === 'benvenuto' && <BenvenutoTab />}
     </div>
   )
 }
