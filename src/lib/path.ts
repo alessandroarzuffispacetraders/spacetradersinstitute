@@ -2,72 +2,40 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
 import { StudentPhase } from '../types'
 
-// ─── Definizione del percorso (fasi + passi) ────────────────────────────────────
-// Le `key` dei passi sono stabili: sono ciò che viene salvato in path_steps.
-
-export interface PathStepDef { key: string; label: string }
-export interface PathPhaseDef { id: StudentPhase; label: string; icon: string; steps: PathStepDef[] }
-
-export const PATH_PHASES: PathPhaseDef[] = [
-  {
-    id: 'onboarding', label: 'Fase 1 — Onboarding', icon: '🚀',
-    steps: [
-      { key: 'onboarding.profilo', label: 'Completa il profilo' },
-      { key: 'onboarding.benvenuto', label: 'Video di benvenuto' },
-      { key: 'onboarding.prima-sessione', label: 'Prima sessione con il Coach' },
-      { key: 'onboarding.setup', label: 'Setup strumenti di trading' },
-    ],
-  },
-  {
-    id: 'build', label: 'Fase 2 — Build', icon: '🔨',
-    steps: [
-      { key: 'build.modulo1', label: 'Modulo 1: Fondamenta' },
-      { key: 'build.modulo2', label: 'Modulo 2: Analisi Tecnica' },
-      { key: 'build.modulo3', label: 'Modulo 3: Risk Management' },
-      { key: 'build.modulo4', label: 'Modulo 4: Psicologia del Trading' },
-      { key: 'build.mental1', label: 'Sessione Mental Coach #1' },
-    ],
-  },
-  {
-    id: 'test', label: 'Fase 3 — Test', icon: '🧪',
-    steps: [
-      { key: 'test.demo30', label: '30 trade in demo documentati' },
-      { key: 'test.review', label: 'Review con il Coach' },
-      { key: 'test.mental2', label: 'Sessione Mental Coach #2' },
-      { key: 'test.performance', label: 'Analisi performance' },
-    ],
-  },
-  {
-    id: 'deploy', label: 'Fase 4 — Deploy', icon: '🎯',
-    steps: [
-      { key: 'deploy.live1', label: 'Prima settimana in live' },
-      { key: 'deploy.report', label: 'Report settimanale' },
-      { key: 'deploy.finale', label: 'Sessione finale con Coach' },
-      { key: 'deploy.certificazione', label: 'Certificazione IST' },
-    ],
-  },
-]
+// ─── Fasi fisse (metadata) ──────────────────────────────────────────────────────
+// Le 4 fasi sono strutturali (mappano profiles.phase). Gli STEP dentro ogni fase
+// sono invece personalizzabili dall'admin (tabella path_step_defs).
 
 export const PHASE_ORDER: StudentPhase[] = ['onboarding', 'build', 'test', 'deploy']
 
+export const PHASE_META: Record<StudentPhase, { label: string; icon: string }> = {
+  onboarding: { label: 'Fase 1 — Onboarding', icon: '🚀' },
+  build:      { label: 'Fase 2 — Build',      icon: '🔨' },
+  test:       { label: 'Fase 3 — Test',       icon: '🧪' },
+  deploy:     { label: 'Fase 4 — Deploy',     icon: '🎯' },
+}
+
 export type PhaseStatus = 'completed' | 'active' | 'locked'
 
-export interface PathStep extends PathStepDef { done: boolean }
+export interface PathStep { key: string; label: string; done: boolean }
 export interface PathPhase {
   id: StudentPhase; label: string; icon: string
   status: PhaseStatus; steps: PathStep[]
 }
 
-// Costruisce le fasi con stato (completata/in corso/bloccata) e passi spuntati.
-function buildPhases(current: StudentPhase, doneKeys: Set<string>): PathPhase[] {
+interface RawStepDef { id: string; phase: StudentPhase; step_key: string; label: string; position: number }
+
+// Costruisce le fasi con stato (completata/in corso/bloccata) e passi (dal DB) spuntati.
+function buildPhases(current: StudentPhase, doneKeys: Set<string>, defs: RawStepDef[]): PathPhase[] {
   const curIdx = PHASE_ORDER.indexOf(current)
-  return PATH_PHASES.map(p => {
-    const idx = PHASE_ORDER.indexOf(p.id)
+  return PHASE_ORDER.map(id => {
+    const idx = PHASE_ORDER.indexOf(id)
     const status: PhaseStatus = idx < curIdx ? 'completed' : idx === curIdx ? 'active' : 'locked'
-    return {
-      id: p.id, label: p.label, icon: p.icon, status,
-      steps: p.steps.map(s => ({ ...s, done: doneKeys.has(s.key) })),
-    }
+    const steps = defs
+      .filter(d => d.phase === id)
+      .sort((a, b) => a.position - b.position)
+      .map(d => ({ key: d.step_key, label: d.label, done: doneKeys.has(d.step_key) }))
+    return { id, label: PHASE_META[id].label, icon: PHASE_META[id].icon, status, steps }
   })
 }
 
@@ -76,17 +44,20 @@ function buildPhases(current: StudentPhase, doneKeys: Set<string>): PathPhase[] 
 export function usePath(userId: string) {
   const [phase, setPhase] = useState<StudentPhase>('onboarding')
   const [doneKeys, setDoneKeys] = useState<Set<string>>(new Set())
+  const [defs, setDefs] = useState<RawStepDef[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     if (!userId) { setLoading(false); return }
     setLoading(true)
-    const [profRes, stepsRes] = await Promise.all([
+    const [profRes, stepsRes, defsRes] = await Promise.all([
       supabase.from('profiles').select('phase').eq('id', userId).maybeSingle(),
       supabase.from('path_steps').select('step_key').eq('user_id', userId),
+      supabase.from('path_step_defs').select('id,phase,step_key,label,position').order('position'),
     ])
     setPhase(((profRes.data?.phase as StudentPhase) ?? 'onboarding'))
     setDoneKeys(new Set((stepsRes.data ?? []).map(r => r.step_key as string)))
+    setDefs((defsRes.data as RawStepDef[]) ?? [])
     setLoading(false)
   }, [userId])
 
@@ -118,10 +89,68 @@ export function usePath(userId: string) {
 
   return {
     phase,
-    phases: buildPhases(phase, doneKeys),
+    phases: buildPhases(phase, doneKeys, defs),
     loading,
     reload: load,
     setStudentPhase,
     toggleStep,
   }
+}
+
+// ─── Admin: CRUD degli step del percorso ────────────────────────────────────────
+
+export interface AdminPathStep { id: string; phase: StudentPhase; step_key: string; label: string; position: number }
+
+export function usePathAdmin() {
+  const [steps, setSteps] = useState<AdminPathStep[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('path_step_defs')
+      .select('id,phase,step_key,label,position').order('position')
+    setSteps((data as AdminPathStep[]) ?? [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const addStep = useCallback(async (phase: StudentPhase, label: string): Promise<boolean> => {
+    const l = label.trim()
+    if (!l) return false
+    const position = steps.filter(s => s.phase === phase).length
+    const step_key = `${phase}.${crypto.randomUUID().slice(0, 8)}`
+    const { error } = await supabase.from('path_step_defs').insert({ phase, step_key, label: l, position })
+    if (!error) await load()
+    return !error
+  }, [steps, load])
+
+  const updateStep = useCallback(async (id: string, label: string): Promise<boolean> => {
+    const l = label.trim()
+    if (!l) return false
+    const { error } = await supabase.from('path_step_defs').update({ label: l }).eq('id', id)
+    if (!error) await load()
+    return !error
+  }, [load])
+
+  const deleteStep = useCallback(async (id: string): Promise<boolean> => {
+    const { error } = await supabase.from('path_step_defs').delete().eq('id', id)
+    if (!error) await load()
+    return !error
+  }, [load])
+
+  // Sposta lo step su/giù scambiando la position con l'adiacente nella stessa fase.
+  const moveStep = useCallback(async (id: string, dir: 'up' | 'down'): Promise<boolean> => {
+    const step = steps.find(s => s.id === id)
+    if (!step) return false
+    const siblings = steps.filter(s => s.phase === step.phase).sort((a, b) => a.position - b.position)
+    const idx = siblings.findIndex(s => s.id === id)
+    const swapWith = dir === 'up' ? siblings[idx - 1] : siblings[idx + 1]
+    if (!swapWith) return false
+    const { error: e1 } = await supabase.from('path_step_defs').update({ position: swapWith.position }).eq('id', step.id)
+    const { error: e2 } = await supabase.from('path_step_defs').update({ position: step.position }).eq('id', swapWith.id)
+    if (!e1 && !e2) await load()
+    return !e1 && !e2
+  }, [steps, load])
+
+  return { steps, loading, addStep, updateStep, deleteStep, moveStep, reload: load }
 }

@@ -43,6 +43,7 @@ import AdminContenuti from '../pages/admin/AdminContenuti'
 import AdminStatistiche from '../pages/admin/AdminStatistiche'
 import AdminChat from '../pages/admin/AdminChat'
 import AdminSegnalazioni from '../pages/admin/AdminSegnalazioni'
+import AdminProgramma from '../pages/admin/AdminProgramma'
 
 function PrivateRoutes() {
   const { user } = useAuth()
@@ -100,6 +101,7 @@ function PrivateRoutes() {
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/utenti" element={<AdminUtenti />} />
           <Route path="/admin/contenuti" element={<AdminContenuti />} />
+          <Route path="/admin/programma" element={<AdminProgramma />} />
           <Route path="/admin/statistiche" element={<AdminStatistiche />} />
           <Route path="/admin/segnalazioni" element={<AdminSegnalazioni />} />
           <Route path="/admin/chat" element={<AdminChat />} />

@@ -1,41 +1,39 @@
 import { useNavigate } from 'react-router-dom'
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
-import { CheckSquare, Square, ExternalLink, MessageCircle } from 'lucide-react'
+import { CheckSquare, Square, ExternalLink, MessageCircle, Loader2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useStudentSessions } from '../../lib/coaching'
+import { useMentalMaterials, useMentalChecklist, MentalMaterialType } from '../../lib/mental'
 
 const SESSION_SUBLABELS: Record<number, string> = {
   1: 'Valutazione iniziale',
   2: 'Follow-up e strategie',
 }
 
+const MATERIAL_ICON: Record<MentalMaterialType, string> = {
+  pdf: '📄', audio: '🎧', video: '🎬', task: '✍️', link: '🔗',
+}
+const MATERIAL_LABEL: Record<MentalMaterialType, string> = {
+  pdf: 'PDF', audio: 'Audio', video: 'Video', task: 'Task', link: 'Link',
+}
+
 function formatSessionDate(iso: string): string {
   return new Date(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-const MATERIALS = [
-  { title: 'Mindset del Trader — Guida PDF', type: 'PDF', icon: '📄', done: true },
-  { title: 'Meditazione pre-sessione (audio)', type: 'Audio', icon: '🎧', done: false },
-  { title: 'Esercizio: Journaling emozionale', type: 'Task', icon: '✍️', done: false },
-  { title: 'Video: Gestire le perdite', type: 'Video', icon: '🎬', done: true },
-]
-
-const TASKS = [
-  { label: 'Compila il questionario di auto-valutazione', done: true },
-  { label: 'Leggi la guida al mindset (Settimana 1)', done: true },
-  { label: 'Completa 3 sessioni di journaling emozionale', done: false },
-  { label: 'Pratica la meditazione pre-trading per 7 giorni', done: false },
-]
-
 export default function StudentMentalCoach() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { sessions } = useStudentSessions(user?.id ?? '')
+  const userId = user?.id ?? ''
+  const { sessions } = useStudentSessions(userId)
+  const { materials, loading: matLoading } = useMentalMaterials()
+  const { items, doneIds, loading: chkLoading, toggle } = useMentalChecklist(userId)
+
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="flex items-start justify-between gap-4 mb-6">
-        <PageHeader title="Area Mental Coach" subtitle="Sofia Verdi — Mental Coach IST" />
+        <PageHeader title="Area Mental Coach" subtitle="Materiali e checklist per il tuo percorso mentale" />
         <button
           onClick={() => navigate('/student/chat', { state: { tab: 'direct' } })}
           className="flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-semibold flex-shrink-0 transition-all hover:-translate-y-0.5 active:scale-[0.97]"
@@ -91,58 +89,72 @@ export default function StudentMentalCoach() {
       </div>
 
       <Card className="p-5 mb-6">
-        <h3 className="text-sm font-semibold text-white mb-4">Materiali assegnati</h3>
-        <div className="space-y-3">
-          {MATERIALS.map((mat, i) => (
-            <div key={i} className="flex items-center gap-3">
-              <div
-                className="w-8 h-8 rounded-xl flex items-center justify-center text-sm flex-shrink-0"
-                style={mat.done
-                  ? { background: 'rgba(70,211,154,0.14)', color: '#46D39A' }
-                  : { background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)' }
-                }
-              >
-                {mat.done ? '✓' : mat.icon}
-              </div>
-              <div className="flex-1">
-                <p
-                  className={`text-sm ${mat.done ? 'line-through' : ''}`}
-                  style={{ color: mat.done ? '#8495A3' : '#C7D3DD' }}
+        <h3 className="text-sm font-semibold text-white mb-4">Materiali utili</h3>
+        {matLoading ? (
+          <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin" style={{ color: 'var(--ist-text-dim)' }} /></div>
+        ) : materials.length === 0 ? (
+          <p className="text-sm" style={{ color: 'var(--ist-text-dim)' }}>Nessun materiale disponibile al momento.</p>
+        ) : (
+          <div className="space-y-3">
+            {materials.map((mat) => (
+              <div key={mat.id} className="flex items-center gap-3">
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-sm flex-shrink-0"
+                  style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)' }}
                 >
-                  {mat.title}
-                </p>
-                <p className="text-xs" style={{ color: '#56636F' }}>{mat.type}</p>
+                  {MATERIAL_ICON[mat.type]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm truncate" style={{ color: 'var(--ist-text)' }}>{mat.title}</p>
+                  <p className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>{MATERIAL_LABEL[mat.type]}</p>
+                </div>
+                {mat.url && (
+                  <a
+                    href={mat.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs font-medium flex-shrink-0 transition-opacity hover:opacity-70"
+                    style={{ color: 'var(--ist-accent-text)' }}
+                  >
+                    Apri <ExternalLink size={11} strokeWidth={2} />
+                  </a>
+                )}
               </div>
-              {!mat.done && (
-                <button className="flex items-center gap-1 text-xs text-ist-300 hover:text-ist-200 transition-colors">
-                  Apri <ExternalLink size={11} strokeWidth={2} />
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       <Card className="p-5">
-        <h3 className="text-sm font-semibold text-white mb-4">Task assegnati</h3>
-        <div className="space-y-3">
-          {TASKS.map((task, i) => (
-            <div key={i} className="flex items-center gap-3">
-              <div style={{ color: task.done ? '#46D39A' : '#8495A3', flexShrink: 0 }}>
-                {task.done
-                  ? <CheckSquare size={18} strokeWidth={2} />
-                  : <Square size={18} strokeWidth={2} />
-                }
-              </div>
-              <span
-                className={`text-sm ${task.done ? 'line-through' : ''}`}
-                style={{ color: task.done ? '#8495A3' : '#C7D3DD' }}
-              >
-                {task.label}
-              </span>
-            </div>
-          ))}
-        </div>
+        <h3 className="text-sm font-semibold text-white mb-4">Checklist</h3>
+        {chkLoading ? (
+          <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin" style={{ color: 'var(--ist-text-dim)' }} /></div>
+        ) : items.length === 0 ? (
+          <p className="text-sm" style={{ color: 'var(--ist-text-dim)' }}>Nessuna attività in checklist al momento.</p>
+        ) : (
+          <div className="space-y-1">
+            {items.map((item) => {
+              const done = doneIds.has(item.id)
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => toggle(item.id, !done)}
+                  className="w-full flex items-center gap-3 py-2 text-left rounded-xl transition-colors hover:bg-white/[0.03]"
+                >
+                  <span style={{ color: done ? '#46D39A' : 'var(--ist-text-muted)', flexShrink: 0 }}>
+                    {done ? <CheckSquare size={18} strokeWidth={2} /> : <Square size={18} strokeWidth={2} />}
+                  </span>
+                  <span
+                    className={`text-sm ${done ? 'line-through' : ''}`}
+                    style={{ color: done ? 'var(--ist-text-dim)' : 'var(--ist-text)' }}
+                  >
+                    {item.label}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
       </Card>
     </div>
   )
