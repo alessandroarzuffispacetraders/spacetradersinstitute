@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
@@ -97,6 +97,7 @@ function OverflowSheet({
           {items.map((item) => (
             <button
               key={item.path}
+              data-tour={item.path}
               onClick={() => { navigate(item.path); onClose() }}
               className="flex flex-col items-center gap-2 py-4 px-2 rounded-2xl transition-all active:scale-[0.95]"
               style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)' }}
@@ -210,6 +211,18 @@ export default function BottomNav() {
   const { hideBottomNav, navMode, setNavMode } = useUI()
   const navigate = useNavigate()
   const [moreOpen, setMoreOpen] = useState(false)
+
+  // Il tour interattivo apre/chiude il pannello "Altro" tramite eventi.
+  useEffect(() => {
+    const open = () => setMoreOpen(true)
+    const close = () => setMoreOpen(false)
+    window.addEventListener('ist:tour-open-more', open)
+    window.addEventListener('ist:tour-close-more', close)
+    return () => {
+      window.removeEventListener('ist:tour-open-more', open)
+      window.removeEventListener('ist:tour-close-more', close)
+    }
+  }, [])
 
   if (!user) return null
 
