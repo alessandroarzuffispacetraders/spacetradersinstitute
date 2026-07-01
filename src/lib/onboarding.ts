@@ -6,41 +6,38 @@ export const QUESTIONNAIRE_URL =
   (import.meta.env.VITE_ONBOARDING_URL as string | undefined)?.trim() ||
   'https://protocoldatajournal.com/student-onboarding'
 
-export interface WelcomeLesson { id: string; title: string; vimeoId: string | null }
+const WELCOME_KEY = 'welcome_video_url'
+// Giorni per cui il video di benvenuto resta in home dopo la registrazione.
+export const WELCOME_WINDOW_DAYS = 7
 
-// ─── Studente: stato dei "primi passi" (self-service) ───────────────────────────
+// ─── Studente: stato dei "primi passi" (questionario + tour) ────────────────────
 
 export function useOnboarding(userId: string) {
-  const [welcomeSeen, setWelcomeSeen] = useState(false)
   const [questionnaireDone, setQuestionnaireDone] = useState(false)
   const [tutorialDone, setTutorialDone] = useState(false)
   const [tutorialPrompted, setTutorialPrompted] = useState(false)
-  const [welcome, setWelcome] = useState<WelcomeLesson | null>(null)
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     if (!userId) { setLoading(false); return }
-    const [obRes, wlRes] = await Promise.all([
-      supabase.from('student_onboarding').select('welcome_seen,questionnaire_done,tutorial_done,tutorial_prompted').eq('user_id', userId).maybeSingle(),
-      supabase.from('lessons').select('id,title,vimeo_id').eq('is_welcome', true).maybeSingle(),
-    ])
-    const ob = obRes.data as { welcome_seen: boolean; questionnaire_done: boolean; tutorial_done: boolean; tutorial_prompted: boolean } | null
-    setWelcomeSeen(ob?.welcome_seen ?? false)
+    const { data } = await supabase
+      .from('student_onboarding')
+      .select('questionnaire_done,tutorial_done,tutorial_prompted')
+      .eq('user_id', userId)
+      .maybeSingle()
+    const ob = data as { questionnaire_done: boolean; tutorial_done: boolean; tutorial_prompted: boolean } | null
     setQuestionnaireDone(ob?.questionnaire_done ?? false)
     setTutorialDone(ob?.tutorial_done ?? false)
     setTutorialPrompted(ob?.tutorial_prompted ?? false)
-    const wl = wlRes.data as { id: string; title: string; vimeo_id: string | null } | null
-    setWelcome(wl ? { id: wl.id, title: wl.title, vimeoId: wl.vimeo_id } : null)
     setLoading(false)
   }, [userId])
 
   useEffect(() => { load() }, [load])
 
   const setFlag = useCallback(async (
-    patch: Partial<{ welcome_seen: boolean; questionnaire_done: boolean; tutorial_done: boolean; tutorial_prompted: boolean }>,
+    patch: Partial<{ questionnaire_done: boolean; tutorial_done: boolean; tutorial_prompted: boolean }>,
   ) => {
     if (!userId) return
-    if (patch.welcome_seen !== undefined) setWelcomeSeen(patch.welcome_seen)
     if (patch.questionnaire_done !== undefined) setQuestionnaireDone(patch.questionnaire_done)
     if (patch.tutorial_done !== undefined) setTutorialDone(patch.tutorial_done)
     if (patch.tutorial_prompted !== undefined) setTutorialPrompted(patch.tutorial_prompted)
@@ -50,51 +47,60 @@ export function useOnboarding(userId: string) {
     )
   }, [userId])
 
-  const markWelcomeSeen = useCallback(() => setFlag({ welcome_seen: true }), [setFlag])
   const setQuestionnaire = useCallback((done: boolean) => setFlag({ questionnaire_done: done }), [setFlag])
   const markTutorialDone = useCallback(() => setFlag({ tutorial_done: true }), [setFlag])
   const markTutorialPrompted = useCallback(() => setFlag({ tutorial_prompted: true }), [setFlag])
 
-  // Se non c'è un video di benvenuto configurato, quel passo è auto-soddisfatto.
-  const welcomeStepDone = welcome ? welcomeSeen : true
-  const allDone = welcomeStepDone && questionnaireDone && tutorialDone
+  const allDone = questionnaireDone && tutorialDone
 
   return {
-    welcome, welcomeSeen, questionnaireDone, tutorialDone, tutorialPrompted,
+    questionnaireDone, tutorialDone, tutorialPrompted,
     allDone, loading,
-    markWelcomeSeen, setQuestionnaire, markTutorialDone, markTutorialPrompted, reload: load,
+    setQuestionnaire, markTutorialDone, markTutorialPrompted, reload: load,
   }
 }
 
-// ─── Admin: scelta della lezione "video di benvenuto" ───────────────────────────
+// ─── Video di benvenuto (impostato dall'admin, link diretto) ────────────────────
 
-export interface AdminLessonOpt { id: string; title: string; is_welcome: boolean }
+export function useWelcomeVideo() {
+  const [url, setUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
-export function useWelcomeLessonAdmin() {
-  const [lessons, setLessons] = useState<AdminLessonOpt[]>([])
+  useEffect(() => {
+    let active = true
+    supabase.from('app_settings').select('value').eq('key', WELCOME_KEY).maybeSingle().then(({ data }) => {
+      if (!active) return
+      setUrl((data as { value: string | null } | null)?.value?.trim() || null)
+      setLoading(false)
+    })
+    return () => { active = false }
+  }, [])
+
+  return { url, loading }
+}
+
+// ─── Admin: imposta il link del video di benvenuto ──────────────────────────────
+
+export function useWelcomeVideoAdmin() {
+  const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from('lessons').select('id,title,is_welcome').order('title')
-    setLessons((data as AdminLessonOpt[]) ?? [])
+    const { data } = await supabase.from('app_settings').select('value').eq('key', WELCOME_KEY).maybeSingle()
+    setUrl((data as { value: string | null } | null)?.value ?? '')
     setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  const currentId = lessons.find(l => l.is_welcome)?.id ?? ''
-
-  // Solo una lezione può essere "benvenuto": azzera tutte, poi setta la scelta.
-  const setWelcome = useCallback(async (lessonId: string): Promise<boolean> => {
-    const clear = await supabase.from('lessons').update({ is_welcome: false }).eq('is_welcome', true)
-    if (clear.error) return false
-    if (lessonId) {
-      const set = await supabase.from('lessons').update({ is_welcome: true }).eq('id', lessonId)
-      if (set.error) return false
-    }
-    await load()
-    return true
+  const save = useCallback(async (value: string): Promise<boolean> => {
+    const { error } = await supabase.from('app_settings').upsert(
+      { key: WELCOME_KEY, value: value.trim() || null, updated_at: new Date().toISOString() },
+      { onConflict: 'key' },
+    )
+    if (!error) await load()
+    return !error
   }, [load])
 
-  return { lessons, currentId, loading, setWelcome, reload: load }
+  return { url, loading, save, reload: load }
 }

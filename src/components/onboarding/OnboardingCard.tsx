@@ -1,10 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { CheckCircle2, ExternalLink, Compass, Eye, FileText } from 'lucide-react'
+import { CheckCircle2, ExternalLink, Compass, FileText } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useOnboarding, QUESTIONNAIRE_URL } from '../../lib/onboarding'
 import { startPlatformTour } from '../../lib/tour'
-import VimeoPlayer from '../ui/VimeoPlayer'
 
 function StepShell({ n, title, done, children }: {
   n: number; title: string; done: boolean; children?: React.ReactNode
@@ -36,7 +34,6 @@ const primaryBtnStyle: React.CSSProperties = {
 
 export default function OnboardingCard() {
   const { user } = useAuth()
-  const navigate = useNavigate()
   const ob = useOnboarding(user?.id ?? '')
 
   // Tour AUTOMATICO al primo accesso (una sola volta). Se non completato resta
@@ -53,9 +50,6 @@ export default function OnboardingCard() {
   }, [user?.role, ob.loading, ob.tutorialDone, ob.tutorialPrompted, ob])
 
   if (user?.role !== 'student' || ob.loading || ob.allDone) return null
-
-  const hasWelcome = !!ob.welcome
-  let n = 0
 
   return (
     <div
@@ -75,20 +69,8 @@ export default function OnboardingCard() {
       </p>
 
       <div className="space-y-5">
-        {/* 1) Video di benvenuto (solo se configurato) */}
-        {hasWelcome && (
-          <StepShell n={++n} title="Guarda il video di benvenuto" done={ob.welcomeSeen}>
-            <div className="rounded-2xl overflow-hidden mb-3">
-              <VimeoPlayer vimeoId={ob.welcome!.vimeoId} accent="#5A9AB1" />
-            </div>
-            <button className={primaryBtn} style={primaryBtnStyle} onClick={() => ob.markWelcomeSeen()}>
-              <Eye size={15} strokeWidth={2} /> Segna come visto
-            </button>
-          </StepShell>
-        )}
-
-        {/* 2) Questionario */}
-        <StepShell n={++n} title="Compila il questionario di onboarding" done={ob.questionnaireDone}>
+        {/* 1) Questionario */}
+        <StepShell n={1} title="Compila il questionario di onboarding" done={ob.questionnaireDone}>
           <div className="flex flex-wrap items-center gap-3">
             <a
               className={primaryBtn}
@@ -110,8 +92,8 @@ export default function OnboardingCard() {
           </div>
         </StepShell>
 
-        {/* 3) Tour della piattaforma */}
-        <StepShell n={++n} title="Fai il tour della piattaforma" done={ob.tutorialDone}>
+        {/* 2) Tour della piattaforma */}
+        <StepShell n={2} title="Fai il tour della piattaforma" done={ob.tutorialDone}>
           <button
             className={primaryBtn}
             style={primaryBtnStyle}
@@ -121,17 +103,6 @@ export default function OnboardingCard() {
           </button>
         </StepShell>
       </div>
-
-      {/* Scorciatoie post-completamento parziale */}
-      {ob.welcomeSeen && hasWelcome && (
-        <button
-          className="text-xs font-medium mt-5 transition-opacity hover:opacity-70"
-          style={{ color: 'var(--ist-text-dim)' }}
-          onClick={() => navigate(`/student/corsi/lezione/${ob.welcome!.id}`)}
-        >
-          Rivedi il video di benvenuto nel videocorso →
-        </button>
-      )}
     </div>
   )
 }
