@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import AppLayout from '../components/layout/AppLayout'
 import RequireRole from '../components/auth/RequireRole'
+import AccessGate from '../components/auth/AccessGate'
 import LoginPage from '../pages/auth/LoginPage'
 
 // Student pages
@@ -59,6 +60,7 @@ function PrivateRoutes() {
 
   return (
     <Routes>
+      <Route element={<AccessGate />}>
       <Route element={<AppLayout />}>
         {/* Student */}
         <Route path="/student" element={<StudentDashboard />} />
@@ -110,6 +112,7 @@ function PrivateRoutes() {
         </Route>
 
         <Route path="*" element={<Navigate to={defaultPath} replace />} />
+      </Route>
       </Route>
     </Routes>
   )

@@ -1,6 +1,6 @@
 export type UserRole = 'student' | 'coach' | 'mental_coach' | 'admin'
 
-export type StudentStatus = 'active' | 'expired' | 'blocked'
+export type StudentStatus = 'active' | 'pending' | 'expired' | 'blocked'
 
 export type StudentPhase = 'onboarding' | 'build' | 'test' | 'deploy'
 

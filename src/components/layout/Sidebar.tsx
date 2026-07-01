@@ -29,6 +29,7 @@ const HOME_PATHS = new Set(['/student', '/coach', '/mental-coach', '/admin'])
 
 const STATUS_COLORS: Record<string, string> = {
   active: '#46D39A',
+  pending: '#7CBBD0',
   expired: '#F6C85F',
   blocked: '#FF6B7A',
 }

@@ -30,10 +30,11 @@ const ROLE_LABELS: Record<string, string> = {
 
 const STATUS_STYLE: Record<string, React.CSSProperties> = {
   active:  { color: '#46D39A', background: 'rgba(70,211,154,0.12)',  border: '1px solid rgba(70,211,154,0.22)'  },
+  pending: { color: '#7CBBD0', background: 'rgba(90,154,177,0.12)',  border: '1px solid rgba(90,154,177,0.22)'  },
   expired: { color: '#F6C85F', background: 'rgba(246,200,95,0.12)',  border: '1px solid rgba(246,200,95,0.22)'  },
   blocked: { color: '#FF6B7A', background: 'rgba(255,107,122,0.12)', border: '1px solid rgba(255,107,122,0.22)' },
 }
-const STATUS_LABELS: Record<string, string> = { active: 'Attivo', expired: 'Scaduto', blocked: 'Bloccato' }
+const STATUS_LABELS: Record<string, string> = { active: 'Attivo', pending: 'In attesa', expired: 'Scaduto', blocked: 'Bloccato' }
 
 function StatusBadge({ status }: { status: string | null }) {
   if (!status) return null
@@ -110,7 +111,7 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave, onDelete }: 
   }
 
   const ALL_ROLES: UserRole[] = ['student', 'coach', 'mental_coach', 'admin']
-  const ALL_STATUSES: StudentStatus[] = ['active', 'expired', 'blocked']
+  const ALL_STATUSES: StudentStatus[] = ['active', 'pending', 'expired', 'blocked']
   const ALL_PHASES: StudentPhase[] = ['onboarding', 'build', 'test', 'deploy']
 
   const toggleExtraRole = (r: UserRole) => {
@@ -382,10 +383,11 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave, onDelete }: 
 
 // ── User Row ────────────────────────────────────────────────────────────────
 
-function UserRow({ user, onEdit, onUpdatePerms }: {
+function UserRow({ user, onEdit, onUpdatePerms, onActivate }: {
   user: Profile
   onEdit: (u: Profile) => void
   onUpdatePerms: (id: string, perms: UserPermissions) => void
+  onActivate: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const hasPerms = user.role === 'coach' || user.role === 'mental_coach'
@@ -424,6 +426,17 @@ function UserRow({ user, onEdit, onUpdatePerms }: {
         )}
 
         <StatusBadge status={user.status} />
+
+        {user.role === 'student' && user.status !== 'active' && (
+          <button
+            className="text-xs font-bold flex-shrink-0 px-3 py-1.5 rounded-xl text-white transition-all hover:-translate-y-0.5"
+            style={{ background: 'linear-gradient(135deg, #46D39A, #2a8060)' }}
+            onClick={e => { e.stopPropagation(); onActivate(user.id) }}
+            title="Attiva l'accesso (lifetime)"
+          >
+            Attiva
+          </button>
+        )}
 
         <button
           className="text-xs font-medium flex-shrink-0 px-3 py-1.5 rounded-xl transition-colors hover:bg-white/[0.04]"
@@ -512,6 +525,12 @@ export default function AdminUtenti() {
     setUsers(prev => prev.map(u => u.id === id ? { ...u, permissions: perms } : u))
   }
 
+  // Attivazione rapida: accesso a vita (nessuna scadenza).
+  const handleActivate = async (id: string) => {
+    await supabase.from('profiles').update({ status: 'active' }).eq('id', id)
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, status: 'active' } : u))
+  }
+
   const inputStyle: React.CSSProperties = {
     background: 'var(--ist-w6)',
     border: '1px solid var(--ist-border)',
@@ -565,6 +584,7 @@ export default function AdminUtenti() {
               user={user}
               onEdit={setEditingUser}
               onUpdatePerms={handleUpdatePerms}
+              onActivate={handleActivate}
             />
           ))}
           {filtered.length === 0 && (

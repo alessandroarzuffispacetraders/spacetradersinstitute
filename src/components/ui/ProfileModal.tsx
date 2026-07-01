@@ -16,6 +16,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   active:  { label: 'Attivo',   color: '#46D39A' },
+  pending: { label: 'In attesa', color: '#7CBBD0' },
   expired: { label: 'Scaduto',  color: '#F6C85F' },
   blocked: { label: 'Bloccato', color: '#FF6B7A' },
 }
