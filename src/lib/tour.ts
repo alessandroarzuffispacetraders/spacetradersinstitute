@@ -15,65 +15,44 @@ const SECTIONS: Record<string, { title: string; description: string }> = {
   '/student/calendario': { title: '📅 Calendario', description: 'Il calendario delle live, così non ti perdi nulla.' },
   '/student/progressi': { title: '📈 Progressi', description: 'I tuoi badge e traguardi raggiunti man mano che avanzi.' },
   '/student/journal': { title: '🔗 Protocol Journal', description: 'Lo strumento esterno per tracciare le tue performance di trading.' },
-  '__more__': { title: '➕ Altro', description: 'Da qui apri tutte le altre sezioni. Apriamole e diamo un’occhiata 👇' },
 }
 
-// Ordine "canonico" delle sezioni (come in USE_NAV): usato su mobile per elencare
-// le voci dentro il pannello "Altro" (che all'avvio non sono ancora nel DOM).
+// Ordine "canonico" delle sezioni (come in USE_NAV).
 const ORDER = [
   '/student', '/student/percorso', '/student/corsi', '/student/diario',
   '/student/compiti', '/student/chat', '/student/mental-coach', '/student/live',
   '/student/calendario', '/student/progressi', '/student/journal',
 ]
+// Voci sempre presenti nella barra in basso su mobile (le altre stanno in "Altro").
+const MOBILE_PRIMARY = ['/student', '/student/corsi', '/student/chat', '/student/live']
 
-type Step = { element: HTMLElement | string; popover: Record<string, unknown> }
+type Step = { element: HTMLElement; popover: Record<string, unknown> }
 
-// Avvia il tour interattivo evidenziando le sezioni. Su desktop percorre la
-// sidebar; su mobile percorre la barra in basso, poi APRE il pannello "Altro" e
-// continua con le sezioni interne — così è completo come su desktop.
-export function startPlatformTour(onDone?: () => void) {
-  const visible = Array.from(document.querySelectorAll<HTMLElement>('[data-tour]'))
-    .filter(el => el.offsetParent !== null)
-
-  const visibleKeys: string[] = []
-  const elByKey = new Map<string, HTMLElement>()
-  for (const el of visible) {
+function runTour(onDone: (() => void) | undefined, mobile: boolean) {
+  // Mappa chiave→elemento dai [data-tour] VISIBILI ora (su mobile il pannello
+  // "Altro" è già aperto, quindi ci sono sia la barra sia le voci interne).
+  const byKey = new Map<string, HTMLElement>()
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-tour]'))) {
+    if (el.offsetParent === null) continue
     const k = el.getAttribute('data-tour') || ''
-    if (!visibleKeys.includes(k)) { visibleKeys.push(k); elByKey.set(k, el) }
+    if (k && k !== '__more__' && !byKey.has(k)) byKey.set(k, el)
   }
 
-  const isMobile = visibleKeys.includes('__more__')
-  let d: Driver
+  // Ordine: mobile = prima la barra, poi le voci di "Altro"; desktop = ordine canonico.
+  const keys = mobile ? [...MOBILE_PRIMARY, ...ORDER.filter(k => !MOBILE_PRIMARY.includes(k))] : ORDER
+
   const steps: Step[] = []
-
-  const pushSection = (key: string, element: HTMLElement | string) => {
-    if (SECTIONS[key]) steps.push({ element, popover: { ...SECTIONS[key] } })
+  for (const k of keys) {
+    const el = byKey.get(k)
+    if (el && SECTIONS[k]) steps.push({ element: el, popover: { ...SECTIONS[k] } })
   }
 
-  if (isMobile) {
-    const barKeys = visibleKeys.filter(k => k !== '__more__')
-    // 1) voci della barra in basso
-    barKeys.forEach(k => pushSection(k, elByKey.get(k)!))
-    // 2) "Altro": alla pressione di Avanti apre il pannello e prosegue
-    steps.push({
-      element: elByKey.get('__more__')!,
-      popover: {
-        ...SECTIONS['__more__'],
-        onNextClick: () => {
-          window.dispatchEvent(new Event('ist:tour-open-more'))
-          setTimeout(() => d.moveNext(), 450)
-        },
-      },
-    })
-    // 3) voci dentro il pannello "Altro" (per selettore: risolte a runtime)
-    ORDER.filter(k => !barKeys.includes(k)).forEach(k => pushSection(k, `[data-tour="${k}"]`))
-  } else {
-    // desktop: tutte le voci della sidebar in ordine
-    visibleKeys.filter(k => k !== '__more__').forEach(k => pushSection(k, elByKey.get(k)!))
+  if (steps.length === 0) {
+    if (mobile) window.dispatchEvent(new Event('ist:tour-close-more'))
+    return // nessun elemento: non marcare completato, resta il reminder
   }
 
-  if (steps.length === 0) return
-
+  let d: Driver
   d = driver({
     showProgress: true,
     popoverClass: 'ist-tour',
@@ -84,10 +63,25 @@ export function startPlatformTour(onDone?: () => void) {
     doneBtnText: 'Fine',
     steps,
     onDestroyStarted: () => {
-      window.dispatchEvent(new Event('ist:tour-close-more')) // richiudi "Altro"
-      if (!d.hasNextStep()) onDone?.()                        // completato solo se all'ultimo step
+      if (mobile) window.dispatchEvent(new Event('ist:tour-close-more')) // richiudi "Altro"
+      if (!d.hasNextStep()) onDone?.()                                   // completato solo all'ultimo step
       d.destroy()
     },
   })
   d.drive()
+}
+
+// Avvia il tour. Desktop: percorre la sidebar. Mobile: apre prima il pannello
+// "Altro" (così barra + voci interne sono tutte presenti) e le percorre tutte.
+export function startPlatformTour(onDone?: () => void) {
+  const moreBtn = document.querySelector<HTMLElement>('[data-tour="__more__"]')
+  const isMobile = !!moreBtn && moreBtn.offsetParent !== null
+
+  if (isMobile) {
+    window.dispatchEvent(new Event('ist:tour-open-more'))
+    // aspetta il render + animazione dello sheet, poi costruisci il tour sui veri elementi
+    setTimeout(() => runTour(onDone, true), 400)
+  } else {
+    runTour(onDone, false)
+  }
 }
