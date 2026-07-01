@@ -75,20 +75,27 @@ export function triggerPushNotifications(message: {
   })
 }
 
-// Notifica push agli admin quando un coach apre una segnalazione "alta priorità".
-// Il client passa solo un tipo fisso: testo e destinatari (role=admin) sono decisi
-// server-side dalla edge function, così non si possono inviare push arbitrarie.
-export function triggerStudentFlagNotification(studentName: string | null) {
+// Notifiche push per le segnalazioni. Il client passa solo un tipo + i dati minimi:
+// destinatari e testo sono decisi server-side (con verifica del ruolo del chiamante),
+// così non si possono inviare push arbitrarie.
+function callNotify(body: Record<string, unknown>) {
   supabase.auth.getSession().then(({ data }) => {
     const token = data.session?.access_token
     if (!token) return
     fetch(`${FUNCTIONS_URL}/send-push`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ notify: { type: 'student_flag_high', studentName } }),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ notify: body }),
     }).catch(() => {/* ignora errori di rete */})
   })
+}
+
+// Segnalazione creata da coach/mental → notifica gli admin.
+export function notifyFlagToAdmin(authorName: string | null, studentName: string | null) {
+  callNotify({ type: 'flag_to_admin', authorName, studentName })
+}
+
+// Segnalazione inviata dall'admin → notifica il destinatario (coach/mental).
+export function notifyFlagToRecipient(recipientId: string, studentName: string | null) {
+  callNotify({ type: 'flag_to_recipient', recipientId, studentName })
 }

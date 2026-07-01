@@ -45,31 +45,83 @@ async function sendToSubscriptions(
   return { sent, total: subscriptions.length }
 }
 
-// Notifiche "di sistema" verso un ruolo: il client passa solo un tipo fisso,
-// testo e destinatari sono decisi qui (no push arbitrarie da utenti autenticati).
-async function handleNotify(notify: { type?: string; studentName?: string | null }) {
-  if (notify?.type !== 'student_flag_high') {
-    return new Response(JSON.stringify({ error: 'unknown notify type' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
-  }
-  const title = '⚠️ Segnalazione alta priorità'
-  const who = (notify.studentName ?? '').trim() || 'Uno studente'
-  const body = `${who} è stato segnalato da un coach e richiede attenzione.`
-  const url = '/admin/segnalazioni'
+function jsonRes(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
+}
 
-  // Destinatari: tutti gli admin con almeno una subscription.
-  const adminsRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?role=eq.admin&select=id`, { headers: REST_HEADERS })
-  const admins: { id: string }[] = await adminsRes.json()
-  const ids = (admins ?? []).map((a) => a.id)
-  if (ids.length === 0) {
-    return new Response(JSON.stringify({ sent: 0 }), { headers: { ...CORS, 'Content-Type': 'application/json' } })
+// Estrae il `sub` (user id) dal JWT del chiamante (base64url → JSON del payload).
+function callerId(req: Request): string | null {
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  const parts = token.split('.')
+  if (parts.length < 3) return null
+  try {
+    let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    b64 += '='.repeat((4 - (b64.length % 4)) % 4)
+    const payload = JSON.parse(atob(b64))
+    return typeof payload.sub === 'string' ? payload.sub : null
+  } catch { return null }
+}
+
+async function getProfile(userId: string): Promise<{ role: string; roles: string[] | null } | null> {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=role,roles`, { headers: REST_HEADERS })
+  const rows = await r.json().catch(() => [])
+  return Array.isArray(rows) && rows[0] ? rows[0] : null
+}
+
+function hasRole(p: { role: string; roles: string[] | null } | null, r: string): boolean {
+  return !!p && (p.role === r || (p.roles ?? []).includes(r))
+}
+
+async function subsForUserIds(ids: string[]): Promise<{ endpoint: string; keys: Record<string, string> }[]> {
+  if (ids.length === 0) return []
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?user_id=in.(${ids.join(',')})&select=endpoint,keys`, { headers: REST_HEADERS })
+  const rows = await r.json().catch(() => [])
+  return Array.isArray(rows) ? rows : []
+}
+
+// Notifiche "di sistema" per le segnalazioni. Testo e destinatari sono decisi
+// qui e il RUOLO del chiamante è verificato → niente push arbitrarie.
+type NotifyBody = { type?: string; recipientId?: string; authorName?: string | null; studentName?: string | null }
+
+async function handleNotify(notify: NotifyBody, req: Request) {
+  const caller = callerId(req)
+  if (!caller) return jsonRes({ error: 'unauthenticated' }, 401)
+  const callerProfile = await getProfile(caller)
+
+  // Segnalazione creata da coach/mental → notifica TUTTI gli admin.
+  if (notify.type === 'flag_to_admin') {
+    if (!(hasRole(callerProfile, 'coach') || hasRole(callerProfile, 'mental_coach') || hasRole(callerProfile, 'admin'))) {
+      return jsonRes({ error: 'forbidden' }, 403)
+    }
+    const adminsRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?role=eq.admin&select=id`, { headers: REST_HEADERS })
+    const admins = await adminsRes.json().catch(() => [])
+    const ids = (Array.isArray(admins) ? admins : []).map((a: { id: string }) => a.id)
+    const subs = await subsForUserIds(ids)
+    if (subs.length === 0) return jsonRes({ sent: 0 })
+    const author = (notify.authorName ?? '').trim() || 'Un membro dello staff'
+    const student = (notify.studentName ?? '').trim()
+    const title = '📩 Nuova segnalazione'
+    const body = `${author} ha inviato una segnalazione${student ? ` su ${student}` : ''}.`
+    return jsonRes(await sendToSubscriptions(subs, JSON.stringify({ title, body, url: '/admin/segnalazioni' })))
   }
-  const subsRes = await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?user_id=in.(${ids.join(',')})&select=endpoint,keys`, { headers: REST_HEADERS })
-  const subscriptions: { endpoint: string; keys: Record<string, string> }[] = await subsRes.json()
-  if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
-    return new Response(JSON.stringify({ sent: 0 }), { headers: { ...CORS, 'Content-Type': 'application/json' } })
+
+  // Segnalazione inviata dall'admin → notifica il destinatario (coach/mental).
+  if (notify.type === 'flag_to_recipient') {
+    if (!hasRole(callerProfile, 'admin')) return jsonRes({ error: 'forbidden' }, 403)
+    const recipientId = notify.recipientId
+    if (!recipientId) return jsonRes({ error: 'missing recipient' }, 400)
+    const subs = await subsForUserIds([recipientId])
+    if (subs.length === 0) return jsonRes({ sent: 0 })
+    const recipient = await getProfile(recipientId)
+    const url = hasRole(recipient, 'mental_coach') && !hasRole(recipient, 'coach')
+      ? '/mental-coach/segnalazioni' : '/coach/segnalazioni'
+    const student = (notify.studentName ?? '').trim()
+    const title = '📩 Nuova segnalazione dall\'admin'
+    const body = `Hai ricevuto una segnalazione dall'admin${student ? ` su ${student}` : ''}.`
+    return jsonRes(await sendToSubscriptions(subs, JSON.stringify({ title, body, url })))
   }
-  const result = await sendToSubscriptions(subscriptions, JSON.stringify({ title, body, url }))
-  return new Response(JSON.stringify(result), { headers: { ...CORS, 'Content-Type': 'application/json' } })
+
+  return jsonRes({ error: 'unknown notify type' }, 400)
 }
 
 Deno.serve(async (req) => {
@@ -78,11 +130,11 @@ Deno.serve(async (req) => {
   try {
     const payload = await req.json() as {
       message?: { channel_id: string; user_id: string; author_name: string; content: string }
-      notify?: { type?: string; studentName?: string | null }
+      notify?: NotifyBody
     }
 
-    // Modalità notifica di sistema (es. segnalazione alta priorità → admin).
-    if (payload.notify) return await handleNotify(payload.notify)
+    // Modalità notifica di sistema per le segnalazioni (verifica il ruolo del chiamante).
+    if (payload.notify) return await handleNotify(payload.notify, req)
 
     const message = payload.message!
 

@@ -3,6 +3,7 @@ import { Loader2, AlertTriangle, Trash2, Send, ArrowUpRight } from 'lucide-react
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
 import { useAdminFlags, useStaffDirectory, FlagSeverity } from '../../lib/coaching'
+import { notifyFlagToRecipient } from '../../lib/push'
 
 const inputStyle: React.CSSProperties = {
   background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)',
@@ -36,7 +37,12 @@ export default function AdminSegnalazioni() {
     setSaving(true)
     const ok = await addAdminFlag(recipientId, studentId || null, issue, severity)
     setSaving(false)
-    if (ok) { setRecipientId(''); setStudentId(''); setSeverity('high'); setIssue(''); setShowForm(false) }
+    if (ok) {
+      // Notifica push al destinatario (fire & forget).
+      const studentName = students.find(s => s.id === studentId)?.name ?? null
+      notifyFlagToRecipient(recipientId, studentName)
+      setRecipientId(''); setStudentId(''); setSeverity('high'); setIssue(''); setShowForm(false)
+    }
   }
 
   const FilterChip = ({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) => (
