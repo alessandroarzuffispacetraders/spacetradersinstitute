@@ -202,6 +202,13 @@ export default function StudentCompiti() {
   const { user } = useAuth()
   const { assignments, loading, submit } = useStudentAssignments(user?.id ?? '')
 
+  // Visitando la pagina, il feedback è "visto" → spegne il pallino "novità" sui Compiti.
+  useEffect(() => {
+    if (!user?.id || loading) return
+    localStorage.setItem('ist_compiti_seen_' + user.id, new Date().toISOString())
+    window.dispatchEvent(new CustomEvent('ist:compiti-seen'))
+  }, [user?.id, loading])
+
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <PageHeader title="Compiti" subtitle="Esercizi assegnati dal tuo coach" />

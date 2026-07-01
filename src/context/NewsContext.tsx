@@ -9,12 +9,18 @@ import { useDmUsers, dmChannelId } from '../lib/chat'
 interface NewsState {
   chatNews: boolean
   flagNews: boolean
+  liveNews: boolean
+  compitiCoachNews: boolean
+  compitiStudentNews: boolean
   hasNews: (path: string) => boolean
 }
 
 const NewsContext = createContext<NewsState>({
   chatNews: false,
   flagNews: false,
+  liveNews: false,
+  compitiCoachNews: false,
+  compitiStudentNews: false,
   hasNews: () => false,
 })
 
@@ -158,10 +164,95 @@ function FlagWatcher({
   return null
 }
 
+// ─── Watcher live: c'è una diretta "in corso" (status='live')? ────────────────
+function LiveWatcher({ onChange }: { onChange: (b: boolean) => void }) {
+  const load = useCallback(async () => {
+    const { count } = await supabase
+      .from('live_events')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'live')
+    onChange((count ?? 0) > 0)
+  }, [onChange])
+
+  useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    const sub = supabase
+      .channel('news:live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_events' }, () => load())
+      .subscribe()
+    return () => { sub.unsubscribe() }
+  }, [load])
+
+  return null
+}
+
+// ─── Watcher compiti (coach): consegne da rivedere (submission 'pending') ──────
+function CompitiCoachWatcher({ coachId, onChange }: { coachId: string; onChange: (b: boolean) => void }) {
+  const load = useCallback(async () => {
+    const { count } = await supabase
+      .from('submissions')
+      .select('id, assignments!inner(coach_id)', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .eq('assignments.coach_id', coachId)
+    onChange((count ?? 0) > 0)
+  }, [coachId, onChange])
+
+  useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    const sub = supabase
+      .channel('news:submissions-coach')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => load())
+      .subscribe()
+    return () => { sub.unsubscribe() }
+  }, [load])
+
+  return null
+}
+
+// ─── Watcher compiti (studente): nuovo feedback dal coach non ancora visto ─────
+function CompitiStudentWatcher({ userId, onChange }: { userId: string; onChange: (b: boolean) => void }) {
+  const seenKey = 'ist_compiti_seen_' + userId
+
+  const check = useCallback(async () => {
+    const { data } = await supabase
+      .from('submissions')
+      .select('reviewed_at')
+      .eq('status', 'reviewed')
+      .order('reviewed_at', { ascending: false })
+      .limit(1)
+    const latest = data?.[0]?.reviewed_at as string | undefined
+    if (!latest) { onChange(false); return }
+    const seen = localStorage.getItem(seenKey)
+    onChange(!seen || new Date(latest).getTime() > new Date(seen).getTime())
+  }, [seenKey, onChange])
+
+  useEffect(() => { check() }, [check])
+
+  useEffect(() => {
+    const sub = supabase
+      .channel('news:submissions-student')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => check())
+      .subscribe()
+    const onSeen = () => check()
+    window.addEventListener('ist:compiti-seen', onSeen)
+    return () => {
+      sub.unsubscribe()
+      window.removeEventListener('ist:compiti-seen', onSeen)
+    }
+  }, [check])
+
+  return null
+}
+
 export function NewsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [chatNews, setChatNews] = useState(false)
   const [flagNews, setFlagNews] = useState(false)
+  const [liveNews, setLiveNews] = useState(false)
+  const [compitiCoachNews, setCompitiCoachNews] = useState(false)
+  const [compitiStudentNews, setCompitiStudentNews] = useState(false)
 
   const roles = user ? normalizeRoles(user.role, user.roles) : []
   const flagMode: 'admin' | 'incoming' | 'none' = roles.includes('admin')
@@ -169,23 +260,32 @@ export function NewsProvider({ children }: { children: ReactNode }) {
     : roles.includes('coach') || roles.includes('mental_coach')
       ? 'incoming'
       : 'none'
+  const isCoach = roles.includes('coach')
 
   const hasNews = useCallback(
     (path: string) => {
       // La chat "di lettura" è la Community (/student/chat); /admin/chat è gestione canali.
       if (path.endsWith('/chat') && path !== '/admin/chat') return chatNews
       if (path.endsWith('/segnalazioni')) return flagNews
+      if (path.endsWith('/live')) return liveNews
+      if (path === '/coach/review') return compitiCoachNews       // Compiti (coach): nuove consegne
+      if (path === '/student/compiti') return compitiStudentNews  // Compiti (studente): nuovo feedback
       return false
     },
-    [chatNews, flagNews]
+    [chatNews, flagNews, liveNews, compitiCoachNews, compitiStudentNews]
   )
 
   return (
-    <NewsContext.Provider value={{ chatNews, flagNews, hasNews }}>
+    <NewsContext.Provider
+      value={{ chatNews, flagNews, liveNews, compitiCoachNews, compitiStudentNews, hasNews }}
+    >
       {user && <ChatUnreadWatcher userId={user.id} role={user.role} onChange={setChatNews} />}
+      {user && <LiveWatcher onChange={setLiveNews} />}
+      {user && <CompitiStudentWatcher userId={user.id} onChange={setCompitiStudentNews} />}
       {user && flagMode !== 'none' && (
         <FlagWatcher mode={flagMode} userId={user.id} onChange={setFlagNews} />
       )}
+      {user && isCoach && <CompitiCoachWatcher coachId={user.id} onChange={setCompitiCoachNews} />}
       {children}
     </NewsContext.Provider>
   )
