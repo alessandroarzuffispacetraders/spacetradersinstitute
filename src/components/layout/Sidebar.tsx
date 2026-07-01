@@ -13,6 +13,7 @@ import {
 } from '../../router/navConfig'
 import ISTLogo from '../ui/ISTLogo'
 import UserAvatar from '../ui/UserAvatar'
+import { useNews, NewsDot } from '../../context/NewsContext'
 
 const ICON_MAP: Record<string, LucideIcon> = {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
@@ -20,9 +21,15 @@ const ICON_MAP: Record<string, LucideIcon> = {
   AlertTriangle, CalendarDays, FileText, Package, BarChart3,
 }
 
-function NavIcon({ name }: { name: string }) {
+function NavIcon({ name, dot = false }: { name: string; dot?: boolean }) {
   const Icon = ICON_MAP[name]
-  return Icon ? <Icon size={18} strokeWidth={2} /> : null
+  if (!Icon) return null
+  return (
+    <span className="relative inline-flex">
+      <Icon size={18} strokeWidth={2} />
+      {dot && <NewsDot />}
+    </span>
+  )
 }
 
 const HOME_PATHS = new Set(['/student', '/coach', '/mental-coach', '/admin'])
@@ -38,6 +45,7 @@ export default function Sidebar() {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { setProfileOpen, navMode, setNavMode } = useUI()
+  const { hasNews } = useNews()
   const navigate = useNavigate()
   if (!user) return null
 
@@ -123,7 +131,7 @@ export default function Sidebar() {
             }}
             className="flex flex-col items-center gap-0.5 mx-1.5 px-1 py-2 rounded-2xl transition-all duration-150 w-[calc(100%-12px)]"
           >
-            <NavIcon name={item.icon} />
+            <NavIcon name={item.icon} dot={hasNews(item.path)} />
             <span className="text-[9px] font-medium truncate w-full text-center leading-none mt-0.5">
               {item.shortLabel ?? item.label}
             </span>

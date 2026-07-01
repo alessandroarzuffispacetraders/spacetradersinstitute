@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import { UIProvider, useUI, hasStoredNavMode } from '../../context/UIContext'
+import { NewsProvider } from '../../context/NewsContext'
 import ProfileModal from '../ui/ProfileModal'
 import AppPrompts from '../ui/AppPrompts'
 import { useAuth } from '../../context/AuthContext'
@@ -66,16 +67,18 @@ function AppShell() {
   }, [user?.id])
 
   return (
-    <div className="app-shell" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
-      <Sidebar />
-      <main className="ist-page lg:pl-[108px] pb-28 lg:pb-0 min-h-screen">
-        <Outlet />
-      </main>
-      <BottomNav />
-      <ProfileModal isOpen={profileOpen} onClose={() => setProfileOpen(false)} />
-      <AppPrompts />
-      <NotificationManager />
-    </div>
+    <NewsProvider>
+      <div className="app-shell" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+        <Sidebar />
+        <main className="ist-page lg:pl-[108px] pb-28 lg:pb-0 min-h-screen">
+          <Outlet />
+        </main>
+        <BottomNav />
+        <ProfileModal isOpen={profileOpen} onClose={() => setProfileOpen(false)} />
+        <AppPrompts />
+        <NotificationManager />
+      </div>
+    </NewsProvider>
   )
 }
 

@@ -329,6 +329,7 @@ export function useUnreadCounts(
             { user_id: userId, channel_id: msg.channel_id, last_read_at: new Date().toISOString() },
             { onConflict: 'user_id,channel_id' }
           )
+          window.dispatchEvent(new CustomEvent('ist:channel-read'))
         } else {
           setCounts(prev => ({ ...prev, [msg.channel_id]: (prev[msg.channel_id] ?? 0) + 1 }))
         }
@@ -345,6 +346,7 @@ export function useUnreadCounts(
       { user_id: userId, channel_id: channelId, last_read_at: new Date().toISOString() },
       { onConflict: 'user_id,channel_id' }
     )
+    window.dispatchEvent(new CustomEvent('ist:channel-read'))
   }, [userId])
 
   return { counts, markRead }

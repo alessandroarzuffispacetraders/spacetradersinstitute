@@ -15,6 +15,7 @@ import {
   NavItem, NavMode,
 } from '../../router/navConfig'
 import UserAvatar from '../ui/UserAvatar'
+import { useNews, NewsDot } from '../../context/NewsContext'
 
 const ICON_MAP: Record<string, LucideIcon> = {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
@@ -22,9 +23,15 @@ const ICON_MAP: Record<string, LucideIcon> = {
   AlertTriangle, CalendarDays, FileText, Package, BarChart3,
 }
 
-function NavIcon({ name, size = 20 }: { name: string; size?: number }) {
+function NavIcon({ name, size = 20, dot = false }: { name: string; size?: number; dot?: boolean }) {
   const Icon = ICON_MAP[name]
-  return Icon ? <Icon size={size} strokeWidth={2} /> : null
+  if (!Icon) return null
+  return (
+    <span className="relative inline-flex">
+      <Icon size={size} strokeWidth={2} />
+      {dot && <NewsDot />}
+    </span>
+  )
 }
 
 function OverflowSheet({
@@ -44,6 +51,7 @@ function OverflowSheet({
   const { theme, toggleTheme } = useTheme()
   const { user, logout } = useAuth()
   const { setProfileOpen } = useUI()
+  const { hasNews } = useNews()
 
   return (
     <>
@@ -103,10 +111,11 @@ function OverflowSheet({
               style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)' }}
             >
               <div
-                className="w-10 h-10 rounded-2xl flex items-center justify-center"
+                className="relative w-10 h-10 rounded-2xl flex items-center justify-center"
                 style={{ background: 'rgba(90,154,177,0.14)', border: '1px solid rgba(90,154,177,0.18)' }}
               >
                 <NavIcon name={item.icon} size={18} />
+                {hasNews(item.path) && <NewsDot />}
               </div>
               <span
                 className="text-[10px] font-medium text-center leading-tight"
@@ -209,6 +218,7 @@ function SheetModeButton({ active, icon, label, onClick }: { active: boolean; ic
 export default function BottomNav() {
   const { user } = useAuth()
   const { hideBottomNav, navMode, setNavMode } = useUI()
+  const { hasNews } = useNews()
   const navigate = useNavigate()
   const [moreOpen, setMoreOpen] = useState(false)
 
@@ -232,6 +242,7 @@ export default function BottomNav() {
   const { primary, overflow } = getMobileNavConfig(mode, roles)
   const homePath = primary[0]?.path
   const hasOverflow = overflow.length > 0 || canManage
+  const overflowHasNews = overflow.some(i => hasNews(i.path))
 
   const switchMode = (target: NavMode) => {
     if (target !== mode) {
@@ -277,7 +288,7 @@ export default function BottomNav() {
               className="flex flex-col items-center gap-1 py-1 px-2 transition-all duration-150"
               style={({ isActive }) => ({ color: isActive ? '#7CBBD0' : 'var(--ist-nav-text)' })}
             >
-              <NavIcon name={item.icon} size={20} />
+              <NavIcon name={item.icon} size={20} dot={hasNews(item.path)} />
               <span className="text-[9px] font-medium truncate max-w-[52px] text-center leading-none">
                 {item.shortLabel ?? item.label}
               </span>
@@ -291,7 +302,10 @@ export default function BottomNav() {
               className="flex flex-col items-center gap-1 py-1 px-2 transition-all duration-150"
               style={{ color: moreOpen ? '#7CBBD0' : 'var(--ist-nav-text)' }}
             >
-              <MoreHorizontal size={20} strokeWidth={2} />
+              <span className="relative inline-flex">
+                <MoreHorizontal size={20} strokeWidth={2} />
+                {overflowHasNews && <NewsDot />}
+              </span>
               <span className="text-[9px] font-medium leading-none">Altro</span>
             </button>
           )}
