@@ -4,7 +4,7 @@ import {
   Send, ArrowLeft, Search, Pin, Check, Users, MessageCircle, UsersRound, Loader2, X,
   Edit2, Trash2, SmilePlus,
 } from 'lucide-react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
 import {
@@ -207,11 +207,11 @@ interface SidebarProps {
   channels: Channel[]
   dmUsers: DmUser[]
   unreadCounts: Record<string, number>
-  initialTab?: 'groups' | 'direct'
+  tab: 'groups' | 'direct'
+  onTabChange: (t: 'groups' | 'direct') => void
 }
 
-function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, dmUsers, unreadCounts, initialTab }: SidebarProps) {
-  const [tab, setTab] = useState<'groups' | 'direct'>(initialTab ?? 'groups')
+function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, dmUsers, unreadCounts, tab, onTabChange }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [search, setSearch] = useState('')
   const [dmFilter, setDmFilter] = useState<'all' | 'unread'>('all')
@@ -277,7 +277,7 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
         style={{ borderBottom: '1px solid var(--ist-w8)' }}
       >
         <button
-          onClick={() => { setTab('groups'); setSearch('') }}
+          onClick={() => { onTabChange('groups'); setSearch('') }}
           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold transition-all"
           style={tab === 'groups'
             ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' }
@@ -296,7 +296,7 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
           )}
         </button>
         <button
-          onClick={() => { setTab('direct'); setSearch('') }}
+          onClick={() => { onTabChange('direct'); setSearch('') }}
           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold transition-all"
           style={tab === 'direct'
             ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' }
@@ -1297,10 +1297,21 @@ export default function ChatPage() {
 
   const dmUsers = useDmUsers(userId, userRole)
   const { channels } = useChannels()
+  const [searchParams] = useSearchParams()
 
   const visibleChannels = channels.filter(ch => ch.roles.includes(userRole))
-  const [activeChannelId, setActiveChannelId] = useState('generale')
-  const [mobileView, setMobileView] = useState<'channels' | 'chat'>('channels')
+  // Deep-link da notifica push: /student/chat?c=<channelId> apre quel canale/DM.
+  const [activeChannelId, setActiveChannelId] = useState(
+    () => new URLSearchParams(location.search).get('c') || 'generale'
+  )
+  const [mobileView, setMobileView] = useState<'channels' | 'chat'>(
+    () => (new URLSearchParams(location.search).get('c') ? 'chat' : 'channels')
+  )
+  const [sidebarTab, setSidebarTab] = useState<'groups' | 'direct'>(() => {
+    const c = new URLSearchParams(location.search).get('c')
+    const st = (location.state as { tab?: 'direct' | 'groups' } | null)?.tab
+    return c?.startsWith('dm_') || st === 'direct' ? 'direct' : 'groups'
+  })
   const [userCard, setUserCard] = useState<{ userId: string; name: string; role: MemberRole; avatar?: { avatarUrl?: string; avatarPreset?: string } } | null>(null)
 
   // Cache id→{name,role} per costruire la DM anche se il partner non è in dmUsers
@@ -1341,9 +1352,23 @@ export default function ChatPage() {
       const ch = dmChannelId(userId, navState.openDm)
       setActiveChannelId(ch)
       setMobileView('chat')
+      setSidebarTab('direct')
       markRead(ch)
     }
   }, [navState, userId, initialNavHandled])
+
+  // Deep-link da notifica push (?c=<channelId>): apre direttamente il canale/DM.
+  // Vale sia al primo caricamento sia con l'app già aperta (SW → soft-nav).
+  useEffect(() => {
+    const c = searchParams.get('c')
+    if (!c || !userId) return
+    setActiveChannelId(c)
+    setMobileView('chat')
+    setSidebarTab(c.startsWith('dm_') ? 'direct' : 'groups')
+    markRead(c)
+    navigate(location.pathname, { replace: true }) // pulisce il parametro dall'URL
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, userId])
 
   const activeGroupChannel = channels.find(ch => ch.id === activeChannelId)
   const isDmChannel = activeChannelId.startsWith('dm_')
@@ -1399,7 +1424,8 @@ export default function ChatPage() {
           channels={channels}
           dmUsers={dmUsers}
           unreadCounts={unreadCounts}
-          initialTab={navState?.tab === 'direct' ? 'direct' : undefined}
+          tab={sidebarTab}
+          onTabChange={setSidebarTab}
         />
       </div>
 

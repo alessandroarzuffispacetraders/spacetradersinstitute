@@ -161,11 +161,15 @@ Deno.serve(async (req) => {
 
     const body = message.content.length > 100 ? message.content.slice(0, 100) + '…' : message.content
 
+    // La chat "d'uso" (community + DM) è /student/chat per tutti i ruoli:
+    // click sulla notifica → apre direttamente il canale/DM interessato.
+    const url = `/student/chat?c=${encodeURIComponent(message.channel_id)}`
+
     const results = await Promise.allSettled(
       subscriptions.map((sub) =>
         webPush.sendNotification(
           { endpoint: sub.endpoint, keys: sub.keys },
-          JSON.stringify({ title: message.author_name, body, channel_id: message.channel_id }),
+          JSON.stringify({ title: message.author_name, body, url, channel_id: message.channel_id }),
         )
       ),
     )

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useNavigate } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import { UIProvider, useUI, hasStoredNavMode } from '../../context/UIContext'
@@ -10,9 +10,31 @@ import { useAuth } from '../../context/AuthContext'
 import { hasManagement, normalizeRoles } from '../../router/navConfig'
 import { supabase } from '../../lib/supabase'
 
+// Ponte tra il service worker e il router: quando si clicca una notifica push
+// mentre l'app è già aperta, il SW invia { type:'ist-navigate', url } e qui
+// navighiamo in-app (soft, senza reload).
+function PushNavigationBridge() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    const handler = (event: MessageEvent) => {
+      const data = event.data
+      if (data?.type === 'ist-navigate' && typeof data.url === 'string') {
+        navigate(data.url)
+      }
+    }
+    navigator.serviceWorker.addEventListener('message', handler)
+    return () => navigator.serviceWorker.removeEventListener('message', handler)
+  }, [navigate])
+
+  return null
+}
+
 // Ascolta tutti i nuovi messaggi e mostra notifiche browser per quelli altrui
 function NotificationManager() {
   const { user } = useAuth()
+  const navigate = useNavigate()
 
   useEffect(() => {
     if (!user) return
@@ -35,12 +57,18 @@ function NotificationManager() {
           if (localStorage.getItem('ist_notif_enabled') === 'false') return
 
           try {
-            new Notification(msg.author_name, {
+            const n = new Notification(msg.author_name, {
               body: msg.content.length > 80 ? msg.content.slice(0, 80) + '…' : msg.content,
               icon: '/icon-192.png',
               badge: '/icon-192.png',
               tag: msg.channel_id,
             })
+            // Click → porta direttamente alla chat interessata (canale o DM).
+            n.onclick = () => {
+              window.focus()
+              navigate(`/student/chat?c=${encodeURIComponent(msg.channel_id)}`)
+              n.close()
+            }
           } catch {
             // Notification non supportata o bloccata silenziosamente
           }
@@ -49,7 +77,7 @@ function NotificationManager() {
       .subscribe()
 
     return () => { sub.unsubscribe() }
-  }, [user?.id])
+  }, [user?.id, navigate])
 
   return null
 }
@@ -77,6 +105,7 @@ function AppShell() {
         <ProfileModal isOpen={profileOpen} onClose={() => setProfileOpen(false)} />
         <AppPrompts />
         <NotificationManager />
+        <PushNavigationBridge />
       </div>
     </NewsProvider>
   )
