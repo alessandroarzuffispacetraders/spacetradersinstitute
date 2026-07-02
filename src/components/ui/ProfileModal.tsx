@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   X, Camera, Eye, EyeOff, Check, Lock, User as UserIcon,
-  Mail, Shield, ChevronRight, Upload, Bell, BellOff,
+  Mail, Shield, ChevronRight, Upload, Bell, BellOff, Loader2,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import UserAvatar, { PRESET_AVATARS } from './UserAvatar'
 import { subscribeToPush, unsubscribeFromPush } from '../../lib/push'
+import { uploadAvatar, deleteAvatar } from '../../lib/storage'
 
 const ROLE_LABELS: Record<string, string> = {
   student: 'Studente',
@@ -29,10 +30,14 @@ interface Props {
 }
 
 export default function ProfileModal({ isOpen, onClose }: Props) {
-  const { user, updateProfile } = useAuth()
+  const { user, updateProfile, changePassword } = useAuth()
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [section, setSection] = useState<Section>('main')
+
+  // Avatar upload
+  const [avatarBusy, setAvatarBusy] = useState(false)
+  const [avatarError, setAvatarError] = useState('')
 
   // Name edit
   const [nameValue, setNameValue] = useState('')
@@ -47,6 +52,7 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
   const [pwError, setPwError] = useState('')
   const [pwSaved, setPwSaved] = useState(false)
+  const [pwBusy, setPwBusy] = useState(false)
 
   useEffect(() => {
     if (isOpen && user) {
@@ -54,7 +60,8 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
       setSection('main')
       setNameSaved(false)
       setPwCurrent(''); setPwNew(''); setPwConfirm('')
-      setPwError(''); setPwSaved(false)
+      setPwError(''); setPwSaved(false); setPwBusy(false)
+      setAvatarBusy(false); setAvatarError('')
     }
   }, [isOpen, user])
 
@@ -69,20 +76,35 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
   if (!isOpen || !user) return null
 
   const handleAvatarPreset = (presetId: string) => {
+    setAvatarError('')
     updateProfile({ avatarPreset: presetId, avatarUrl: undefined })
   }
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string
-      updateProfile({ avatarUrl: dataUrl, avatarPreset: undefined })
-      setSection('main')
-    }
-    reader.readAsDataURL(file)
     e.target.value = ''
+    if (!file || !user) return
+    setAvatarError('')
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError('Immagine troppo grande (max 5 MB)')
+      return
+    }
+    setAvatarBusy(true)
+    const url = await uploadAvatar(user.id, file)
+    setAvatarBusy(false)
+    if (!url) {
+      setAvatarError('Caricamento non riuscito. Riprova.')
+      return
+    }
+    await updateProfile({ avatarUrl: url, avatarPreset: undefined })
+    setSection('main')
+  }
+
+  const handleRemovePhoto = async () => {
+    if (!user) return
+    setAvatarError('')
+    await deleteAvatar(user.id)
+    await updateProfile({ avatarUrl: undefined, avatarPreset: user.avatarPreset ?? 'blue' })
   }
 
   const handleSaveName = () => {
@@ -93,11 +115,15 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
     setTimeout(() => { setNameSaved(false); setSection('main') }, 1200)
   }
 
-  const handleSavePassword = () => {
+  const handleSavePassword = async () => {
     setPwError('')
     if (!pwCurrent) { setPwError('Inserisci la password attuale'); return }
     if (pwNew.length < 8) { setPwError('La nuova password deve essere di almeno 8 caratteri'); return }
     if (pwNew !== pwConfirm) { setPwError('Le password non coincidono'); return }
+    setPwBusy(true)
+    const { error } = await changePassword(pwCurrent, pwNew)
+    setPwBusy(false)
+    if (error) { setPwError(error); return }
     setPwSaved(true)
     setTimeout(() => {
       setPwSaved(false)
@@ -287,24 +313,34 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
                 />
                 <button
                   onClick={() => fileRef.current?.click()}
+                  disabled={avatarBusy}
                   className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all active:scale-[0.98]"
-                  style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)' }}
+                  style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)', opacity: avatarBusy ? 0.6 : 1 }}
                 >
                   <div
                     className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
                     style={{ background: 'rgba(90,154,177,0.14)', border: '1px solid rgba(90,154,177,0.18)' }}
                   >
-                    <Upload size={16} strokeWidth={2} style={{ color: '#7CBBD0' }} />
+                    {avatarBusy
+                      ? <Loader2 size={16} strokeWidth={2} className="animate-spin" style={{ color: '#7CBBD0' }} />
+                      : <Upload size={16} strokeWidth={2} style={{ color: '#7CBBD0' }} />}
                   </div>
                   <div className="text-left">
-                    <p className="text-sm font-medium" style={{ color: 'var(--ist-text)' }}>Carica immagine</p>
+                    <p className="text-sm font-medium" style={{ color: 'var(--ist-text)' }}>
+                      {avatarBusy ? 'Caricamento…' : 'Carica immagine'}
+                    </p>
                     <p className="text-[11px]" style={{ color: 'var(--ist-text-muted)' }}>PNG, JPG, WEBP — max 5 MB</p>
                   </div>
                 </button>
 
+                {avatarError && (
+                  <p className="text-xs mt-2 px-1" style={{ color: '#FF6B7A' }}>{avatarError}</p>
+                )}
+
                 {user.avatarUrl && (
                   <button
-                    onClick={() => handleAvatarPreset(user.avatarPreset ?? 'blue')}
+                    onClick={handleRemovePhoto}
+                    disabled={avatarBusy}
                     className="w-full mt-2 py-2.5 rounded-2xl text-sm font-medium transition-all"
                     style={{ color: '#FF6B7A', background: 'rgba(255,107,122,0.08)', border: '1px solid rgba(255,107,122,0.15)' }}
                   >
@@ -401,16 +437,20 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
 
                 <button
                   onClick={handleSavePassword}
-                  disabled={!pwValid || pwSaved}
+                  disabled={!pwValid || pwSaved || pwBusy}
                   className="w-full py-3 rounded-2xl text-sm font-semibold transition-all flex items-center justify-center gap-2 mt-1"
                   style={{
                     background: pwSaved ? 'rgba(70,211,154,0.15)' : 'rgba(90,154,177,0.20)',
                     border: pwSaved ? '1px solid rgba(70,211,154,0.30)' : '1px solid rgba(90,154,177,0.30)',
                     color: pwSaved ? '#46D39A' : '#7CBBD0',
-                    opacity: !pwValid && !pwSaved ? 0.5 : 1,
+                    opacity: (!pwValid && !pwSaved) || pwBusy ? 0.5 : 1,
                   }}
                 >
-                  {pwSaved ? <><Check size={15} strokeWidth={2.5} /> Password aggiornata</> : 'Aggiorna password'}
+                  {pwSaved
+                    ? <><Check size={15} strokeWidth={2.5} /> Password aggiornata</>
+                    : pwBusy
+                      ? <><Loader2 size={15} strokeWidth={2} className="animate-spin" /> Aggiornamento…</>
+                      : 'Aggiorna password'}
                 </button>
               </div>
             </>

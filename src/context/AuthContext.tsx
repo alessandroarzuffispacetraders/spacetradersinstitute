@@ -10,6 +10,7 @@ interface AuthContextType {
   signup: (email: string, password: string, name: string) => Promise<{ error: string | null }>
   logout: () => Promise<void>
   updateProfile: (data: ProfileUpdate) => Promise<void>
+  changePassword: (current: string, next: string) => Promise<{ error: string | null }>
   isAuthenticated: boolean
   loading: boolean
   justLoggedIn: boolean
@@ -97,6 +98,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
+  const changePassword = async (current: string, next: string): Promise<{ error: string | null }> => {
+    if (!user) return { error: 'Non autenticato' }
+    // Verifica la password attuale ri-autenticando (updateUser non la controlla).
+    const { error: reauthErr } = await supabase.auth.signInWithPassword({ email: user.email, password: current })
+    if (reauthErr) return { error: 'La password attuale non è corretta' }
+    const { error } = await supabase.auth.updateUser({ password: next })
+    if (error) return { error: error.message }
+    return { error: null }
+  }
+
   const updateProfile = async (data: ProfileUpdate) => {
     if (!user) return
 
@@ -110,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, updateProfile, isAuthenticated: !!user, loading, justLoggedIn, clearJustLoggedIn: () => setJustLoggedIn(false) }}>
+    <AuthContext.Provider value={{ user, login, signup, logout, updateProfile, changePassword, isAuthenticated: !!user, loading, justLoggedIn, clearJustLoggedIn: () => setJustLoggedIn(false) }}>
       {children}
     </AuthContext.Provider>
   )

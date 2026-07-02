@@ -61,3 +61,47 @@ export async function attachmentUrl(objectKey: string): Promise<string | null> {
   if (error || !data?.signedUrl) return null
   return data.signedUrl
 }
+
+// ── Foto profilo (bucket pubblico 'avatars') ──────────────────────────────────
+const AVATAR_BUCKET = 'avatars'
+const AVATAR_MAX = 256 // lato max in px: l'avatar si vede al massimo ~80px
+
+// Ridimensiona e comprime lato client → file piccolo (no immagini enormi nel DB/rete).
+async function resizeToBlob(file: File, max: number): Promise<Blob> {
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height))
+  const w = Math.max(1, Math.round(bitmap.width * scale))
+  const h = Math.max(1, Math.round(bitmap.height * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('canvas non disponibile')
+  ctx.drawImage(bitmap, 0, 0, w, h)
+  bitmap.close?.()
+  return await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob(b => (b ? resolve(b) : reject(new Error('encoding fallito'))), 'image/jpeg', 0.85)
+  )
+}
+
+// Carica la foto profilo (ridimensionata) e ritorna l'URL pubblico (cache-busted).
+export async function uploadAvatar(userId: string, file: File): Promise<string | null> {
+  try {
+    const blob = await resizeToBlob(file, AVATAR_MAX)
+    const path = `${userId}/avatar.jpg`
+    const { error } = await supabase.storage.from(AVATAR_BUCKET).upload(path, blob, {
+      contentType: 'image/jpeg',
+      upsert: true,
+    })
+    if (error) return null
+    const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path)
+    // Path fisso + upsert → stesso URL: aggiungo ?v= per bypassare la cache.
+    return `${data.publicUrl}?v=${Date.now()}`
+  } catch {
+    return null
+  }
+}
+
+export async function deleteAvatar(userId: string): Promise<void> {
+  await supabase.storage.from(AVATAR_BUCKET).remove([`${userId}/avatar.jpg`])
+}

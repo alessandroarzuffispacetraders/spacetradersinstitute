@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import ISTLogo from '../../components/ui/ISTLogo'
 
@@ -10,6 +11,7 @@ export default function LoginPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -144,15 +146,26 @@ export default function LoginPage() {
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-ist-300 uppercase tracking-wider">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                  placeholder="••••••••"
-                  className="w-full px-4 py-3 rounded-2xl text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-ist-400/50 transition-all"
-                  style={{ background: 'var(--ist-w8)', border: '1px solid var(--ist-border)' }}
-                />
+                <div className="relative">
+                  <input
+                    type={showPw ? 'text' : 'password'}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                    placeholder="••••••••"
+                    className="w-full px-4 py-3 pr-11 rounded-2xl text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-ist-400/50 transition-all"
+                    style={{ background: 'var(--ist-w8)', border: '1px solid var(--ist-border)' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPw(v => !v)}
+                    aria-label={showPw ? 'Nascondi password' : 'Mostra password'}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-80"
+                    style={{ color: 'rgba(247,250,252,0.55)' }}
+                  >
+                    {showPw ? <EyeOff size={17} strokeWidth={2} /> : <Eye size={17} strokeWidth={2} />}
+                  </button>
+                </div>
               </div>
 
               {error && (
