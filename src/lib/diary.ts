@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
+import { useIsPreview } from './previewMode'
 
 export interface DiaryEntry {
   id: string
@@ -24,11 +25,20 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+// Dati FINTI per l'anteprima (vedi previewMode).
+const PREVIEW_ENTRIES: DiaryEntry[] = [
+  { id: 'pv1', user_id: 'preview', entry_date: '2026-06-29', result: '+€240', trades_count: 4, emotion: '😊', notes: 'Rispettato il piano, ingressi puliti sui livelli. Buona gestione emotiva.', created_at: '2026-06-29T20:00:00Z' },
+  { id: 'pv2', user_id: 'preview', entry_date: '2026-06-27', result: '-€80', trades_count: 3, emotion: '😐', notes: 'Entrato in anticipo su un breakout. Da rivedere il timing di ingresso.', created_at: '2026-06-27T20:00:00Z' },
+  { id: 'pv3', user_id: 'preview', entry_date: '2026-06-25', result: '+€60', trades_count: 6, emotion: '😤', notes: 'Troppi trade, un po\' di overtrading nel pomeriggio. Chiuso comunque in verde.', created_at: '2026-06-25T20:00:00Z' },
+]
+
 export function useDiaryEntries(userId: string) {
-  const [entries, setEntries] = useState<DiaryEntry[]>([])
-  const [loading, setLoading] = useState(true)
+  const preview = useIsPreview()
+  const [entries, setEntries] = useState<DiaryEntry[]>(preview ? PREVIEW_ENTRIES : [])
+  const [loading, setLoading] = useState(!preview)
 
   useEffect(() => {
+    if (preview) return
     if (!userId) { setLoading(false); return }
     setLoading(true)
     supabase
@@ -41,10 +51,10 @@ export function useDiaryEntries(userId: string) {
         setEntries((data as DiaryEntry[]) ?? [])
         setLoading(false)
       })
-  }, [userId])
+  }, [userId, preview])
 
   const addEntry = useCallback(async (e: NewDiaryEntry): Promise<boolean> => {
-    if (!userId) return false
+    if (preview || !userId) return false
     const { data, error } = await supabase
       .from('diary_entries')
       .insert({
@@ -60,12 +70,13 @@ export function useDiaryEntries(userId: string) {
     if (error || !data) return false
     setEntries(prev => [data as DiaryEntry, ...prev])
     return true
-  }, [userId])
+  }, [userId, preview])
 
   const deleteEntry = useCallback(async (id: string): Promise<void> => {
+    if (preview) return
     setEntries(prev => prev.filter(e => e.id !== id))
     await supabase.from('diary_entries').delete().eq('id', id)
-  }, [])
+  }, [preview])
 
   return { entries, loading, addEntry, deleteEntry }
 }

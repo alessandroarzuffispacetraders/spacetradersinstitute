@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
+import { useIsPreview } from './previewMode'
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -151,11 +152,43 @@ export function useCoachAssignments(coachId: string) {
 
 // ─── Student side ───────────────────────────────────────────────────────────────
 
+// Dati FINTI per l'anteprima (vedi previewMode). Nessuna immagine allegata
+// (submission_files vuoto) così non parte alcuna fetch di URL firmati.
+const PREVIEW_ASSIGNMENTS: Assignment[] = [
+  {
+    id: 'pv-a1', coach_id: 'pv-c', student_id: 'pv-s', title: 'Analizza 3 setup sul grafico H1',
+    description: 'Individua tre configurazioni valide e allega gli screenshot con le annotazioni.',
+    status: 'reviewed', due_at: null, created_at: '2026-06-18T09:00:00Z', coach: { name: 'Coach Marco' },
+    submissions: [{
+      id: 'pv-s1', assignment_id: 'pv-a1', student_id: 'pv-s', note: 'Ecco i tre setup individuati.',
+      status: 'reviewed', coach_feedback: 'Buona lettura della struttura. Attenzione allo stop nel secondo setup.',
+      blocked: false, submitted_at: '2026-06-19T10:00:00Z', reviewed_at: '2026-06-20T12:00:00Z', submission_files: [],
+    }],
+  },
+  {
+    id: 'pv-a2', coach_id: 'pv-c', student_id: 'pv-s', title: 'Journal della settimana + emozioni',
+    description: 'Compila il diario per 5 sessioni e annota lo stato emotivo prima di ogni trade.',
+    status: 'assigned', due_at: null, created_at: '2026-06-24T09:00:00Z', coach: { name: 'Coach Marco' },
+    submissions: [{
+      id: 'pv-s2', assignment_id: 'pv-a2', student_id: 'pv-s', note: 'Journal allegato, cinque sessioni.',
+      status: 'pending', coach_feedback: null, blocked: false, submitted_at: '2026-06-25T18:00:00Z', reviewed_at: null, submission_files: [],
+    }],
+  },
+  {
+    id: 'pv-a3', coach_id: 'pv-c', student_id: 'pv-s', title: 'Piano operativo per il breakout',
+    description: 'Definisci ingressi, target e gestione del rischio sul modello di breakout.',
+    status: 'assigned', due_at: '2026-07-10T09:00:00Z', created_at: '2026-06-29T09:00:00Z', coach: { name: 'Coach Marco' },
+    submissions: [],
+  },
+]
+
 export function useStudentAssignments(studentId: string) {
-  const [assignments, setAssignments] = useState<Assignment[]>([])
-  const [loading, setLoading] = useState(true)
+  const preview = useIsPreview()
+  const [assignments, setAssignments] = useState<Assignment[]>(preview ? PREVIEW_ASSIGNMENTS : [])
+  const [loading, setLoading] = useState(!preview)
 
   const load = useCallback(async () => {
+    if (preview) return
     if (!studentId) { setLoading(false); return }
     setLoading(true)
     const { data } = await supabase
@@ -165,13 +198,13 @@ export function useStudentAssignments(studentId: string) {
       .order('created_at', { ascending: false })
     setAssignments((data as Assignment[]) ?? [])
     setLoading(false)
-  }, [studentId])
+  }, [studentId, preview])
 
   useEffect(() => { load() }, [load])
 
   // Create a submission (note) and upload the student's images.
   const submit = useCallback(async (assignmentId: string, note: string, files: File[]): Promise<boolean> => {
-    if (!studentId) return false
+    if (preview || !studentId) return false
     const { data: sub, error } = await supabase.from('submissions').insert({
       assignment_id: assignmentId, student_id: studentId, note: note.trim() || null, status: 'pending',
     }).select().single()
@@ -187,7 +220,7 @@ export function useStudentAssignments(studentId: string) {
     }
     await load()
     return true
-  }, [studentId, load])
+  }, [studentId, load, preview])
 
   return { assignments, loading, submit, reload: load }
 }

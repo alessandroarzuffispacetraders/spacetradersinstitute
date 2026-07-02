@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
 import { StudentPhase, StudentStatus } from '../types'
+import { useIsPreview } from './previewMode'
 
 // ─── Assigned students (coach / mental coach) ───────────────────────────────────
 
@@ -161,11 +162,19 @@ export function useMentalSessions(myId: string) {
 }
 
 // Student view: own sessions (read-only)
+// Dati FINTI per l'anteprima (vedi previewMode).
+const PREVIEW_SESSIONS: MentalSession[] = [
+  { id: 'pv-m1', student_id: 'pv-s', mental_coach_id: 'pv-mc', session_number: 1, type: 'valutazione', status: 'completed', scheduled_at: null, completed_at: '2026-06-03T10:00:00Z', notes: null, created_at: '2026-06-01T10:00:00Z', updated_at: '2026-06-03T10:00:00Z' },
+  { id: 'pv-m2', student_id: 'pv-s', mental_coach_id: 'pv-mc', session_number: 2, type: 'follow-up', status: 'scheduled', scheduled_at: '2026-07-15T18:00:00Z', completed_at: null, notes: null, created_at: '2026-06-03T10:00:00Z', updated_at: '2026-06-03T10:00:00Z' },
+]
+
 export function useStudentSessions(studentId: string) {
-  const [sessions, setSessions] = useState<MentalSession[]>([])
-  const [loading, setLoading] = useState(true)
+  const preview = useIsPreview()
+  const [sessions, setSessions] = useState<MentalSession[]>(preview ? PREVIEW_SESSIONS : [])
+  const [loading, setLoading] = useState(!preview)
 
   useEffect(() => {
+    if (preview) return
     if (!studentId) { setLoading(false); return }
     setLoading(true)
     supabase
@@ -177,7 +186,7 @@ export function useStudentSessions(studentId: string) {
         setSessions((data as MentalSession[]) ?? [])
         setLoading(false)
       })
-  }, [studentId])
+  }, [studentId, preview])
 
   return { sessions, loading }
 }

@@ -1,6 +1,20 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
 import { StudentPhase } from '../types'
+import { useIsPreview } from './previewMode'
+
+// Dati FINTI per l'anteprima (vedi previewMode). Percorso in fase Build.
+const PREVIEW_DEFS: RawStepDef[] = [
+  { id: 'pv1', phase: 'onboarding', step_key: 'onboarding.1', label: 'Setup account e piattaforma', position: 0 },
+  { id: 'pv2', phase: 'onboarding', step_key: 'onboarding.2', label: 'Prima call con il coach', position: 1 },
+  { id: 'pv3', phase: 'onboarding', step_key: 'onboarding.3', label: 'Definizione obiettivi 90 giorni', position: 2 },
+  { id: 'pv4', phase: 'build', step_key: 'build.1', label: 'Piano di trading personale', position: 0 },
+  { id: 'pv5', phase: 'build', step_key: 'build.2', label: 'Regole di risk management', position: 1 },
+  { id: 'pv6', phase: 'build', step_key: 'build.3', label: 'Backtest della strategia', position: 2 },
+  { id: 'pv7', phase: 'build', step_key: 'build.4', label: 'Journaling quotidiano', position: 3 },
+  { id: 'pv8', phase: 'build', step_key: 'build.5', label: 'Review settimanale col coach', position: 4 },
+]
+const PREVIEW_DONE = new Set(['onboarding.1', 'onboarding.2', 'onboarding.3', 'build.1', 'build.2'])
 
 // ─── Fasi fisse (metadata) ──────────────────────────────────────────────────────
 // Le 4 fasi sono strutturali (mappano profiles.phase). Gli STEP dentro ogni fase
@@ -42,12 +56,14 @@ function buildPhases(current: StudentPhase, doneKeys: Set<string>, defs: RawStep
 // ─── Hook: legge fase + passi di uno studente, con mutazioni (per coach/admin) ──
 
 export function usePath(userId: string) {
-  const [phase, setPhase] = useState<StudentPhase>('onboarding')
-  const [doneKeys, setDoneKeys] = useState<Set<string>>(new Set())
-  const [defs, setDefs] = useState<RawStepDef[]>([])
-  const [loading, setLoading] = useState(true)
+  const preview = useIsPreview()
+  const [phase, setPhase] = useState<StudentPhase>(preview ? 'build' : 'onboarding')
+  const [doneKeys, setDoneKeys] = useState<Set<string>>(preview ? PREVIEW_DONE : new Set())
+  const [defs, setDefs] = useState<RawStepDef[]>(preview ? PREVIEW_DEFS : [])
+  const [loading, setLoading] = useState(!preview)
 
   const load = useCallback(async () => {
+    if (preview) return
     if (!userId) { setLoading(false); return }
     setLoading(true)
     const [profRes, stepsRes, defsRes] = await Promise.all([
@@ -59,7 +75,7 @@ export function usePath(userId: string) {
     setDoneKeys(new Set((stepsRes.data ?? []).map(r => r.step_key as string)))
     setDefs((defsRes.data as RawStepDef[]) ?? [])
     setLoading(false)
-  }, [userId])
+  }, [userId, preview])
 
   useEffect(() => { load() }, [load])
 

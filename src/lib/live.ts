@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
+import { useIsPreview } from './previewMode'
 
 // ─── Tipi (camelCase, stessa forma del vecchio mock liveData) ───────────────────
 
@@ -85,18 +86,43 @@ export function liveDurationLabel(e: LiveEvent): string {
   return h > 0 ? `${h}h ${m} min` : `${m} min`
 }
 
+// Dati FINTI per l'anteprima (vedi previewMode). La live non ha startsAt (così
+// non compare tra i "prossimi appuntamenti" del calendario); gli upcoming sono
+// ancorati al caricamento → cadono nelle prossime settimane; i replay sono passati.
+function previewIso(offsetDays: number, h: number, m: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + offsetDays)
+  d.setHours(h, m, 0, 0)
+  return d.toISOString()
+}
+function previewEvents(): LiveEvent[] {
+  const mk = (id: string, title: string, host: string, hostRole: LiveRole, status: LiveStatus, startsAt: string | null, accent: string, accentEnd: string, durationMinutes: number | null, description = ''): LiveEvent =>
+    ({ id, title, description, host, hostRole, status, startsAt, zoomUrl: null, liveEmbedUrl: null, replayVimeoId: null, durationMinutes, accent, accentEnd, ownerId: null })
+  return [
+    mk('pv-live', 'Sessione operativa in diretta', 'Coach Marco', 'coach', 'live', null, '#7CBBD0', '#286680', null, 'Analizziamo il mercato in tempo reale e rispondiamo alle domande in chat.'),
+    mk('pv-up1', 'Live analisi di mercato', 'Coach Marco', 'coach', 'upcoming', previewIso(2, 18, 0), '#7CBBD0', '#286680', 60),
+    mk('pv-up2', 'Sessione mental coach di gruppo', 'Mental Coach Sara', 'mental_coach', 'upcoming', previewIso(5, 20, 30), '#B48CE0', '#6B4FA0', 60),
+    mk('pv-up3', 'Q&A settimanale con il coach', 'Coach Marco', 'coach', 'upcoming', previewIso(9, 19, 0), '#7CBBD0', '#286680', 45),
+    mk('pv-rep1', 'Analisi di mercato — settimana 24', 'Coach Marco', 'coach', 'replay', '2026-06-22T18:00:00Z', '#7CBBD0', '#286680', 58),
+    mk('pv-rep2', 'Psicologia: uscire dalle perdite', 'Mental Coach Sara', 'mental_coach', 'replay', '2026-06-15T20:00:00Z', '#B48CE0', '#6B4FA0', 41),
+    mk('pv-rep3', 'Live Q&A — gestione del rischio', 'Coach Marco', 'coach', 'replay', '2026-06-08T19:00:00Z', '#7CBBD0', '#286680', 72),
+  ]
+}
+
 // ─── Student: lettura ───────────────────────────────────────────────────────────
 
 export function useLiveEvents() {
-  const [events, setEvents] = useState<LiveEvent[]>([])
-  const [loading, setLoading] = useState(true)
+  const preview = useIsPreview()
+  const [events, setEvents] = useState<LiveEvent[]>(preview ? previewEvents() : [])
+  const [loading, setLoading] = useState(!preview)
 
   const load = useCallback(async () => {
+    if (preview) return
     setLoading(true)
     const { data } = await supabase.from('live_events').select(COLS).order('position')
     setEvents(((data as RawLive[] | null) ?? []).map(toLive))
     setLoading(false)
-  }, [])
+  }, [preview])
 
   useEffect(() => { load() }, [load])
 

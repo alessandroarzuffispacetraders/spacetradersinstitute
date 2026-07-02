@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
+import { useIsPreview } from './previewMode'
 
 // ─── Tipi ───────────────────────────────────────────────────────────────────────
 
@@ -19,13 +20,29 @@ export interface MentalChecklistItem {
   position: number
 }
 
+// Dati FINTI per l'anteprima (vedi previewMode).
+const PREVIEW_MATERIALS: MentalMaterial[] = [
+  { id: 'pv-mat1', title: 'Meditazione pre-market (10 min)', type: 'audio', url: '#', position: 0 },
+  { id: 'pv-mat2', title: 'Guida: gestire il tilt dopo una perdita', type: 'pdf', url: '#', position: 1 },
+  { id: 'pv-mat3', title: 'Video: routine mentale del trader', type: 'video', url: '#', position: 2 },
+]
+const PREVIEW_CHECKLIST: MentalChecklistItem[] = [
+  { id: 'pv-chk1', label: 'Respirazione 4-7-8 prima della sessione', position: 0 },
+  { id: 'pv-chk2', label: 'Rileggere le regole di rischio', position: 1 },
+  { id: 'pv-chk3', label: 'Nessun trade sotto stress emotivo', position: 2 },
+  { id: 'pv-chk4', label: 'Chiudere la piattaforma dopo 2 stop', position: 3 },
+]
+const PREVIEW_CHECKLIST_DONE = new Set(['pv-chk1', 'pv-chk2'])
+
 // ─── Studente: materiali (sola lettura) ─────────────────────────────────────────
 
 export function useMentalMaterials() {
-  const [materials, setMaterials] = useState<MentalMaterial[]>([])
-  const [loading, setLoading] = useState(true)
+  const preview = useIsPreview()
+  const [materials, setMaterials] = useState<MentalMaterial[]>(preview ? PREVIEW_MATERIALS : [])
+  const [loading, setLoading] = useState(!preview)
 
   useEffect(() => {
+    if (preview) return
     let active = true
     supabase.from('mental_materials').select('id,title,type,url,position').order('position').then(({ data }) => {
       if (!active) return
@@ -33,7 +50,7 @@ export function useMentalMaterials() {
       setLoading(false)
     })
     return () => { active = false }
-  }, [])
+  }, [preview])
 
   return { materials, loading }
 }
@@ -41,11 +58,13 @@ export function useMentalMaterials() {
 // ─── Studente: checklist (definizioni globali + completamento proprio, self-check) ─
 
 export function useMentalChecklist(userId: string) {
-  const [items, setItems] = useState<MentalChecklistItem[]>([])
-  const [doneIds, setDoneIds] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
+  const preview = useIsPreview()
+  const [items, setItems] = useState<MentalChecklistItem[]>(preview ? PREVIEW_CHECKLIST : [])
+  const [doneIds, setDoneIds] = useState<Set<string>>(preview ? PREVIEW_CHECKLIST_DONE : new Set())
+  const [loading, setLoading] = useState(!preview)
 
   const load = useCallback(async () => {
+    if (preview) return
     if (!userId) { setLoading(false); return }
     setLoading(true)
     const [defsRes, doneRes] = await Promise.all([
@@ -55,12 +74,13 @@ export function useMentalChecklist(userId: string) {
     setItems((defsRes.data as MentalChecklistItem[]) ?? [])
     setDoneIds(new Set((doneRes.data ?? []).map(r => r.item_id as string)))
     setLoading(false)
-  }, [userId])
+  }, [userId, preview])
 
   useEffect(() => { load() }, [load])
 
   // Lo studente spunta/despunta i propri item.
   const toggle = useCallback(async (itemId: string, done: boolean): Promise<boolean> => {
+    if (preview) return true
     if (done) {
       const { error } = await supabase.from('mental_checklist_done')
         .upsert({ user_id: userId, item_id: itemId }, { onConflict: 'user_id,item_id' })
@@ -73,7 +93,7 @@ export function useMentalChecklist(userId: string) {
       setDoneIds(prev => { const n = new Set(prev); n.delete(itemId); return n })
     }
     return true
-  }, [userId])
+  }, [userId, preview])
 
   return { items, doneIds, loading, toggle, reload: load }
 }
