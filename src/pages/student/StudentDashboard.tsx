@@ -162,11 +162,7 @@ export default function StudentDashboard() {
     <div className="min-h-screen">
       <div className="px-5 lg:px-10 pt-8 pb-32 lg:pb-12 space-y-6">
 
-        {/* ── Onboarding: video di benvenuto (prima settimana) + primi passi ── */}
-        {user?.role === 'student' && <WelcomeVideoHero registeredAt={meta.createdAt} />}
-        <OnboardingCard />
-
-        {/* ── Header (sticky su mobile, con sfumatura sotto durante lo scroll) ── */}
+        {/* ── Header saluto (sticky su mobile, frosted durante lo scroll) ── */}
         <div className="home-greeting-bar -mx-5 lg:mx-0">
           <div className="home-greeting-bar-bg">
             <header className="flex items-center justify-between gap-4">
@@ -188,8 +184,11 @@ export default function StudentDashboard() {
               </button>
             </header>
           </div>
-          <div className="home-greeting-fade" />
         </div>
+
+        {/* ── Onboarding: video di benvenuto (prima settimana) + primi passi ── */}
+        {user?.role === 'student' && <WelcomeVideoHero registeredAt={meta.createdAt} />}
+        <OnboardingCard />
 
         {/* ── HERO: progresso percorso ── */}
         <PremiumCard className="p-7 lg:p-8">
