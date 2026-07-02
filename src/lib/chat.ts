@@ -117,6 +117,9 @@ export function useChatMessages(channelId: string | null, userId: string) {
       .channel(`reactions:${channelId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_reactions' }, (payload) => {
         const { message_id, user_id, emoji } = payload.new as { message_id: string; user_id: string; emoji: string }
+        // La reazione dell'utente corrente è già applicata ottimisticamente in
+        // toggleReaction: ignora l'eco realtime per non contarla due volte.
+        if (user_id === userId) return
         if (!msgIdsRef.current.has(message_id)) return
         setReactions(prev => {
           const cur = prev[message_id]?.[emoji] ?? { count: 0, reacted: false }
@@ -131,6 +134,8 @@ export function useChatMessages(channelId: string | null, userId: string) {
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'message_reactions' }, (payload) => {
         const { message_id, user_id, emoji } = payload.old as { message_id: string; user_id: string; emoji: string }
+        // Rimozione dell'utente corrente già applicata ottimisticamente: salta l'eco.
+        if (user_id === userId) return
         if (!msgIdsRef.current.has(message_id)) return
         setReactions(prev => {
           const cur = prev[message_id]?.[emoji]
