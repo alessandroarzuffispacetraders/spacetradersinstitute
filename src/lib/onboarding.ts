@@ -7,6 +7,8 @@ export const QUESTIONNAIRE_URL =
   'https://protocoldatajournal.com/student-onboarding'
 
 const WELCOME_KEY = 'welcome_video_url'
+// Video di benvenuto dedicato agli utenti gratuiti (lo vedono solo loro).
+const WELCOME_FREE_KEY = 'welcome_video_free_url'
 // Giorni per cui il video di benvenuto resta in home dopo la registrazione.
 export const WELCOME_WINDOW_DAYS = 7
 
@@ -62,45 +64,52 @@ export function useOnboarding(userId: string) {
 
 // ─── Video di benvenuto (impostato dall'admin, link diretto) ────────────────────
 
+// Legge entrambi i video (completo + gratuito) in una sola query.
+// Il componente sceglie quale mostrare in base al tier dell'utente.
 export function useWelcomeVideo() {
-  const [url, setUrl] = useState<string | null>(null)
+  const [fullUrl, setFullUrl] = useState<string | null>(null)
+  const [freeUrl, setFreeUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let active = true
-    supabase.from('app_settings').select('value').eq('key', WELCOME_KEY).maybeSingle().then(({ data }) => {
+    supabase.from('app_settings').select('key,value').in('key', [WELCOME_KEY, WELCOME_FREE_KEY]).then(({ data }) => {
       if (!active) return
-      setUrl((data as { value: string | null } | null)?.value?.trim() || null)
+      const rows = (data as { key: string; value: string | null }[] | null) ?? []
+      const pick = (k: string) => rows.find(r => r.key === k)?.value?.trim() || null
+      setFullUrl(pick(WELCOME_KEY))
+      setFreeUrl(pick(WELCOME_FREE_KEY))
       setLoading(false)
     })
     return () => { active = false }
   }, [])
 
-  return { url, loading }
+  return { fullUrl, freeUrl, loading }
 }
 
-// ─── Admin: imposta il link del video di benvenuto ──────────────────────────────
+// ─── Admin: imposta il link del video di benvenuto (completo o gratuito) ─────────
 
-export function useWelcomeVideoAdmin() {
+export function useWelcomeVideoAdmin(free = false) {
+  const key = free ? WELCOME_FREE_KEY : WELCOME_KEY
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from('app_settings').select('value').eq('key', WELCOME_KEY).maybeSingle()
+    const { data } = await supabase.from('app_settings').select('value').eq('key', key).maybeSingle()
     setUrl((data as { value: string | null } | null)?.value ?? '')
     setLoading(false)
-  }, [])
+  }, [key])
 
   useEffect(() => { load() }, [load])
 
   const save = useCallback(async (value: string): Promise<boolean> => {
     const { error } = await supabase.from('app_settings').upsert(
-      { key: WELCOME_KEY, value: value.trim() || null, updated_at: new Date().toISOString() },
+      { key, value: value.trim() || null, updated_at: new Date().toISOString() },
       { onConflict: 'key' },
     )
     if (!error) await load()
     return !error
-  }, [load])
+  }, [key, load])
 
   return { url, loading, save, reload: load }
 }

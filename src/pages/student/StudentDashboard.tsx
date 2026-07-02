@@ -162,7 +162,10 @@ export default function StudentDashboard() {
 
   return (
     <div className="min-h-screen">
-      <div className="px-5 lg:px-10 pt-8 pb-32 lg:pb-12 space-y-6">
+      {/* flex-col + order: su desktop il video benvenuto si incastra tra le card
+          (lg:order-2, prima della griglia secondaria lg:order-3); su mobile resta
+          in alto (ordine DOM naturale). */}
+      <div className="px-5 lg:px-10 pt-8 pb-32 lg:pb-12 flex flex-col gap-6">
 
         {isFreeUser(user) && <UpgradeBanner />}
 
@@ -191,7 +194,9 @@ export default function StudentDashboard() {
         </div>
 
         {/* ── Onboarding: video di benvenuto (prima settimana) + primi passi ── */}
-        {user?.role === 'student' && <WelcomeVideoHero registeredAt={meta.createdAt} />}
+        {user?.role === 'student' && (
+          <WelcomeVideoHero registeredAt={meta.createdAt} isFree={isFreeUser(user)} className="lg:order-2" />
+        )}
         <OnboardingCard />
 
         {/* ── HERO: progresso percorso ── */}
@@ -337,8 +342,8 @@ export default function StudentDashboard() {
 
         </div>
 
-        {/* ── SECONDARIE: mental coach · coach ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* ── SECONDARIE: mental coach · coach ── (dopo il video su desktop) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:order-3">
 
           {/* MENTAL COACH — apre la chat privata col mental coach */}
           <Card className="p-6" onClick={openMentalChat}>

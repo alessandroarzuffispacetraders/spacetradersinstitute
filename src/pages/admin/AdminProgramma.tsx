@@ -262,15 +262,15 @@ function ChecklistTab() {
 
 // ─── Tab: Video di benvenuto ────────────────────────────────────────────────────
 
-function BenvenutoTab() {
-  const { url, loading, save } = useWelcomeVideoAdmin()
+function WelcomeVideoField({ free, title, help }: { free: boolean; title: string; help: string }) {
+  const { url, loading, save } = useWelcomeVideoAdmin(free)
   const [val, setVal] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => { setVal(url) }, [url])
 
-  if (loading) return <div className="flex justify-center py-16"><Loader2 size={22} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} /></div>
+  if (loading) return <Card className="p-5"><div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} /></div></Card>
 
   const doSave = async () => {
     setSaving(true)
@@ -281,10 +281,8 @@ function BenvenutoTab() {
 
   return (
     <Card className="p-5">
-      <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--ist-text)' }}>Video di benvenuto</h3>
-      <p className="text-xs mb-4" style={{ color: 'var(--ist-text-dim)' }}>
-        Incolla il link Vimeo del video di benvenuto. Verrà mostrato in cima alla home di ogni studente per i primi {WELCOME_WINDOW_DAYS} giorni dalla registrazione. Lascia vuoto per non mostrarlo.
-      </p>
+      <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--ist-text)' }}>{title}</h3>
+      <p className="text-xs mb-4" style={{ color: 'var(--ist-text-dim)' }}>{help}</p>
       <div className="flex flex-wrap items-center gap-2">
         <input
           value={val}
@@ -304,6 +302,23 @@ function BenvenutoTab() {
         </button>
       </div>
     </Card>
+  )
+}
+
+function BenvenutoTab() {
+  return (
+    <div className="space-y-4">
+      <WelcomeVideoField
+        free={false}
+        title="Video di benvenuto — utenti completi"
+        help={`Link Vimeo mostrato in home agli studenti con accesso completo, per i primi ${WELCOME_WINDOW_DAYS} giorni dalla registrazione. Lascia vuoto per non mostrarlo.`}
+      />
+      <WelcomeVideoField
+        free={true}
+        title="Video di benvenuto — utenti gratuiti"
+        help={`Link Vimeo mostrato in home SOLO agli utenti gratuiti, per i primi ${WELCOME_WINDOW_DAYS} giorni dalla registrazione. Lascia vuoto per non mostrarlo.`}
+      />
+    </div>
   )
 }
 
