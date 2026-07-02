@@ -67,6 +67,28 @@ $$;
 ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS is_free boolean NOT NULL DEFAULT false;
 ALTER TABLE public.lessons ADD COLUMN IF NOT EXISTS is_free boolean NOT NULL DEFAULT false;
 
+-- Helper SECURITY DEFINER per i controlli INCROCIATI corso↔lezione. Indispensabili
+-- per NON avere ricorsione infinita nelle policy: se la policy di `courses`
+-- interrogasse `lessons` (e viceversa) direttamente, ciascuna riattiverebbe la RLS
+-- dell'altra all'infinito. Girando come definer, queste leggono le tabelle
+-- bypassando la RLS → il ciclo si spezza.
+CREATE OR REPLACE FUNCTION public.course_is_free(p_course_id uuid)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+  SELECT COALESCE((SELECT c.is_free FROM public.courses c WHERE c.id = p_course_id), false);
+$$;
+
+CREATE OR REPLACE FUNCTION public.course_has_free_lesson(p_course_id uuid)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.lessons l
+    WHERE l.course_id = p_course_id AND l.published AND l.is_free
+  );
+$$;
+
 -- Un utente gratuito vede un CORSO solo se è marcato gratis oppure contiene
 -- almeno una lezione gratuita (così il corso "contenitore" non sparisce quando
 -- si sbloccano singole lezioni). Gli altri utenti vedono tutto il pubblicato.
@@ -77,8 +99,7 @@ CREATE POLICY "courses read published or admin" ON public.courses
     OR (published = true AND (
       NOT public.is_free_user()
       OR is_free
-      OR EXISTS (SELECT 1 FROM public.lessons l
-                 WHERE l.course_id = courses.id AND l.published AND l.is_free)
+      OR public.course_has_free_lesson(id)
     ))
   );
 
@@ -90,27 +111,17 @@ CREATE POLICY "lessons read published or admin" ON public.lessons
     OR (published = true AND (
       NOT public.is_free_user()
       OR is_free
-      OR EXISTS (SELECT 1 FROM public.courses c
-                 WHERE c.id = lessons.course_id AND c.is_free)
+      OR public.course_is_free(course_id)
     ))
   );
 
--- Gli allegati seguono la visibilità della lezione (rispettano il gating free).
+-- Gli allegati seguono la visibilità della lezione: EXISTS su `lessons` è già
+-- filtrato dalla RLS di lessons (che usa i definer sopra → niente ricorsione).
 DROP POLICY IF EXISTS "attachments read via lesson" ON public.attachments;
 CREATE POLICY "attachments read via lesson" ON public.attachments
   FOR SELECT USING (
     public.is_admin()
-    OR EXISTS (
-      SELECT 1 FROM public.lessons l
-      WHERE l.id = attachments.lesson_id
-        AND l.published = true
-        AND (
-          NOT public.is_free_user()
-          OR l.is_free
-          OR EXISTS (SELECT 1 FROM public.courses c
-                     WHERE c.id = l.course_id AND c.is_free)
-        )
-    )
+    OR EXISTS (SELECT 1 FROM public.lessons l WHERE l.id = attachments.lesson_id)
   );
 
 -- ========== 4) Chat gratuita (canali) ==========
