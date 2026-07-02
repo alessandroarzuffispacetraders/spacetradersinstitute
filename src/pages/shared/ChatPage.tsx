@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import {
   Hash, Megaphone, ChevronDown, ChevronRight,
   Send, ArrowLeft, Search, Pin, Check, Users, MessageCircle, UsersRound, Loader2, X,
-  Edit2, Trash2, SmilePlus,
+  Edit2, Trash2, SmilePlus, ImagePlus,
 } from 'lucide-react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
@@ -16,6 +16,7 @@ import {
   useAuthorAvatars, dmChannelId, DmUser, DbMessage,
 } from '../../lib/chat'
 import { useChannels } from '../../lib/channels'
+import { uploadChatImage } from '../../lib/storage'
 import UserAvatar from '../../components/ui/UserAvatar'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -503,6 +504,13 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
   const [showReactFor, setShowReactFor] = useState<string | null>(null)
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [newMsgCount, setNewMsgCount] = useState(0)
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+
+  // Anteprima locale dell'immagine selezionata (object URL, revocata al cambio).
+  const imagePreview = useMemo(() => imageFile ? URL.createObjectURL(imageFile) : null, [imageFile])
+  useEffect(() => () => { if (imagePreview) URL.revokeObjectURL(imagePreview) }, [imagePreview])
 
   const { messages, loading, reactions, sendMessage: sendToDb, editMessage, deleteMessage, toggleReaction } = useChatMessages(channel.id, userId)
   const { typingUsers, notifyTyping, stopTyping } = useTypingIndicator(channel.id, userId, userName)
@@ -514,7 +522,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const editTextareaRef = useRef<HTMLTextAreaElement>(null)
 
-  useEffect(() => { setInput(''); setEditingId(null); setHoveredMsgId(null) }, [channel.id])
+  useEffect(() => { setInput(''); setEditingId(null); setHoveredMsgId(null); setImageFile(null) }, [channel.id])
 
   // Auto-scroll: only if already at bottom
   const prevMsgCount = useRef(0)
@@ -558,13 +566,30 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
 
   const canPost = channel.canPost.includes(userRole)
 
+  const pickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    if (!f.type.startsWith('image/')) return
+    if (f.size > 15 * 1024 * 1024) { alert('Immagine troppo grande (max 15 MB).'); return }
+    setImageFile(f)
+  }
+
   const sendMessage = async () => {
     const text = input.trim()
-    if (!text || !canPost) return
+    if ((!text && !imageFile) || !canPost || uploading) return
+    let imageUrl: string | null = null
+    if (imageFile) {
+      setUploading(true)
+      imageUrl = await uploadChatImage(userId, imageFile)
+      setUploading(false)
+      if (!imageUrl) { alert('Caricamento immagine non riuscito. Riprova.'); return }
+    }
     setInput('')
+    setImageFile(null)
     stopTyping()
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
-    await sendToDb(text, userName, userRole)
+    await sendToDb(text, userName, userRole, imageUrl)
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -869,6 +894,23 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                                   }
                                 }
                               >
+                                {msg.fullMsg.image_url && (
+                                  <a
+                                    href={msg.fullMsg.image_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="block"
+                                    style={{ marginBottom: msg.text ? 6 : 0 }}
+                                  >
+                                    <img
+                                      src={msg.fullMsg.image_url}
+                                      alt="immagine"
+                                      loading="lazy"
+                                      className="rounded-xl"
+                                      style={{ maxWidth: '100%', maxHeight: 300, display: 'block' }}
+                                    />
+                                  </a>
+                                )}
                                 {msg.text}
                                 {msg.editedAt && (
                                   <span className="text-[9px] ml-1.5 opacity-50">modificato</span>
@@ -949,27 +991,60 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
       {/* Input bar */}
       {canPost ? (
         <div
-          className="flex items-center gap-2 px-3 pt-3 flex-shrink-0"
+          className="flex flex-col gap-2 px-3 pt-3 flex-shrink-0"
           style={{ borderTop: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
         >
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={onInputChange}
-            onKeyDown={onKeyDown}
-            placeholder={isDirect && dmPartner ? `Scrivi a ${dmPartner.name}…` : `Scrivi in #${channel.name}…`}
-            rows={1}
-            className="flex-1 resize-none px-3.5 py-2.5 text-sm focus:outline-none no-scrollbar"
-            style={{ background: 'var(--ist-input-surface)', border: '1px solid var(--ist-input-border)', borderRadius: 16, color: 'var(--ist-text)', maxHeight: 120, lineHeight: 1.5 }}
-          />
-          <button
-            onClick={sendMessage}
-            disabled={!input.trim()}
-            className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)', boxShadow: input.trim() ? '0 4px 16px rgba(40,102,128,0.36)' : 'none' }}
-          >
-            <Send size={15} strokeWidth={2} className="text-white" />
-          </button>
+          {/* Anteprima immagine selezionata */}
+          {imagePreview && (
+            <div className="relative self-start">
+              <img
+                src={imagePreview}
+                alt="anteprima"
+                className="h-16 w-16 rounded-xl object-cover"
+                style={{ border: '1px solid var(--ist-w10)' }}
+              />
+              <button
+                onClick={() => setImageFile(null)}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
+                style={{ background: 'var(--ist-nav-bg)', border: '1px solid var(--ist-nav-border)', color: 'var(--ist-text)' }}
+                title="Rimuovi immagine"
+              >
+                <X size={11} strokeWidth={2.5} />
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={pickImage} />
+            <button
+              onClick={() => imageInputRef.current?.click()}
+              className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110"
+              style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+              title="Allega immagine"
+            >
+              <ImagePlus size={17} strokeWidth={2} />
+            </button>
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={onInputChange}
+              onKeyDown={onKeyDown}
+              placeholder={isDirect && dmPartner ? `Scrivi a ${dmPartner.name}…` : `Scrivi in #${channel.name}…`}
+              rows={1}
+              className="flex-1 resize-none px-3.5 py-2.5 text-sm focus:outline-none no-scrollbar"
+              style={{ background: 'var(--ist-input-surface)', border: '1px solid var(--ist-input-border)', borderRadius: 16, color: 'var(--ist-text)', maxHeight: 120, lineHeight: 1.5 }}
+            />
+            <button
+              onClick={sendMessage}
+              disabled={(!input.trim() && !imageFile) || uploading}
+              className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)', boxShadow: (input.trim() || imageFile) ? '0 4px 16px rgba(40,102,128,0.36)' : 'none' }}
+            >
+              {uploading
+                ? <Loader2 size={15} strokeWidth={2} className="text-white animate-spin" />
+                : <Send size={15} strokeWidth={2} className="text-white" />}
+            </button>
+          </div>
         </div>
       ) : (
         <div

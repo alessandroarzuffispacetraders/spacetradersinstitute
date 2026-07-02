@@ -67,7 +67,7 @@ const AVATAR_BUCKET = 'avatars'
 const AVATAR_MAX = 256 // lato max in px: l'avatar si vede al massimo ~80px
 
 // Ridimensiona e comprime lato client → file piccolo (no immagini enormi nel DB/rete).
-async function resizeToBlob(file: File, max: number): Promise<Blob> {
+async function resizeToBlob(file: File, max: number, quality = 0.85): Promise<Blob> {
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
   const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height))
   const w = Math.max(1, Math.round(bitmap.width * scale))
@@ -80,7 +80,7 @@ async function resizeToBlob(file: File, max: number): Promise<Blob> {
   ctx.drawImage(bitmap, 0, 0, w, h)
   bitmap.close?.()
   return await new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob(b => (b ? resolve(b) : reject(new Error('encoding fallito'))), 'image/jpeg', 0.85)
+    canvas.toBlob(b => (b ? resolve(b) : reject(new Error('encoding fallito'))), 'image/jpeg', quality)
   )
 }
 
@@ -104,4 +104,26 @@ export async function uploadAvatar(userId: string, file: File): Promise<string |
 
 export async function deleteAvatar(userId: string): Promise<void> {
   await supabase.storage.from(AVATAR_BUCKET).remove([`${userId}/avatar.jpg`])
+}
+
+// ── Immagini in chat (bucket pubblico 'chat-images') ──────────────────────────
+const CHAT_IMAGE_BUCKET = 'chat-images'
+const CHAT_IMAGE_MAX = 1280 // lato max in px
+const CHAT_IMAGE_QUALITY = 0.7 // qualità ridotta → file leggeri sui server
+
+// Ridimensiona/comprime l'immagine e la carica; ritorna l'URL pubblico.
+export async function uploadChatImage(userId: string, file: File): Promise<string | null> {
+  try {
+    const blob = await resizeToBlob(file, CHAT_IMAGE_MAX, CHAT_IMAGE_QUALITY)
+    const path = `${userId}/${crypto.randomUUID()}.jpg`
+    const { error } = await supabase.storage.from(CHAT_IMAGE_BUCKET).upload(path, blob, {
+      contentType: 'image/jpeg',
+      upsert: false,
+    })
+    if (error) return null
+    const { data } = supabase.storage.from(CHAT_IMAGE_BUCKET).getPublicUrl(path)
+    return data.publicUrl
+  } catch {
+    return null
+  }
 }

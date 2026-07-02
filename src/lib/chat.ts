@@ -10,6 +10,7 @@ export interface DbMessage {
   author_name: string
   author_role: UserRole
   content: string
+  image_url?: string | null
   created_at: string
   edited_at?: string | null
   deleted_at?: string | null
@@ -152,10 +153,10 @@ export function useChatMessages(channelId: string | null, userId: string) {
     }
   }, [channelId, userId])
 
-  const sendMessage = async (content: string, authorName: string, authorRole: UserRole) => {
-    if (!channelId || !content.trim() || !userId) return
-    const tempId = `temp_${Date.now()}`
+  const sendMessage = async (content: string, authorName: string, authorRole: UserRole, imageUrl?: string | null) => {
     const trimmed = content.trim()
+    if (!channelId || !userId || (!trimmed && !imageUrl)) return
+    const tempId = `temp_${Date.now()}`
     const optimistic: DbMessage = {
       id: tempId,
       channel_id: channelId,
@@ -163,6 +164,7 @@ export function useChatMessages(channelId: string | null, userId: string) {
       author_name: authorName,
       author_role: authorRole,
       content: trimmed,
+      image_url: imageUrl ?? null,
       created_at: new Date().toISOString(),
     }
     setMessages(prev => [...prev, optimistic])
@@ -173,12 +175,13 @@ export function useChatMessages(channelId: string | null, userId: string) {
       author_name: authorName,
       author_role: authorRole,
       content: trimmed,
+      image_url: imageUrl ?? null,
     })
     if (error) {
       setMessages(prev => prev.filter(m => m.id !== tempId))
       return
     }
-    triggerPushNotifications({ channel_id: channelId, user_id: userId, author_name: authorName, content: trimmed })
+    triggerPushNotifications({ channel_id: channelId, user_id: userId, author_name: authorName, content: trimmed || '📷 Foto' })
   }
 
   const editMessage = useCallback(async (id: string, content: string) => {
