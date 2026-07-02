@@ -12,7 +12,7 @@ function urlBase64ToUint8Array(base64: string): ArrayBuffer {
   return arr.buffer
 }
 
-export async function subscribeToPush(userId: string): Promise<boolean> {
+export async function subscribeToPush(): Promise<boolean> {
   try {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false
 
@@ -29,9 +29,13 @@ export async function subscribeToPush(userId: string): Promise<boolean> {
 
     const { endpoint, keys } = sub.toJSON() as { endpoint: string; keys: Record<string, string> }
 
-    const { error } = await supabase
-      .from('push_subscriptions')
-      .upsert({ user_id: userId, endpoint, keys }, { onConflict: 'user_id,endpoint' })
+    // L'endpoint identifica il browser, non l'utente: la RPC lo "rivendica" per
+    // l'utente corrente rimuovendo registrazioni dello stesso endpoint fatte da
+    // altri account (altrimenti il mittente riceverebbe le proprie notifiche).
+    const { error } = await supabase.rpc('register_push_subscription', {
+      p_endpoint: endpoint,
+      p_keys: keys,
+    })
 
     return !error
   } catch (err) {

@@ -625,7 +625,7 @@ function NotificationsSection({ onBack, onClose }: { onBack: () => void; onClose
     if (result === 'granted' && user?.id) {
       localStorage.setItem('ist_notif_enabled', 'true')
       setLocalEnabled(true)
-      await subscribeToPush(user.id)
+      await subscribeToPush()
     }
   }
 
@@ -636,7 +636,7 @@ function NotificationsSection({ onBack, onClose }: { onBack: () => void; onClose
     if (!next && user?.id) {
       await unsubscribeFromPush(user.id)
     } else if (next && user?.id) {
-      await subscribeToPush(user.id)
+      await subscribeToPush()
     }
   }
 

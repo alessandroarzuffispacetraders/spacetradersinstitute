@@ -41,7 +41,7 @@ export default function AppPrompts() {
       Notification.permission === 'granted' &&
       'serviceWorker' in navigator
     ) {
-      subscribeToPush(user.id)
+      subscribeToPush()
     }
   }, [user?.id])
 
@@ -116,7 +116,7 @@ export default function AppPrompts() {
   const handleEnableNotifications = async () => {
     const permission = await Notification.requestPermission()
     if (permission === 'granted' && user?.id) {
-      await subscribeToPush(user.id)
+      await subscribeToPush()
     }
     dismissNotification()
   }
