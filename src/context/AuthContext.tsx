@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import { User } from '../types'
+import { recordAccess } from '../lib/accessLog'
 
 type ProfileUpdate = Partial<Pick<User, 'name' | 'avatarPreset' | 'avatarUrl'>>
 
@@ -80,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) return { error: error.message }
     setJustLoggedIn(true)
+    recordAccess() // registra IP/geo dell'accesso (fire & forget)
     return { error: null }
   }
 

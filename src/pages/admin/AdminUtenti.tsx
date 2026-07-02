@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import PageHeader from '../../components/ui/PageHeader'
-import { ChevronDown, Radio, Upload, Shield, X, Loader2, Mail, KeyRound, Trash2 } from 'lucide-react'
+import { ChevronDown, Radio, Upload, Shield, X, Loader2, Mail, KeyRound, Trash2, Globe, MapPin } from 'lucide-react'
 import { UserPermissions, UserRole, StudentStatus, StudentPhase } from '../../types'
 import { supabase } from '../../lib/supabase'
 import { updateUserAuth, deleteUserAccount } from '../../lib/adminUsers'
+import { useAccessSummaries, fetchUserAccessLogs, AccessSummary, AccessLog } from '../../lib/accessLog'
 
 const STAFF_ROLES: UserRole[] = ['coach', 'mental_coach', 'admin']
 
@@ -381,24 +382,80 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave, onDelete }: 
   )
 }
 
+// ── Access helpers ────────────────────────────────────────────────────────────
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('it-IT', {
+    day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit',
+  })
+}
+
+function deviceLabel(ua: string | null): string {
+  if (!ua) return 'Dispositivo sconosciuto'
+  let os = ''
+  if (/iPhone|iPad|iPod/.test(ua)) os = 'iOS'
+  else if (/Android/.test(ua)) os = 'Android'
+  else if (/Mac OS X|Macintosh/.test(ua)) os = 'macOS'
+  else if (/Windows/.test(ua)) os = 'Windows'
+  else if (/Linux/.test(ua)) os = 'Linux'
+  let br = ''
+  if (/Edg\//.test(ua)) br = 'Edge'
+  else if (/Chrome\//.test(ua)) br = 'Chrome'
+  else if (/Firefox\//.test(ua)) br = 'Firefox'
+  else if (/Safari\//.test(ua)) br = 'Safari'
+  const parts = [os, br].filter(Boolean)
+  return parts.length ? parts.join(' · ') : 'Dispositivo sconosciuto'
+}
+
+// Badge "accessi da luoghi diversi" (possibile condivisione account).
+function AccessBadge({ summary }: { summary?: AccessSummary }) {
+  if (!summary || !summary.suspicious) return null
+  const danger = summary.distinctCountries >= 2
+  const style = danger
+    ? { color: '#FF6B7A', background: 'rgba(255,107,122,0.12)', border: '1px solid rgba(255,107,122,0.24)' }
+    : { color: '#F6C85F', background: 'rgba(246,200,95,0.12)', border: '1px solid rgba(246,200,95,0.24)' }
+  const text = danger ? `${summary.distinctCountries} paesi` : `${summary.distinctCities} città`
+  return (
+    <span
+      className="text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 flex-shrink-0"
+      style={style}
+      title={`Accessi da luoghi diversi: ${summary.places.join(' · ')}`}
+    >
+      <Globe size={10} strokeWidth={2.5} />
+      {text}
+    </span>
+  )
+}
+
 // ── User Row ────────────────────────────────────────────────────────────────
 
-function UserRow({ user, onEdit, onUpdatePerms, onActivate }: {
+function UserRow({ user, summary, onEdit, onUpdatePerms, onActivate }: {
   user: Profile
+  summary?: AccessSummary
   onEdit: (u: Profile) => void
   onUpdatePerms: (id: string, perms: UserPermissions) => void
   onActivate: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [logs, setLogs] = useState<AccessLog[] | null>(null)
+  const [logsLoading, setLogsLoading] = useState(false)
   const hasPerms = user.role === 'coach' || user.role === 'mental_coach'
     || (user.roles ?? []).some(r => r === 'coach' || r === 'mental_coach')
+
+  const toggle = () => {
+    const next = !expanded
+    setExpanded(next)
+    if (next && logs === null) {
+      setLogsLoading(true)
+      fetchUserAccessLogs(user.id).then(l => { setLogs(l); setLogsLoading(false) })
+    }
+  }
 
   return (
     <div className="rounded-3xl overflow-hidden" style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: 'var(--ist-card-shadow)' }}>
       <div
-        className="flex items-center gap-3 px-4 py-4"
-        onClick={() => hasPerms && setExpanded(e => !e)}
-        style={{ cursor: hasPerms ? 'pointer' : 'default' }}
+        className="flex items-center gap-3 px-4 py-4 cursor-pointer"
+        onClick={toggle}
       >
         <div
           className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
@@ -425,6 +482,8 @@ function UserRow({ user, onEdit, onUpdatePerms, onActivate }: {
           </span>
         )}
 
+        <AccessBadge summary={summary} />
+
         <StatusBadge status={user.status} />
 
         {user.role === 'student' && user.status !== 'active' && (
@@ -446,36 +505,77 @@ function UserRow({ user, onEdit, onUpdatePerms, onActivate }: {
           Modifica
         </button>
 
-        {hasPerms && (
-          <ChevronDown
-            size={14}
-            strokeWidth={2}
-            style={{ color: 'var(--ist-text-dim)', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}
-          />
-        )}
+        <ChevronDown
+          size={14}
+          strokeWidth={2}
+          style={{ color: 'var(--ist-text-dim)', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}
+        />
       </div>
 
-      {expanded && hasPerms && (
-        <div className="px-4 pb-4">
-          <div className="p-4 rounded-2xl space-y-3" style={{ background: 'var(--ist-w5)', border: '1px solid var(--ist-border)' }}>
-            <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2" style={{ color: 'var(--ist-text-dim)' }}>
-              <Shield size={10} strokeWidth={2.5} /> Permessi delegati
+      {expanded && (
+        <div className="px-4 pb-4 space-y-3">
+          {/* Storico accessi */}
+          <div className="p-4 rounded-2xl" style={{ background: 'var(--ist-w5)', border: '1px solid var(--ist-border)' }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3 flex-wrap" style={{ color: 'var(--ist-text-dim)' }}>
+              <Globe size={10} strokeWidth={2.5} /> Accessi recenti
+              {summary && (
+                <span className="font-medium normal-case tracking-normal" style={{ color: 'var(--ist-text-dim)' }}>
+                  · {summary.logins} accessi · {summary.distinctIps} IP · {summary.distinctCities} città
+                </span>
+              )}
             </p>
-            <PermToggle
-              icon={<Radio size={14} strokeWidth={2} />}
-              label="Può andare live"
-              description="Abilita questo utente a condurre sessioni live"
-              checked={user.permissions?.canGoLive ?? false}
-              onChange={v => onUpdatePerms(user.id, { ...user.permissions, canGoLive: v })}
-            />
-            <PermToggle
-              icon={<Upload size={14} strokeWidth={2} />}
-              label="Può caricare contenuti"
-              description="Abilita caricamento video e materiali sulla piattaforma"
-              checked={user.permissions?.canUploadContent ?? false}
-              onChange={v => onUpdatePerms(user.id, { ...user.permissions, canUploadContent: v })}
-            />
+            {logsLoading ? (
+              <div className="flex justify-center py-4"><Loader2 size={16} className="animate-spin" style={{ color: 'var(--ist-text-dim)' }} /></div>
+            ) : !logs || logs.length === 0 ? (
+              <p className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>Nessun accesso registrato per ora.</p>
+            ) : (
+              <div>
+                {logs.map((l, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start justify-between gap-3 py-2"
+                    style={i > 0 ? { borderTop: '1px solid var(--ist-w6)' } : {}}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium flex items-center gap-1.5" style={{ color: 'var(--ist-text)' }}>
+                        <MapPin size={11} strokeWidth={2} style={{ color: 'var(--ist-text-dim)', flexShrink: 0 }} />
+                        {l.city ? `${l.city}${l.country ? ', ' + l.country : ''}` : 'Posizione sconosciuta'}
+                      </p>
+                      <p className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--ist-text-dim)' }}>
+                        {l.ip ?? '—'} · {deviceLabel(l.userAgent)}
+                      </p>
+                    </div>
+                    <span className="text-[10px] flex-shrink-0 whitespace-nowrap" style={{ color: 'var(--ist-text-dim)' }}>
+                      {formatDateTime(l.createdAt)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+
+          {/* Permessi delegati (coach / mental coach) */}
+          {hasPerms && (
+            <div className="p-4 rounded-2xl space-y-3" style={{ background: 'var(--ist-w5)', border: '1px solid var(--ist-border)' }}>
+              <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2" style={{ color: 'var(--ist-text-dim)' }}>
+                <Shield size={10} strokeWidth={2.5} /> Permessi delegati
+              </p>
+              <PermToggle
+                icon={<Radio size={14} strokeWidth={2} />}
+                label="Può andare live"
+                description="Abilita questo utente a condurre sessioni live"
+                checked={user.permissions?.canGoLive ?? false}
+                onChange={v => onUpdatePerms(user.id, { ...user.permissions, canGoLive: v })}
+              />
+              <PermToggle
+                icon={<Upload size={14} strokeWidth={2} />}
+                label="Può caricare contenuti"
+                description="Abilita caricamento video e materiali sulla piattaforma"
+                checked={user.permissions?.canUploadContent ?? false}
+                onChange={v => onUpdatePerms(user.id, { ...user.permissions, canUploadContent: v })}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -490,6 +590,7 @@ export default function AdminUtenti() {
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [editingUser, setEditingUser] = useState<Profile | null>(null)
+  const { summaries } = useAccessSummaries()
 
   useEffect(() => {
     supabase
@@ -582,6 +683,7 @@ export default function AdminUtenti() {
             <UserRow
               key={user.id}
               user={user}
+              summary={summaries[user.id]}
               onEdit={setEditingUser}
               onUpdatePerms={handleUpdatePerms}
               onActivate={handleActivate}
