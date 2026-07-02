@@ -95,16 +95,23 @@ export function getManageHome(roles: UserRole[]): string {
   return top ? MANAGE_HOME[top] : USE_HOME
 }
 
-// Voci gestione = Dashboard + unione deduplicata (per path) degli strumenti dei ruoli
+// Voci gestione = Dashboard + unione deduplicata (per path) degli strumenti dei ruoli.
+// Le "Segnalazioni" esistono per ogni ruolo (path diversi: /admin, /coach,
+// /mental-coach) ma sono lo stesso concetto → ne teniamo UNA sola: la prima
+// per priorità (admin > coach > mental), che per l'admin è la vista completa.
 export function getManageNav(roles: UserRole[]): NavItem[] {
   const items: NavItem[] = [
     { label: 'Dashboard', shortLabel: 'Home', path: getManageHome(roles), icon: 'LayoutDashboard' },
   ]
   const seen = new Set(items.map(i => i.path))
+  let hasSegnalazioni = false
   for (const role of MANAGE_PRIORITY) {
     if (!roles.includes(role)) continue
     for (const item of MANAGE_BY_ROLE[role]) {
       if (seen.has(item.path)) continue
+      const isSegnalazioni = item.path.endsWith('/segnalazioni')
+      if (isSegnalazioni && hasSegnalazioni) continue // una sola voce Segnalazioni
+      if (isSegnalazioni) hasSegnalazioni = true
       seen.add(item.path)
       items.push(item)
     }
