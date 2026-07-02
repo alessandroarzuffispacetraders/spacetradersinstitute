@@ -1,16 +1,16 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import {
   Hash, Megaphone, ChevronDown, ChevronRight,
-  Send, ArrowLeft, Search, Pin, Check, Users, MessageCircle, UsersRound, Loader2, X,
-  Edit2, Trash2, SmilePlus, ImagePlus,
+  Send, ArrowLeft, Search, Pin, MessageCircle, UsersRound, Loader2, X,
+  Edit2, Trash2, SmilePlus, ImagePlus, Plus,
 } from 'lucide-react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
 import {
-  BACHECA_POSTS,
-  Channel, BachecaPost, MemberRole,
+  Channel, MemberRole,
 } from '../../data/chatData'
+import { useBachecaPosts, BachecaPost, NewBachecaPost } from '../../lib/bacheca'
 import {
   useChatMessages, useDmUsers, useUnreadCounts, useTypingIndicator,
   useAuthorAvatars, dmChannelId, DmUser, DbMessage,
@@ -1062,19 +1062,22 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
 
 function BachecaPostCard({
   post,
-  onReact,
-  onRead,
+  canManage,
+  onDelete,
+  onTogglePin,
 }: {
   post: BachecaPost
-  onReact: (postId: string, emoji: string) => void
-  onRead: (postId: string) => void
+  canManage: boolean
+  onDelete: () => void
+  onTogglePin: () => void
 }) {
+  const [confirmDel, setConfirmDel] = useState(false)
   return (
     <div
       className="rounded-3xl p-4 flex flex-col gap-3"
       style={{
         background: 'var(--ist-card-bg)',
-        border: '1px solid var(--ist-border)',
+        border: post.pinned ? '1px solid rgba(124,187,208,0.35)' : '1px solid var(--ist-border)',
         boxShadow: 'var(--ist-card-shadow)',
       }}
     >
@@ -1101,7 +1104,7 @@ function BachecaPostCard({
           className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0"
           style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)', color: 'white' }}
         >
-          {post.author.charAt(0)}
+          {post.author.charAt(0).toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -1116,7 +1119,7 @@ function BachecaPostCard({
             </span>
           </div>
           <span className="text-[10px]" style={{ color: 'var(--ist-text-dim)' }}>
-            {formatDate(post.timestamp)} alle {formatTime(post.timestamp)}
+            {formatDate(post.createdAt)} alle {formatTime(post.createdAt)}
           </span>
         </div>
       </div>
@@ -1131,92 +1134,113 @@ function BachecaPostCard({
         {post.content}
       </p>
 
-      {post.attachmentType === 'event' && post.attachmentData && (
-        <div
-          className="rounded-2xl p-3 flex items-start gap-3"
-          style={{ background: 'rgba(124,187,208,0.10)', border: '1px solid rgba(124,187,208,0.20)' }}
-        >
-          <div
-            className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{ background: 'rgba(124,187,208,0.20)' }}
-          >
-            <span className="text-sm">📅</span>
-          </div>
-          <div>
-            <p className="text-xs font-semibold" style={{ color: 'var(--ist-accent-text)' }}>
-              {post.attachmentData.label}
-            </p>
-            {post.attachmentData.date && (
-              <p className="text-[11px] mt-0.5" style={{ color: 'var(--ist-text-muted)' }}>
-                {post.attachmentData.date}
-              </p>
-            )}
-            {post.attachmentData.url && (
-              <a
-                href={post.attachmentData.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[11px] mt-1 inline-block underline"
-                style={{ color: 'var(--ist-accent-text)' }}
-              >
-                Unisciti →
-              </a>
-            )}
-          </div>
-        </div>
-      )}
-      {post.attachmentType === 'link' && post.attachmentData && (
-        <div
-          className="rounded-2xl p-3 flex items-center gap-3"
-          style={{ background: 'rgba(124,187,208,0.10)', border: '1px solid rgba(124,187,208,0.20)' }}
-        >
-          <span className="text-base">🔗</span>
-          <a
-            href={post.attachmentData.url}
-            className="text-xs font-semibold underline"
-            style={{ color: 'var(--ist-accent-text)' }}
-          >
-            {post.attachmentData.label}
-          </a>
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-1.5">
-        {post.reactions.map(r => (
+      {canManage && (
+        <div className="flex items-center gap-2 pt-2 flex-wrap" style={{ borderTop: '1px solid var(--ist-w8)' }}>
           <button
-            key={r.emoji}
-            onClick={() => onReact(post.id, r.emoji)}
-            className="flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-all active:scale-95"
-            style={r.reacted
-              ? { background: 'rgba(124,187,208,0.20)', border: '1px solid rgba(124,187,208,0.40)' }
-              : { background: 'var(--ist-w6)', border: '1px solid var(--ist-w9)' }
+            onClick={onTogglePin}
+            className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full font-semibold transition-all"
+            style={post.pinned
+              ? { background: 'rgba(124,187,208,0.18)', color: 'var(--ist-accent-text)', border: '1px solid rgba(124,187,208,0.30)' }
+              : { background: 'var(--ist-w6)', color: 'var(--ist-text-muted)', border: '1px solid var(--ist-w9)' }
             }
           >
-            <span>{r.emoji}</span>
-            <span style={{ color: r.reacted ? 'var(--ist-accent-text)' : 'var(--ist-text-muted)' }}>{r.count}</span>
+            <Pin size={11} strokeWidth={2.5} />
+            {post.pinned ? 'Togli evidenza' : 'Metti in evidenza'}
           </button>
-        ))}
-      </div>
+          {confirmDel ? (
+            <span className="flex items-center gap-1.5">
+              <span className="text-[11px]" style={{ color: 'var(--ist-text-muted)' }}>Eliminare?</span>
+              <button onClick={onDelete} className="px-2.5 py-1 rounded-full text-[11px] font-semibold" style={{ background: 'rgba(255,107,122,0.15)', color: '#FF6B7A' }}>Sì</button>
+              <button onClick={() => setConfirmDel(false)} className="px-2.5 py-1 rounded-full text-[11px] font-semibold" style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}>No</button>
+            </span>
+          ) : (
+            <button
+              onClick={() => setConfirmDel(true)}
+              className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full font-semibold transition-all"
+              style={{ background: 'rgba(255,107,122,0.08)', color: '#FF6B7A', border: '1px solid rgba(255,107,122,0.15)' }}
+            >
+              <Trash2 size={11} strokeWidth={2} />
+              Elimina
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
+// ─── bacheca compose modal ────────────────────────────────────────────────────
+
+function BachecaComposeModal({
+  channelName,
+  onClose,
+  onPublish,
+}: {
+  channelName: string
+  onClose: () => void
+  onPublish: (input: NewBachecaPost) => Promise<boolean>
+}) {
+  const [title, setTitle] = useState('')
+  const [content, setContent] = useState('')
+  const [tag, setTag] = useState('')
+  const [pinned, setPinned] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const inputStyle: React.CSSProperties = {
+    background: 'var(--ist-w6)', border: '1px solid var(--ist-w10)', color: 'var(--ist-text)',
+  }
+
+  const publish = async () => {
+    if (!content.trim() || saving) return
+    setSaving(true)
+    const ok = await onPublish({ title, content, tag, pinned })
+    setSaving(false)
+    if (ok) onClose()
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
+      onClick={onClose}
+    >
       <div
-        className="flex items-center justify-between pt-2"
-        style={{ borderTop: '1px solid var(--ist-w8)' }}
+        onClick={e => e.stopPropagation()}
+        className="w-full max-w-md rounded-3xl overflow-hidden flex flex-col"
+        style={{ background: 'var(--ist-nav-bg)', border: '1px solid var(--ist-nav-border)', boxShadow: '0 24px 80px rgba(0,0,0,0.5)', maxHeight: '90vh' }}
       >
-        <button
-          onClick={() => onRead(post.id)}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-semibold transition-all active:scale-95"
-          style={post.readByMe
-            ? { background: 'rgba(70,211,154,0.15)', color: '#46D39A', border: '1px solid rgba(70,211,154,0.25)' }
-            : { background: 'var(--ist-w6)', color: 'var(--ist-text-muted)', border: '1px solid var(--ist-w9)' }
-          }
-        >
-          <Check size={12} strokeWidth={2.5} />
-          {post.readByMe ? 'Letto' : 'Segna come letto'}
-        </button>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--ist-w8)' }}>
+          <span className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>Pubblica in #{channelName}</span>
+          <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}>
+            <X size={14} strokeWidth={2.5} />
+          </button>
+        </div>
 
-        <div className="flex items-center gap-1" style={{ color: 'var(--ist-text-dim)' }}>
-          <Users size={11} strokeWidth={2} />
-          <span className="text-[11px]">{post.readCount}/{post.totalReaders} lettori</span>
+        <div className="px-5 py-4 space-y-3 overflow-y-auto no-scrollbar">
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>Titolo (opzionale)</label>
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Es. Sessione live di giovedì" className="w-full px-3.5 py-2.5 text-sm rounded-2xl focus:outline-none" style={inputStyle} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>Messaggio *</label>
+            <textarea value={content} onChange={e => setContent(e.target.value)} rows={5} placeholder="Scrivi l'annuncio…" className="w-full px-3.5 py-2.5 text-sm rounded-2xl focus:outline-none resize-none no-scrollbar" style={{ ...inputStyle, lineHeight: 1.5 }} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>Etichetta (opzionale)</label>
+            <input value={tag} onChange={e => setTag(e.target.value)} placeholder="Es. Evento, Importante…" className="w-full px-3.5 py-2.5 text-sm rounded-2xl focus:outline-none" style={inputStyle} />
+          </div>
+          <label className="flex items-center gap-2.5 px-1 cursor-pointer">
+            <input type="checkbox" checked={pinned} onChange={e => setPinned(e.target.checked)} className="accent-ist-400 w-4 h-4 rounded" />
+            <span className="text-xs" style={{ color: 'var(--ist-text-muted)' }}>Metti in evidenza (in cima alla bacheca)</span>
+          </label>
+        </div>
+
+        <div className="flex gap-3 px-5 py-4" style={{ borderTop: '1px solid var(--ist-w8)' }}>
+          <button onClick={onClose} className="flex-1 py-2.5 text-sm font-semibold rounded-2xl" style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}>Annulla</button>
+          <button onClick={publish} disabled={!content.trim() || saving} className="flex-1 py-2.5 text-sm font-semibold rounded-2xl text-white flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)', boxShadow: '0 4px 14px rgba(40,102,128,0.30)' }}>
+            {saving && <Loader2 size={15} className="animate-spin" />}
+            Pubblica
+          </button>
         </div>
       </div>
     </div>
@@ -1228,56 +1252,22 @@ function BachecaPostCard({
 function BachecaArea({
   channel,
   userRole,
+  userId,
+  userName,
   onBack,
   isMobile,
 }: {
   channel: Channel
   userRole: MemberRole
+  userId: string
+  userName: string
   onBack?: () => void
   isMobile?: boolean
 }) {
-  const [posts, setPosts] = useState<BachecaPost[]>(BACHECA_POSTS[channel.id] ?? [])
-
-  useEffect(() => {
-    setPosts(BACHECA_POSTS[channel.id] ?? [])
-  }, [channel.id])
-
-  const handleReact = (postId: string, emoji: string) => {
-    setPosts(prev =>
-      prev.map(p =>
-        p.id !== postId
-          ? p
-          : {
-            ...p,
-            reactions: p.reactions.map(r =>
-              r.emoji !== emoji
-                ? r
-                : { ...r, count: r.reacted ? r.count - 1 : r.count + 1, reacted: !r.reacted }
-            ),
-          }
-      )
-    )
-  }
-
-  const handleRead = (postId: string) => {
-    setPosts(prev =>
-      prev.map(p =>
-        p.id !== postId
-          ? p
-          : {
-            ...p,
-            readByMe: !p.readByMe,
-            readCount: p.readByMe ? p.readCount - 1 : p.readCount + 1,
-          }
-      )
-    )
-  }
-
-  const sorted = [...posts].sort((a, b) => {
-    if (a.pinned && !b.pinned) return -1
-    if (!a.pinned && b.pinned) return 1
-    return 0
-  })
+  const { posts, loading, createPost, deletePost, togglePin } = useBachecaPosts(channel.id, userId)
+  const [composing, setComposing] = useState(false)
+  const canPost = channel.canPost.includes(userRole)
+  const isAdmin = userRole === 'admin'
 
   return (
     <div className="flex flex-col h-full">
@@ -1322,39 +1312,53 @@ function BachecaArea({
             </p>
           )}
         </div>
-        {channel.canPost.includes(userRole) && (
+        {canPost && (
           <button
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all hover:-translate-y-0.5 flex-shrink-0"
+            onClick={() => setComposing(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all hover:-translate-y-0.5 flex-shrink-0 text-white"
             style={{
               background: 'linear-gradient(135deg, #5A9AB1, #286680)',
-              color: 'white',
               boxShadow: '0 4px 14px rgba(40,102,128,0.30)',
             }}
           >
-            + Pubblica
+            <Plus size={14} strokeWidth={2.5} />
+            Pubblica
           </button>
         )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 no-scrollbar">
-        {sorted.length === 0 ? (
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <Loader2 size={20} className="animate-spin" style={{ color: 'var(--ist-text-dim)' }} />
+          </div>
+        ) : posts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <Megaphone size={32} style={{ color: 'var(--ist-text-dim)' }} />
             <p className="text-sm" style={{ color: 'var(--ist-text-dim)' }}>
-              Nessun post ancora
+              {canPost ? 'Nessun post ancora. Pubblica il primo!' : 'Nessun post ancora'}
             </p>
           </div>
         ) : (
-          sorted.map(post => (
+          posts.map(post => (
             <BachecaPostCard
               key={post.id}
               post={post}
-              onReact={handleReact}
-              onRead={handleRead}
+              canManage={isAdmin || post.authorId === userId}
+              onDelete={() => deletePost(post.id)}
+              onTogglePin={() => togglePin(post.id, !post.pinned)}
             />
           ))
         )}
       </div>
+
+      {composing && (
+        <BachecaComposeModal
+          channelName={channel.name}
+          onClose={() => setComposing(false)}
+          onPublish={(input) => createPost(input, userName, userRole)}
+        />
+      )}
     </div>
   )
 }
@@ -1513,6 +1517,8 @@ export default function ChatPage() {
           <BachecaArea
             channel={activeGroupChannel}
             userRole={userRole}
+            userId={userId}
+            userName={userName}
             onBack={goBack}
             isMobile={mobileView === 'chat'}
           />
