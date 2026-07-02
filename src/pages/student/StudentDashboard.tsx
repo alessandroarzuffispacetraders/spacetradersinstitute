@@ -12,6 +12,8 @@ import { UserRole } from '../../types'
 import LiveCalendar from '../../components/ui/LiveCalendar'
 import OnboardingCard from '../../components/onboarding/OnboardingCard'
 import WelcomeVideoHero from '../../components/onboarding/WelcomeVideoHero'
+import UserAvatar from '../../components/ui/UserAvatar'
+import { useUI } from '../../context/UIContext'
 
 // ─── data ─────────────────────────────────────────────────────────────────────
 
@@ -88,6 +90,7 @@ function PremiumCard({ children, className = '' }: { children: React.ReactNode; 
 
 export default function StudentDashboard() {
   const { user } = useAuth()
+  const { setProfileOpen } = useUI()
   const navigate = useNavigate()
   const userId = user?.id ?? ''
   const userRole = (user?.role ?? 'student') as UserRole
@@ -129,7 +132,6 @@ export default function StudentDashboard() {
   }, [user])
 
   const firstName = user?.name?.split(' ')[0] ?? 'Trader'
-  const initial   = user?.name?.charAt(0) ?? 'T'
 
   // Progresso reale dal percorso
   const allSteps  = phases.flatMap(p => p.steps)
@@ -164,23 +166,30 @@ export default function StudentDashboard() {
         {user?.role === 'student' && <WelcomeVideoHero registeredAt={meta.createdAt} />}
         <OnboardingCard />
 
-        {/* ── Header ── */}
-        <header className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm mb-1" style={{ color: 'var(--ist-text-muted)' }}>
-              {programDay ? `Giorno ${programDay} del programma` : 'Il tuo programma'}
-            </p>
-            <h1 className="text-3xl lg:text-4xl font-extrabold leading-none" style={{ color: 'var(--ist-text)' }}>
-              Ciao, {firstName} 👋
-            </h1>
+        {/* ── Header (sticky su mobile, con sfumatura sotto durante lo scroll) ── */}
+        <div className="home-greeting-bar -mx-5 lg:mx-0">
+          <div className="home-greeting-bar-bg px-5 lg:px-0 pt-1 pb-3 lg:pt-0 lg:pb-0">
+            <header className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm mb-1" style={{ color: 'var(--ist-text-muted)' }}>
+                  {programDay ? `Giorno ${programDay} del programma` : 'Il tuo programma'}
+                </p>
+                <h1 className="text-3xl lg:text-4xl font-extrabold leading-none" style={{ color: 'var(--ist-text)' }}>
+                  Ciao, {firstName} 👋
+                </h1>
+              </div>
+              <button
+                onClick={() => setProfileOpen(true)}
+                className="flex-shrink-0 rounded-full transition-transform active:scale-95"
+                title="Profilo"
+                aria-label="Apri profilo"
+              >
+                <UserAvatar user={{ name: user?.name ?? 'Trader', avatarPreset: user?.avatarPreset, avatarUrl: user?.avatarUrl }} size={48} />
+              </button>
+            </header>
           </div>
-          <div
-            className="w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)', color: 'white' }}
-          >
-            {initial}
-          </div>
-        </header>
+          <div className="home-greeting-fade" />
+        </div>
 
         {/* ── HERO: progresso percorso ── */}
         <PremiumCard className="p-7 lg:p-8">
