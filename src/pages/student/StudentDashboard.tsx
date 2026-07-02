@@ -168,7 +168,7 @@ export default function StudentDashboard() {
 
         {/* ── Header (sticky su mobile, con sfumatura sotto durante lo scroll) ── */}
         <div className="home-greeting-bar -mx-5 lg:mx-0">
-          <div className="home-greeting-bar-bg px-5 lg:px-0 pt-1 pb-3 lg:pt-0 lg:pb-0">
+          <div className="home-greeting-bar-bg">
             <header className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm mb-1" style={{ color: 'var(--ist-text-muted)' }}>

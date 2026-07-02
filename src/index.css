@@ -228,13 +228,16 @@
    e svaniscono sotto la sfumatura. Su desktop torna un header normale. */
 .home-greeting-bar {
   position: sticky;
-  top: env(safe-area-inset-top, 0px);
+  top: 0;                                              /* copre fino al bordo superiore */
   z-index: 30;
+  margin-top: calc(-1 * env(safe-area-inset-top, 0px)); /* annulla la safe-area a riposo */
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
 }
 .home-greeting-bar-bg {
   background: var(--ist-bg);
+  /* top = safe-area + 4px: lo sfondo copre la barra di sistema, il saluto resta sotto il notch */
+  padding: calc(env(safe-area-inset-top, 0px) + 0.25rem) 1.25rem 0.75rem;
 }
 .home-greeting-fade {
   height: 28px;
@@ -244,9 +247,10 @@
 @media (min-width: 1024px) {
   .home-greeting-bar {
     position: static;
+    margin-top: 0;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-  .home-greeting-bar-bg { background: none; }
+  .home-greeting-bar-bg { background: none; padding: 0; }
   .home-greeting-fade { display: none; }
 }
