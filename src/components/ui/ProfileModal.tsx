@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   X, Camera, Eye, EyeOff, Check, Lock, User as UserIcon,
   Mail, Shield, ChevronRight, Upload, Bell, BellOff, Loader2,
+  BookMarked, ExternalLink,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import UserAvatar, { PRESET_AVATARS } from './UserAvatar'
@@ -31,9 +33,13 @@ interface Props {
 
 export default function ProfileModal({ isOpen, onClose }: Props) {
   const { user, updateProfile, changePassword } = useAuth()
+  const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [section, setSection] = useState<Section>('main')
+
+  // Naviga a una pagina "strumento" (Diario/Journal) e chiude il modale.
+  const goTo = (path: string) => { onClose(); navigate(path) }
 
   // Avatar upload
   const [avatarBusy, setAvatarBusy] = useState(false)
@@ -214,41 +220,60 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
               </div>
 
               {/* Menu rows */}
-              <div className="px-4 pb-5 flex flex-col gap-2">
-                <MenuRow
-                  icon={<UserIcon size={16} strokeWidth={2} />}
-                  label="Nome visualizzato"
-                  value={user.name}
-                  onClick={() => { setNameValue(user.name); setSection('name') }}
-                />
-                <MenuRow
-                  icon={<Mail size={16} strokeWidth={2} />}
-                  label="Email"
-                  value={user.email}
-                  disabled
-                />
-                <MenuRow
-                  icon={<Lock size={16} strokeWidth={2} />}
-                  label="Cambia password"
-                  onClick={() => setSection('password')}
-                />
-                <MenuRow
-                  icon={<Shield size={16} strokeWidth={2} />}
-                  label="Ruolo"
-                  value={ROLE_LABELS[user.role]}
-                  disabled
-                />
-                <MenuRow
-                  icon={<Bell size={16} strokeWidth={2} />}
-                  label="Notifiche"
-                  value={
-                    !('Notification' in window) ? 'Non supportate'
-                    : Notification.permission === 'granted' ? 'Attive'
-                    : Notification.permission === 'denied' ? 'Bloccate'
-                    : 'Non abilitate'
-                  }
-                  onClick={() => setSection('notifications')}
-                />
+              <div className="px-4 pb-5 flex flex-col gap-4">
+                {/* Strumenti — Diario e Protocol Journal (spostati qui dalla sidebar) */}
+                <div className="flex flex-col gap-2">
+                  <SectionLabel>Strumenti</SectionLabel>
+                  <MenuRow
+                    icon={<BookMarked size={16} strokeWidth={2} />}
+                    label="Diario di trading"
+                    onClick={() => goTo('/student/diario')}
+                  />
+                  <MenuRow
+                    icon={<ExternalLink size={16} strokeWidth={2} />}
+                    label="Protocol Data Journal"
+                    onClick={() => goTo('/student/journal')}
+                  />
+                </div>
+
+                {/* Account */}
+                <div className="flex flex-col gap-2">
+                  <SectionLabel>Account</SectionLabel>
+                  <MenuRow
+                    icon={<UserIcon size={16} strokeWidth={2} />}
+                    label="Nome visualizzato"
+                    value={user.name}
+                    onClick={() => { setNameValue(user.name); setSection('name') }}
+                  />
+                  <MenuRow
+                    icon={<Mail size={16} strokeWidth={2} />}
+                    label="Email"
+                    value={user.email}
+                    disabled
+                  />
+                  <MenuRow
+                    icon={<Lock size={16} strokeWidth={2} />}
+                    label="Cambia password"
+                    onClick={() => setSection('password')}
+                  />
+                  <MenuRow
+                    icon={<Shield size={16} strokeWidth={2} />}
+                    label="Ruolo"
+                    value={ROLE_LABELS[user.role]}
+                    disabled
+                  />
+                  <MenuRow
+                    icon={<Bell size={16} strokeWidth={2} />}
+                    label="Notifiche"
+                    value={
+                      !('Notification' in window) ? 'Non supportate'
+                      : Notification.permission === 'granted' ? 'Attive'
+                      : Notification.permission === 'denied' ? 'Bloccate'
+                      : 'Non abilitate'
+                    }
+                    onClick={() => setSection('notifications')}
+                  />
+                </div>
               </div>
             </>
           )}
@@ -502,6 +527,14 @@ function ModalHeader({
         <X size={14} strokeWidth={2.5} />
       </button>
     </div>
+  )
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] font-bold uppercase tracking-wider px-1" style={{ color: 'var(--ist-text-dim)' }}>
+      {children}
+    </p>
   )
 }
 

@@ -11,18 +11,19 @@ export type NavMode = 'use' | 'manage'
 
 // ─── UTILIZZO ──────────────────────────────────────────────────────────────────
 // Funzioni "d'uso" della piattaforma — uguali per tutti i ruoli (accesso completo).
+// NB: Diario e Protocol Journal NON sono più qui: sono stati spostati nella
+// sezione Profilo (ProfileModal → "Strumenti") per alleggerire la sidebar.
+// Le route restano in AppRouter, quindi le pagine sono ancora raggiungibili.
 const USE_NAV: NavItem[] = [
   { label: 'Dashboard', shortLabel: 'Home', path: '/student', icon: 'LayoutDashboard' },
   { label: 'Percorso', path: '/student/percorso', icon: 'Map' },
   { label: 'Videocorsi', shortLabel: 'Corsi', path: '/student/corsi', icon: 'BookOpen' },
-  { label: 'Diario', path: '/student/diario', icon: 'BookMarked' },
+  { label: 'Mental Coach', shortLabel: 'Mental', path: '/student/mental-coach', icon: 'Brain' },
   { label: 'Compiti', path: '/student/compiti', icon: 'ClipboardList' },
   { label: 'Community', path: '/student/chat', icon: 'MessageCircle' },
-  { label: 'Mental Coach', shortLabel: 'Mental', path: '/student/mental-coach', icon: 'Brain' },
   { label: 'Live & Replay', shortLabel: 'Live', path: '/student/live', icon: 'Radio' },
   { label: 'Calendario', path: '/student/calendario', icon: 'CalendarDays' },
   { label: 'Progressi', path: '/student/progressi', icon: 'TrendingUp' },
-  { label: 'Protocol Journal', shortLabel: 'Journal', path: '/student/journal', icon: 'ExternalLink' },
 ]
 const USE_MOBILE_PRIMARY = ['/student', '/student/corsi', '/student/chat', '/student/live']
 
