@@ -13,6 +13,8 @@ import LiveCalendar from '../../components/ui/LiveCalendar'
 import OnboardingCard from '../../components/onboarding/OnboardingCard'
 import WelcomeVideoHero from '../../components/onboarding/WelcomeVideoHero'
 import UserAvatar from '../../components/ui/UserAvatar'
+import UpgradeBanner from '../../components/ui/UpgradeBanner'
+import { isFreeUser } from '../../lib/freeTier'
 import { useUI } from '../../context/UIContext'
 
 // ─── data ─────────────────────────────────────────────────────────────────────
@@ -161,6 +163,8 @@ export default function StudentDashboard() {
   return (
     <div className="min-h-screen">
       <div className="px-5 lg:px-10 pt-8 pb-32 lg:pb-12 space-y-6">
+
+        {isFreeUser(user) && <UpgradeBanner />}
 
         {/* ── Header saluto (sticky su mobile, frosted durante lo scroll) ── */}
         <div className="home-greeting-bar -mx-5 lg:mx-0">

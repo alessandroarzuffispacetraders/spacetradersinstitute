@@ -12,6 +12,7 @@ export interface Channel {
   categoryIcon: string
   roles: MemberRole[]
   canPost: MemberRole[]
+  free?: boolean          // canale accessibile all'utente gratuito
   unread?: number
   pinned?: boolean
   dmWith?: { name: string; role: MemberRole; online?: boolean; avatarUrl?: string; avatarPreset?: string }

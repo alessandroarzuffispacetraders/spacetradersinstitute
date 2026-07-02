@@ -2,9 +2,11 @@ import { useNavigate } from 'react-router-dom'
 import PageHeader from '../../components/ui/PageHeader'
 import { useStudentCatalog, getCategoryStats, getCourseStats, Category } from '../../lib/content'
 import { useAuth } from '../../context/AuthContext'
+import { isFreeUser } from '../../lib/freeTier'
+import { useContactAdmin } from '../../lib/upgradeContact'
 import {
   BookOpen, ChevronRight, Play, CheckCircle2, Layers, Loader2,
-  Compass, Target, Rocket, Check,
+  Compass, Target, Rocket, Check, Sparkles, ArrowRight,
 } from 'lucide-react'
 
 // Icona per fase (tema "percorso" Space Traders)
@@ -25,6 +27,7 @@ function coverBackground(accent: string): string {
 export default function StudentCorsi() {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { contactAdmin, ready: contactReady } = useContactAdmin()
   const { categories, loading } = useStudentCatalog(user?.id ?? '')
 
   const allLessons   = categories.flatMap(c => c.courses.flatMap(cr => cr.lessons))
@@ -106,6 +109,40 @@ export default function StudentCorsi() {
           ))}
         </div>
       </div>
+
+      {/* ── Upsell per l'utente gratuito: vede solo i corsi in vetrina ── */}
+      {isFreeUser(user) && (
+        <div
+          className="rounded-3xl p-5 mb-7 flex items-center gap-4"
+          style={{
+            background: 'var(--ist-card-bg-premium)',
+            border: '1px solid var(--ist-card-border-premium)',
+            boxShadow: 'var(--ist-card-shadow-premium)',
+          }}
+        >
+          <div
+            className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
+            style={{ background: 'rgba(90,154,177,0.16)', border: '1px solid rgba(124,187,208,0.28)' }}
+          >
+            <Sparkles size={20} strokeWidth={2} style={{ color: '#7CBBD0' }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold" style={{ color: 'var(--ist-text)' }}>Anteprima gratuita</p>
+            <p className="text-xs leading-relaxed" style={{ color: 'var(--ist-text-muted)' }}>
+              Stai vedendo solo i corsi in vetrina. Sblocca l'intero catalogo con il percorso completo.
+            </p>
+          </div>
+          <button
+            onClick={contactAdmin}
+            disabled={!contactReady}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-white text-xs font-bold whitespace-nowrap transition-all hover:-translate-y-0.5 flex-shrink-0 disabled:opacity-60"
+            style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)' }}
+          >
+            Sblocca tutto
+            <ArrowRight size={13} strokeWidth={2.6} />
+          </button>
+        </div>
+      )}
 
       {/* ── Roadmap del percorso ── */}
       {categories.length === 0 ? (

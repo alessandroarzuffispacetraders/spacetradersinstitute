@@ -38,6 +38,7 @@ async function fetchProfile(userId: string): Promise<User | null> {
     avatarPreset: data.avatar_preset ?? undefined,
     avatarUrl: data.avatar_url ?? undefined,
     status: data.status ?? undefined,
+    tier: data.tier ?? undefined,
     phase: data.phase ?? undefined,
     permissions: data.permissions ?? undefined,
     assignedCoachId: data.assigned_coach_id ?? null,

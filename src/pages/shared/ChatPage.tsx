@@ -17,6 +17,7 @@ import {
 } from '../../lib/chat'
 import { useChannels } from '../../lib/channels'
 import { uploadChatImage } from '../../lib/storage'
+import { isFreeUser } from '../../lib/freeTier'
 import UserAvatar from '../../components/ui/UserAvatar'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -494,10 +495,11 @@ interface ChatAreaProps {
   onShowUserCard: (card: { userId: string; name: string; role: MemberRole; avatar?: { avatarUrl?: string; avatarPreset?: string } }) => void
   onBack?: () => void
   isMobile?: boolean
+  initialInput?: string
 }
 
-function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack, isMobile }: ChatAreaProps) {
-  const [input, setInput] = useState('')
+function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack, isMobile, initialInput }: ChatAreaProps) {
+  const [input, setInput] = useState(initialInput ?? '')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
   const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null)
@@ -522,7 +524,10 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const editTextareaRef = useRef<HTMLTextAreaElement>(null)
 
-  useEffect(() => { setInput(''); setEditingId(null); setHoveredMsgId(null); setImageFile(null) }, [channel.id])
+  // NB: ChatArea è montata con key={channel.id}, quindi lo stato si azzera già al
+  // cambio canale. Non resettiamo `input` qui per non cancellare l'eventuale
+  // testo precompilato (es. richiesta d'accesso all'admin).
+  useEffect(() => { setEditingId(null); setHoveredMsgId(null); setImageFile(null) }, [channel.id])
 
   // Auto-scroll: only if already at bottom
   const prevMsgCount = useRef(0)
@@ -1374,14 +1379,17 @@ export default function ChatPage() {
   const userId = user?.id ?? ''
   const userName = user?.name ?? ''
 
-  const dmUsers = useDmUsers(userId, userRole)
+  // L'utente gratuito ha chat private SOLO con gli admin (contatto per l'upgrade).
+  const isFree = isFreeUser(user)
+  const dmUsersAll = useDmUsers(userId, userRole)
+  const dmUsers = isFree ? dmUsersAll.filter(u => u.role === 'admin') : dmUsersAll
   const { channels } = useChannels()
   const [searchParams] = useSearchParams()
 
   const visibleChannels = channels.filter(ch => ch.roles.includes(userRole))
   // Deep-link da notifica push: /student/chat?c=<channelId> apre quel canale/DM.
   const [activeChannelId, setActiveChannelId] = useState(
-    () => new URLSearchParams(location.search).get('c') || 'generale'
+    () => new URLSearchParams(location.search).get('c') || (isFree ? 'free-community' : 'generale')
   )
   const [mobileView, setMobileView] = useState<'channels' | 'chat'>(
     () => (new URLSearchParams(location.search).get('c') ? 'chat' : 'channels')
@@ -1419,8 +1427,14 @@ export default function ChatPage() {
     if (userId && activeChannelId) markRead(activeChannelId)
   }, [userId])
 
-  // Gestisce apertura DM da navigazione esterna: navigate('/student/chat', { state: { openDm: userId } })
-  const navState = location.state as { openDm?: string; tab?: 'direct' | 'groups' } | null
+  // Gestisce apertura DM da navigazione esterna: navigate('/student/chat', { state: { openDm: userId } }).
+  // Supporta anche `prefill` (testo iniziale) e `knownUser` (per risolvere il partner
+  // se non è in dmUsers) — usati dal "Richiedi l'accesso completo" verso l'admin.
+  const navState = location.state as {
+    openDm?: string; tab?: 'direct' | 'groups'
+    prefill?: string; knownUser?: { id: string; name: string; role: MemberRole }
+  } | null
+  const [prefill, setPrefill] = useState<{ channelId: string; text: string } | null>(null)
   const [initialNavHandled, setInitialNavHandled] = useState(false)
   useEffect(() => {
     if (initialNavHandled || !navState) return
@@ -1429,6 +1443,11 @@ export default function ChatPage() {
 
     if (navState.openDm && userId) {
       const ch = dmChannelId(userId, navState.openDm)
+      if (navState.knownUser) {
+        const ku = navState.knownUser
+        setKnownUsers(prev => ({ ...prev, [ku.id]: { name: ku.name, role: ku.role } }))
+      }
+      if (navState.prefill) setPrefill({ channelId: ch, text: navState.prefill })
       setActiveChannelId(ch)
       setMobileView('chat')
       setSidebarTab('direct')
@@ -1532,6 +1551,7 @@ export default function ChatPage() {
             onShowUserCard={showUserCard}
             onBack={goBack}
             isMobile={mobileView === 'chat'}
+            initialInput={prefill?.channelId === activeChannelId ? prefill.text : undefined}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
@@ -1553,7 +1573,7 @@ export default function ChatPage() {
           name={userCard.name}
           role={userCard.role}
           avatar={userCard.avatar}
-          canDm={userCard.userId !== userId}
+          canDm={userCard.userId !== userId && (!isFree || userCard.role === 'admin')}
           onStartDm={() => { const ch = dmChannelId(userId, userCard.userId); selectChannel(ch) }}
           onClose={() => setUserCard(null)}
         />

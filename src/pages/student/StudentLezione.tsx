@@ -7,6 +7,8 @@ import {
 import { useStudentCatalog, Attachment } from '../../lib/content'
 import { attachmentUrl } from '../../lib/storage'
 import VimeoPlayer from '../../components/ui/VimeoPlayer'
+import UpgradeWall from '../../components/auth/UpgradeWall'
+import { isFreeUser } from '../../lib/freeTier'
 import { useUI } from '../../context/UIContext'
 import { useAuth } from '../../context/AuthContext'
 
@@ -176,6 +178,16 @@ export default function StudentLezione() {
   }
 
   if (!found) {
+    // Per l'utente gratuito una lezione "non trovata" è quasi sempre una lezione
+    // riservata (nascosta dalla RLS): mostra l'upsell invece del generico errore.
+    if (isFreeUser(user)) {
+      return (
+        <UpgradeWall
+          title="Lezione riservata"
+          body="Questa lezione fa parte del percorso completo IST. Passa alla versione completa per sbloccare tutti i videocorsi."
+        />
+      )
+    }
     return (
       <div className="p-6 flex flex-col items-center justify-center min-h-[50vh] gap-3">
         <p className="text-sm" style={{ color: 'var(--ist-text-muted)' }}>Lezione non trovata.</p>

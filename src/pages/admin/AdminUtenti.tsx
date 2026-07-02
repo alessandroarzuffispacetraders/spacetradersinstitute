@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import PageHeader from '../../components/ui/PageHeader'
 import { ChevronDown, Radio, Upload, Shield, X, Loader2, Mail, KeyRound, Trash2, Globe, MapPin } from 'lucide-react'
-import { UserPermissions, UserRole, StudentStatus, StudentPhase } from '../../types'
+import { UserPermissions, UserRole, StudentStatus, StudentPhase, UserTier } from '../../types'
 import { supabase } from '../../lib/supabase'
 import { updateUserAuth, deleteUserAccount } from '../../lib/adminUsers'
 import { useAccessSummaries, fetchUserAccessLogs, AccessSummary, AccessLog } from '../../lib/accessLog'
@@ -15,6 +15,7 @@ interface Profile {
   role: UserRole
   roles: UserRole[] | null
   status: StudentStatus | null
+  tier: UserTier | null
   phase: StudentPhase | null
   permissions: UserPermissions | null
   assigned_coach_id: string | null
@@ -42,6 +43,19 @@ function StatusBadge({ status }: { status: string | null }) {
   return (
     <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full flex-shrink-0" style={STATUS_STYLE[status] ?? {}}>
       {STATUS_LABELS[status] ?? status}
+    </span>
+  )
+}
+
+// Badge del piano: mostrato solo per l'utente gratuito (i paganti non hanno badge).
+function TierBadge({ tier }: { tier: UserTier | null }) {
+  if (tier !== 'free') return null
+  return (
+    <span
+      className="text-[10px] font-bold px-2.5 py-0.5 rounded-full flex-shrink-0"
+      style={{ color: '#7CBBD0', background: 'rgba(124,187,208,0.14)', border: '1px solid rgba(124,187,208,0.28)' }}
+    >
+      Free
     </span>
   )
 }
@@ -91,6 +105,7 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave, onDelete }: 
   const [role, setRole] = useState<UserRole>(user.role)
   const [extraRoles, setExtraRoles] = useState<UserRole[]>(user.roles ?? [])
   const [status, setStatus] = useState<StudentStatus | null>(user.status)
+  const [tier, setTier] = useState<UserTier>(user.tier ?? 'full')
   const [phase, setPhase] = useState<StudentPhase | null>(user.phase)
   const [permissions, setPermissions] = useState<UserPermissions>(user.permissions ?? {})
   const [assignedCoach, setAssignedCoach] = useState<string | null>(user.assigned_coach_id)
@@ -145,6 +160,7 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave, onDelete }: 
         role,
         roles: allRoles.length > 1 ? allRoles : null,
         status: isStudent ? status : null,
+        tier: isStudent ? tier : 'full',
         phase: isStudent ? phase : null,
         permissions: (role === 'coach' || role === 'mental_coach' || allRoles.includes('coach') || allRoles.includes('mental_coach'))
           ? permissions
@@ -161,7 +177,8 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave, onDelete }: 
     }
 
     onSave({
-      ...user, role, roles: allRoles.length > 1 ? allRoles : null, status, phase, permissions,
+      ...user, role, roles: allRoles.length > 1 ? allRoles : null, status,
+      tier: isStudent ? tier : 'full', phase, permissions,
       email: emailChanged ? email.trim() : user.email,
       assigned_coach_id: isStudent ? assignedCoach : null,
       assigned_mental_coach_id: isStudent ? assignedMental : null,
@@ -275,6 +292,20 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave, onDelete }: 
                 {ALL_PHASES.map(p => <option key={p} value={p} style={{ textTransform: 'capitalize' }}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
               </select>
             </div>
+          </div>
+        )}
+
+        {/* Piano — solo studenti (gratuito vs completo) */}
+        {role === 'student' && (
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--ist-text-dim)' }}>Piano</label>
+            <select value={tier} onChange={e => setTier(e.target.value as UserTier)} style={selectStyle}>
+              <option value="full">Completo (pagante)</option>
+              <option value="free">Gratuito (anteprima)</option>
+            </select>
+            <p className="text-[10px]" style={{ color: 'var(--ist-text-dim)' }}>
+              L'utente gratuito accede solo ai contenuti in vetrina. Passa a "Completo" quando attivi il pagamento.
+            </p>
           </div>
         )}
 
@@ -429,12 +460,13 @@ function AccessBadge({ summary }: { summary?: AccessSummary }) {
 
 // ── User Row ────────────────────────────────────────────────────────────────
 
-function UserRow({ user, summary, onEdit, onUpdatePerms, onActivate }: {
+function UserRow({ user, summary, onEdit, onUpdatePerms, onActivate, onPromote }: {
   user: Profile
   summary?: AccessSummary
   onEdit: (u: Profile) => void
   onUpdatePerms: (id: string, perms: UserPermissions) => void
   onActivate: (id: string) => void
+  onPromote: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [logs, setLogs] = useState<AccessLog[] | null>(null)
@@ -484,6 +516,8 @@ function UserRow({ user, summary, onEdit, onUpdatePerms, onActivate }: {
 
         <AccessBadge summary={summary} />
 
+        <TierBadge tier={user.tier} />
+
         <StatusBadge status={user.status} />
 
         {user.role === 'student' && user.status !== 'active' && (
@@ -494,6 +528,17 @@ function UserRow({ user, summary, onEdit, onUpdatePerms, onActivate }: {
             title="Attiva l'accesso (lifetime)"
           >
             Attiva
+          </button>
+        )}
+
+        {user.role === 'student' && user.tier === 'free' && (
+          <button
+            className="text-xs font-bold flex-shrink-0 px-3 py-1.5 rounded-xl text-white transition-all hover:-translate-y-0.5"
+            style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)' }}
+            onClick={e => { e.stopPropagation(); onPromote(user.id) }}
+            title="Passa l'utente al piano completo"
+          >
+            Promuovi
           </button>
         )}
 
@@ -632,6 +677,12 @@ export default function AdminUtenti() {
     setUsers(prev => prev.map(u => u.id === id ? { ...u, status: 'active' } : u))
   }
 
+  // Promozione rapida: da gratuito a piano completo (accesso pieno).
+  const handlePromote = async (id: string) => {
+    await supabase.from('profiles').update({ tier: 'full' }).eq('id', id)
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, tier: 'full' } : u))
+  }
+
   const inputStyle: React.CSSProperties = {
     background: 'var(--ist-w6)',
     border: '1px solid var(--ist-border)',
@@ -687,6 +738,7 @@ export default function AdminUtenti() {
               onEdit={setEditingUser}
               onUpdatePerms={handleUpdatePerms}
               onActivate={handleActivate}
+              onPromote={handlePromote}
             />
           ))}
           {filtered.length === 0 && (

@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
   Brain, Radio, TrendingUp, ExternalLink, Users, ClipboardList,
   AlertTriangle, CalendarDays, FileText, Package, BarChart3,
-  LogOut, Sun, Moon, Compass, SlidersHorizontal, type LucideIcon,
+  LogOut, Sun, Moon, Compass, SlidersHorizontal, Lock, type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
@@ -11,6 +11,7 @@ import { useUI } from '../../context/UIContext'
 import {
   getNavForMode, getHomeForMode, hasManagement, normalizeRoles,
 } from '../../router/navConfig'
+import { isPathLockedForFree } from '../../lib/freeTier'
 import ISTLogo from '../ui/ISTLogo'
 import UserAvatar from '../ui/UserAvatar'
 import { useNews, NewsDot } from '../../context/NewsContext'
@@ -21,13 +22,26 @@ const ICON_MAP: Record<string, LucideIcon> = {
   AlertTriangle, CalendarDays, FileText, Package, BarChart3,
 }
 
-function NavIcon({ name, dot = false }: { name: string; dot?: boolean }) {
+function NavIcon({ name, dot = false, locked = false }: { name: string; dot?: boolean; locked?: boolean }) {
   const Icon = ICON_MAP[name]
   if (!Icon) return null
   return (
     <span className="relative inline-flex">
       <Icon size={18} strokeWidth={2} />
       {dot && <NewsDot />}
+      {locked && <LockBadge />}
+    </span>
+  )
+}
+
+// Piccolo lucchetto d'angolo per le voci riservate ai paganti (utente gratuito).
+function LockBadge() {
+  return (
+    <span
+      className="absolute -top-1.5 -right-2 w-3.5 h-3.5 rounded-full flex items-center justify-center"
+      style={{ background: 'var(--ist-nav-bg)', border: '1px solid var(--ist-nav-border)' }}
+    >
+      <Lock size={8} strokeWidth={2.6} style={{ color: '#F6C85F' }} />
     </span>
   )
 }
@@ -131,7 +145,7 @@ export default function Sidebar() {
             }}
             className="flex flex-col items-center gap-0.5 mx-1.5 px-1 py-2 rounded-2xl transition-all duration-150 w-[calc(100%-12px)]"
           >
-            <NavIcon name={item.icon} dot={hasNews(item.path)} />
+            <NavIcon name={item.icon} dot={hasNews(item.path)} locked={isPathLockedForFree(item.path, user)} />
             <span className="text-[9px] font-medium truncate w-full text-center leading-none mt-0.5">
               {item.shortLabel ?? item.label}
             </span>

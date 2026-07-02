@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
   Brain, Radio, TrendingUp, ExternalLink, Users, ClipboardList,
   AlertTriangle, CalendarDays, FileText, Package, BarChart3,
-  MoreHorizontal, X, Sun, Moon, LogOut, Compass, SlidersHorizontal,
+  MoreHorizontal, X, Sun, Moon, LogOut, Compass, SlidersHorizontal, Lock,
   type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
@@ -14,6 +14,7 @@ import {
   getMobileNavConfig, getHomeForMode, hasManagement, normalizeRoles,
   NavItem, NavMode,
 } from '../../router/navConfig'
+import { isPathLockedForFree } from '../../lib/freeTier'
 import UserAvatar from '../ui/UserAvatar'
 import { useNews, NewsDot } from '../../context/NewsContext'
 
@@ -23,13 +24,21 @@ const ICON_MAP: Record<string, LucideIcon> = {
   AlertTriangle, CalendarDays, FileText, Package, BarChart3,
 }
 
-function NavIcon({ name, size = 20, dot = false }: { name: string; size?: number; dot?: boolean }) {
+function NavIcon({ name, size = 20, dot = false, locked = false }: { name: string; size?: number; dot?: boolean; locked?: boolean }) {
   const Icon = ICON_MAP[name]
   if (!Icon) return null
   return (
     <span className="relative inline-flex">
       <Icon size={size} strokeWidth={2} />
       {dot && <NewsDot />}
+      {locked && (
+        <span
+          className="absolute -top-1.5 -right-2 w-3.5 h-3.5 rounded-full flex items-center justify-center"
+          style={{ background: 'var(--ist-nav-bg)', border: '1px solid var(--ist-nav-border)' }}
+        >
+          <Lock size={8} strokeWidth={2.6} style={{ color: '#F6C85F' }} />
+        </span>
+      )}
     </span>
   )
 }
@@ -114,7 +123,7 @@ function OverflowSheet({
                 className="relative w-10 h-10 rounded-2xl flex items-center justify-center"
                 style={{ background: 'rgba(90,154,177,0.14)', border: '1px solid rgba(90,154,177,0.18)' }}
               >
-                <NavIcon name={item.icon} size={18} />
+                <NavIcon name={item.icon} size={18} locked={isPathLockedForFree(item.path, user)} />
                 {hasNews(item.path) && <NewsDot />}
               </div>
               <span
@@ -288,7 +297,7 @@ export default function BottomNav() {
               className="flex flex-col items-center gap-1 py-1 px-2 transition-all duration-150"
               style={({ isActive }) => ({ color: isActive ? '#7CBBD0' : 'var(--ist-nav-text)' })}
             >
-              <NavIcon name={item.icon} size={20} dot={hasNews(item.path)} />
+              <NavIcon name={item.icon} size={20} dot={hasNews(item.path)} locked={isPathLockedForFree(item.path, user)} />
               <span className="text-[9px] font-medium truncate max-w-[52px] text-center leading-none">
                 {item.shortLabel ?? item.label}
               </span>

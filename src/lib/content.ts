@@ -23,6 +23,7 @@ export interface Lesson {
   vimeoId: string | null    // raw Vimeo URL/id pasted by the admin (null if none)
   done: boolean             // per-student, from lesson_progress
   lastPositionSeconds: number
+  isFree: boolean           // lezione in vetrina, accessibile all'utente gratuito
   attachments: Attachment[]
 }
 
@@ -33,6 +34,7 @@ export interface Course {
   description: string
   phase: string
   published: boolean
+  isFree: boolean           // corso in vetrina, accessibile all'utente gratuito
   lessons: Lesson[]
 }
 
@@ -99,11 +101,11 @@ interface RawAttachment {
 interface RawLesson {
   id: string; course_id: string; title: string; description: string
   duration_seconds: number; vimeo_id: string | null; published: boolean
-  position: number; attachments: RawAttachment[] | null
+  is_free: boolean; position: number; attachments: RawAttachment[] | null
 }
 interface RawCourse {
   id: string; category_id: string; title: string; description: string
-  phase: string; published: boolean; position: number; lessons: RawLesson[] | null
+  phase: string; published: boolean; is_free: boolean; position: number; lessons: RawLesson[] | null
 }
 interface RawCategory {
   id: string; title: string; description: string; accent: string
@@ -113,9 +115,9 @@ interface RawCategory {
 const SELECT = `
   id, title, description, accent, phase, published, position,
   courses (
-    id, category_id, title, description, phase, published, position,
+    id, category_id, title, description, phase, published, is_free, position,
     lessons (
-      id, course_id, title, description, duration_seconds, vimeo_id, published, position,
+      id, course_id, title, description, duration_seconds, vimeo_id, published, is_free, position,
       attachments ( id, lesson_id, name, type, size_bytes, object_key, position )
     )
   )
@@ -151,6 +153,7 @@ function buildTree(
           description: crs.description,
           phase: phaseLabel(crs.phase),
           published: crs.published,
+          isFree: crs.is_free ?? false,
           lessons: (crs.lessons ?? [])
             .slice()
             .sort(byPosition)
@@ -166,6 +169,7 @@ function buildTree(
                 vimeoId: les.vimeo_id,
                 done: pr?.done ?? false,
                 lastPositionSeconds: pr?.pos ?? 0,
+                isFree: les.is_free ?? false,
                 attachments: (les.attachments ?? [])
                   .slice()
                   .sort(byPosition)
@@ -379,6 +383,13 @@ export function useContentAdmin() {
     return !error
   }, [load])
 
+  // ---- "gratis" toggle (corso o lezione): rende il contenuto accessibile all'utente gratuito ----
+  const setFree = useCallback(async (table: 'courses' | 'lessons', id: string, isFree: boolean): Promise<boolean> => {
+    const { error } = await supabase.from(table).update({ is_free: isFree }).eq('id', id)
+    if (!error) await load(true)
+    return !error
+  }, [load])
+
   // ---- reorder: renormalize the whole sibling list to 0..n in the new order ----
   const move = useCallback(async (table: ContentTable, siblings: { id: string }[], id: string, dir: 'up' | 'down'): Promise<boolean> => {
     const idx = siblings.findIndex(s => s.id === id)
@@ -415,6 +426,6 @@ export function useContentAdmin() {
     createCategory, updateCategory, deleteCategory,
     createCourse, updateCourse, deleteCourse,
     createLesson, updateLesson, deleteLesson,
-    setPublished, moveCategory, moveCourse, moveLesson,
+    setPublished, setFree, moveCategory, moveCourse, moveLesson,
   }
 }

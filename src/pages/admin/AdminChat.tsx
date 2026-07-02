@@ -40,6 +40,7 @@ const EMPTY_FORM = {
   category: 'Community',
   roles: ['student', 'coach', 'mental_coach', 'admin'] as MemberRole[],
   canPost: ['student', 'coach', 'mental_coach', 'admin'] as MemberRole[],
+  free: false,
 }
 
 type ChannelForm = typeof EMPTY_FORM
@@ -277,6 +278,27 @@ function ChannelModal({
             </div>
           </div>
 
+          {/* Accessibile agli utenti gratuiti */}
+          <div>
+            <label className="block text-xs font-semibold mb-2" style={{ color: 'var(--ist-text-muted)' }}>
+              Versione gratuita
+            </label>
+            <label
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors"
+              style={{ background: form.free ? 'rgba(124,187,208,0.08)' : 'var(--ist-w5)' }}
+            >
+              <input
+                type="checkbox"
+                checked={form.free}
+                onChange={() => setForm(p => ({ ...p, free: !p.free }))}
+                className="accent-ist-400 w-4 h-4 rounded"
+              />
+              <span className="text-xs" style={{ color: 'var(--ist-text)' }}>
+                Accessibile agli <strong>utenti gratuiti</strong> (canale "assaggio")
+              </span>
+            </label>
+          </div>
+
           {error && (
             <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-3 py-2">
               {error}
@@ -449,6 +471,14 @@ export default function AdminChat() {
                       >
                         {ch.type === 'bacheca' ? 'Bacheca' : 'Chat'}
                       </span>
+                      {ch.free && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                          style={{ background: 'rgba(70,211,154,0.14)', color: '#46D39A' }}
+                        >
+                          Free
+                        </span>
+                      )}
                     </div>
 
                     {ch.description && (
@@ -542,6 +572,7 @@ export default function AdminChat() {
               category: modal.editing.category,
               roles: [...modal.editing.roles],
               canPost: [...modal.editing.canPost],
+              free: modal.editing.free ?? false,
             }
             : undefined
           }

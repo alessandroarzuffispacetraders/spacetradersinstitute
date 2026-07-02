@@ -15,13 +15,14 @@ interface RawChannel {
   category_icon: string
   roles: string[] | null
   can_post: string[] | null
+  free: boolean | null
   position: number
   pinned: boolean
   live_event_id: string | null
 }
 
 const COLS =
-  'id,name,description,type,category,category_icon,roles,can_post,position,pinned,live_event_id'
+  'id,name,description,type,category,category_icon,roles,can_post,free,position,pinned,live_event_id'
 
 function toChannel(r: RawChannel): Channel {
   return {
@@ -35,6 +36,7 @@ function toChannel(r: RawChannel): Channel {
     categoryIcon: r.category_icon,
     roles: (r.roles ?? []) as MemberRole[],
     canPost: (r.can_post ?? []) as MemberRole[],
+    free: r.free ?? false,
     pinned: r.pinned,
   }
 }
@@ -75,6 +77,7 @@ export interface ChannelInput {
   categoryIcon: string
   roles: MemberRole[]
   canPost: MemberRole[]
+  free: boolean
 }
 
 type SaveResult = { ok: boolean; error?: string }
@@ -108,6 +111,7 @@ export function useChannelsAdmin() {
       category_icon: input.categoryIcon,
       roles: input.roles,
       can_post: input.canPost,
+      free: input.free,
       position: channels.length,
     })
     if (error) {
@@ -127,6 +131,7 @@ export function useChannelsAdmin() {
       category_icon: input.categoryIcon,
       roles: input.roles,
       can_post: input.canPost,
+      free: input.free,
     }).eq('id', id)
     if (error) return { ok: false, error: error.message }
     await load(true)

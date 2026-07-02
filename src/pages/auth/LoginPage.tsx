@@ -78,7 +78,7 @@ export default function LoginPage() {
             </div>
             <p className="text-white font-semibold text-lg">Registrazione completata!</p>
             <p className="text-sm" style={{ color: '#8495A3' }}>
-              Controlla la tua email per confermare l'account, poi accedi.
+              Conferma la tua email, poi accedi: la <strong>versione gratuita</strong> è già attiva e puoi iniziare subito.
             </p>
             <button
               onClick={() => switchMode('login')}
@@ -183,8 +183,14 @@ export default function LoginPage() {
               >
                 {loading
                   ? (mode === 'login' ? 'Accesso in corso...' : 'Registrazione...')
-                  : (mode === 'login' ? 'Accedi' : 'Crea account')}
+                  : (mode === 'login' ? 'Accedi' : 'Prova gratis')}
               </button>
+
+              {mode === 'signup' && (
+                <p className="text-center text-xs" style={{ color: 'rgba(247,250,252,0.55)' }}>
+                  🎁 Accesso gratuito immediato alla versione di prova. Nessuna carta richiesta.
+                </p>
+              )}
             </form>
           </>
         )}

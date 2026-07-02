@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import AppLayout from '../components/layout/AppLayout'
 import RequireRole from '../components/auth/RequireRole'
+import RequireFullAccess from '../components/auth/RequireFullAccess'
 import AccessGate from '../components/auth/AccessGate'
 import LoginPage from '../pages/auth/LoginPage'
 
@@ -62,22 +63,26 @@ function PrivateRoutes() {
     <Routes>
       <Route element={<AccessGate />}>
       <Route element={<AppLayout />}>
-        {/* Student */}
+        {/* Student — aperte anche all'utente gratuito */}
         <Route path="/student" element={<StudentDashboard />} />
-        <Route path="/student/percorso" element={<StudentPercorso />} />
         <Route path="/student/corsi" element={<StudentCorsi />} />
         {/* NOTE: /lezione/:id must come before /:categoryId so static "lezione" wins */}
         <Route path="/student/corsi/lezione/:lessonId" element={<StudentLezione />} />
         <Route path="/student/corsi/:categoryId" element={<StudentCategoryDetail />} />
-        <Route path="/student/diario" element={<StudentDiario />} />
-        <Route path="/student/compiti" element={<StudentCompiti />} />
         <Route path="/student/chat" element={<ChatPage />} />
-        <Route path="/student/mental-coach" element={<StudentMentalCoach />} />
-        <Route path="/student/live" element={<StudentLive />} />
-        <Route path="/student/live/:liveId" element={<StudentLivePlayer />} />
-        <Route path="/student/calendario" element={<StudentCalendario />} />
         <Route path="/student/progressi" element={<StudentProgressi />} />
-        <Route path="/student/journal" element={<StudentJournal />} />
+
+        {/* Student — riservate ai paganti: l'utente gratuito vede l'upsell */}
+        <Route element={<RequireFullAccess />}>
+          <Route path="/student/percorso" element={<StudentPercorso />} />
+          <Route path="/student/diario" element={<StudentDiario />} />
+          <Route path="/student/compiti" element={<StudentCompiti />} />
+          <Route path="/student/mental-coach" element={<StudentMentalCoach />} />
+          <Route path="/student/live" element={<StudentLive />} />
+          <Route path="/student/live/:liveId" element={<StudentLivePlayer />} />
+          <Route path="/student/calendario" element={<StudentCalendario />} />
+          <Route path="/student/journal" element={<StudentJournal />} />
+        </Route>
 
         {/* Coach — solo ruolo coach */}
         <Route element={<RequireRole roles={['coach']} />}>
