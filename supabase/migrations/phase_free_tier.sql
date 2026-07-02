@@ -63,66 +63,69 @@ BEGIN
 END;
 $$;
 
--- ========== 3) Contenuti gratuiti (corsi/lezioni) ==========
-ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS is_free boolean NOT NULL DEFAULT false;
-ALTER TABLE public.lessons ADD COLUMN IF NOT EXISTS is_free boolean NOT NULL DEFAULT false;
+-- ========== 3) Contenuti gratuiti — GATING SOLO A LIVELLO DI CATEGORIA ==========
+-- Semplificazione: "gratis / a pagamento" si gestisce SOLO sulla categoria;
+-- corsi, lezioni e allegati vanno a cascata da lì. Niente flag per corso/lezione.
+ALTER TABLE public.categories ADD COLUMN IF NOT EXISTS is_free boolean NOT NULL DEFAULT false;
 
--- Helper SECURITY DEFINER per i controlli INCROCIATI corso↔lezione. Indispensabili
--- per NON avere ricorsione infinita nelle policy: se la policy di `courses`
--- interrogasse `lessons` (e viceversa) direttamente, ciascuna riattiverebbe la RLS
--- dell'altra all'infinito. Girando come definer, queste leggono le tabelle
--- bypassando la RLS → il ciclo si spezza.
-CREATE OR REPLACE FUNCTION public.course_is_free(p_course_id uuid)
+-- Helper SECURITY DEFINER: leggono l'altra tabella bypassando la sua RLS → niente
+-- ricorsione infinita fra le policy.
+CREATE OR REPLACE FUNCTION public.category_is_free(p_category_id uuid)
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
-  SELECT COALESCE((SELECT c.is_free FROM public.courses c WHERE c.id = p_course_id), false);
+  SELECT COALESCE((SELECT c.is_free FROM public.categories c WHERE c.id = p_category_id), false);
 $$;
 
-CREATE OR REPLACE FUNCTION public.course_has_free_lesson(p_course_id uuid)
+CREATE OR REPLACE FUNCTION public.course_category_is_free(p_course_id uuid)
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.lessons l
-    WHERE l.course_id = p_course_id AND l.published AND l.is_free
+  SELECT COALESCE((
+    SELECT cat.is_free
+    FROM public.courses crs
+    JOIN public.categories cat ON cat.id = crs.category_id
+    WHERE crs.id = p_course_id
+  ), false);
+$$;
+
+-- CATEGORIE: l'utente gratuito vede solo le categorie marcate gratis.
+DROP POLICY IF EXISTS "categories read published or admin" ON public.categories;
+CREATE POLICY "categories read published or admin" ON public.categories
+  FOR SELECT USING (
+    public.is_admin()
+    OR (published = true AND (NOT public.is_free_user() OR is_free))
   );
-$$;
 
--- Un utente gratuito vede un CORSO solo se è marcato gratis oppure contiene
--- almeno una lezione gratuita (così il corso "contenitore" non sparisce quando
--- si sbloccano singole lezioni). Gli altri utenti vedono tutto il pubblicato.
+-- CORSI: visibili all'utente gratuito se la loro categoria è gratis.
 DROP POLICY IF EXISTS "courses read published or admin" ON public.courses;
 CREATE POLICY "courses read published or admin" ON public.courses
   FOR SELECT USING (
     public.is_admin()
-    OR (published = true AND (
-      NOT public.is_free_user()
-      OR is_free
-      OR public.course_has_free_lesson(id)
-    ))
+    OR (published = true AND (NOT public.is_free_user() OR public.category_is_free(category_id)))
   );
 
--- Un utente gratuito vede una LEZIONE solo se è gratis o dentro un corso gratis.
+-- LEZIONI: visibili all'utente gratuito se la categoria del loro corso è gratis.
 DROP POLICY IF EXISTS "lessons read published or admin" ON public.lessons;
 CREATE POLICY "lessons read published or admin" ON public.lessons
   FOR SELECT USING (
     public.is_admin()
-    OR (published = true AND (
-      NOT public.is_free_user()
-      OR is_free
-      OR public.course_is_free(course_id)
-    ))
+    OR (published = true AND (NOT public.is_free_user() OR public.course_category_is_free(course_id)))
   );
 
--- Gli allegati seguono la visibilità della lezione: EXISTS su `lessons` è già
--- filtrato dalla RLS di lessons (che usa i definer sopra → niente ricorsione).
+-- ALLEGATI: seguono la visibilità della lezione (RLS di lessons già filtrata).
 DROP POLICY IF EXISTS "attachments read via lesson" ON public.attachments;
 CREATE POLICY "attachments read via lesson" ON public.attachments
   FOR SELECT USING (
     public.is_admin()
     OR EXISTS (SELECT 1 FROM public.lessons l WHERE l.id = attachments.lesson_id)
   );
+
+-- Pulizia del vecchio gating per-corso/lezione (non più usato).
+DROP FUNCTION IF EXISTS public.course_is_free(uuid);
+DROP FUNCTION IF EXISTS public.course_has_free_lesson(uuid);
+ALTER TABLE public.courses DROP COLUMN IF EXISTS is_free;
+ALTER TABLE public.lessons DROP COLUMN IF EXISTS is_free;
 
 -- ========== 4) Chat gratuita (canali) ==========
 ALTER TABLE public.channels ADD COLUMN IF NOT EXISTS free boolean NOT NULL DEFAULT false;

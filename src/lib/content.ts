@@ -23,7 +23,6 @@ export interface Lesson {
   vimeoId: string | null    // raw Vimeo URL/id pasted by the admin (null if none)
   done: boolean             // per-student, from lesson_progress
   lastPositionSeconds: number
-  isFree: boolean           // lezione in vetrina, accessibile all'utente gratuito
   attachments: Attachment[]
 }
 
@@ -34,7 +33,6 @@ export interface Course {
   description: string
   phase: string
   published: boolean
-  isFree: boolean           // corso in vetrina, accessibile all'utente gratuito
   lessons: Lesson[]
 }
 
@@ -45,6 +43,8 @@ export interface Category {
   accent: string
   phase: string
   published: boolean
+  isFree: boolean           // categoria in vetrina: tutto il suo contenuto è
+                            // accessibile all'utente gratuito (gating a cascata)
   courses: Course[]
 }
 
@@ -101,23 +101,23 @@ interface RawAttachment {
 interface RawLesson {
   id: string; course_id: string; title: string; description: string
   duration_seconds: number; vimeo_id: string | null; published: boolean
-  is_free: boolean; position: number; attachments: RawAttachment[] | null
+  position: number; attachments: RawAttachment[] | null
 }
 interface RawCourse {
   id: string; category_id: string; title: string; description: string
-  phase: string; published: boolean; is_free: boolean; position: number; lessons: RawLesson[] | null
+  phase: string; published: boolean; position: number; lessons: RawLesson[] | null
 }
 interface RawCategory {
   id: string; title: string; description: string; accent: string
-  phase: string; published: boolean; position: number; courses: RawCourse[] | null
+  phase: string; published: boolean; is_free: boolean; position: number; courses: RawCourse[] | null
 }
 
 const SELECT = `
-  id, title, description, accent, phase, published, position,
+  id, title, description, accent, phase, published, is_free, position,
   courses (
-    id, category_id, title, description, phase, published, is_free, position,
+    id, category_id, title, description, phase, published, position,
     lessons (
-      id, course_id, title, description, duration_seconds, vimeo_id, published, is_free, position,
+      id, course_id, title, description, duration_seconds, vimeo_id, published, position,
       attachments ( id, lesson_id, name, type, size_bytes, object_key, position )
     )
   )
@@ -143,6 +143,7 @@ function buildTree(
       accent: cat.accent,
       phase: phaseLabel(cat.phase),
       published: cat.published,
+      isFree: cat.is_free ?? false,
       courses: (cat.courses ?? [])
         .slice()
         .sort(byPosition)
@@ -153,7 +154,6 @@ function buildTree(
           description: crs.description,
           phase: phaseLabel(crs.phase),
           published: crs.published,
-          isFree: crs.is_free ?? false,
           lessons: (crs.lessons ?? [])
             .slice()
             .sort(byPosition)
@@ -169,7 +169,6 @@ function buildTree(
                 vimeoId: les.vimeo_id,
                 done: pr?.done ?? false,
                 lastPositionSeconds: pr?.pos ?? 0,
-                isFree: les.is_free ?? false,
                 attachments: (les.attachments ?? [])
                   .slice()
                   .sort(byPosition)
@@ -383,9 +382,10 @@ export function useContentAdmin() {
     return !error
   }, [load])
 
-  // ---- "gratis" toggle (corso o lezione): rende il contenuto accessibile all'utente gratuito ----
-  const setFree = useCallback(async (table: 'courses' | 'lessons', id: string, isFree: boolean): Promise<boolean> => {
-    const { error } = await supabase.from(table).update({ is_free: isFree }).eq('id', id)
+  // ---- "gratis" toggle a livello di CATEGORIA: rende l'intera categoria (e tutto
+  // il suo contenuto, a cascata) accessibile all'utente gratuito ----
+  const setFree = useCallback(async (id: string, isFree: boolean): Promise<boolean> => {
+    const { error } = await supabase.from('categories').update({ is_free: isFree }).eq('id', id)
     if (!error) await load(true)
     return !error
   }, [load])

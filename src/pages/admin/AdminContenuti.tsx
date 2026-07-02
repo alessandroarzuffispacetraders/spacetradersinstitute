@@ -361,10 +361,9 @@ function LessonRow({ lesson, courseId, isLast, isFirst, admin, onEdit }: {
       >
         <Video size={9} strokeWidth={2} />
       </div>
-      <span className="text-[11px] font-medium truncate" style={{ color: 'var(--ist-text-muted)', flex: '1 1 auto', minWidth: 0 }}>
+      <span className="flex-1 text-[11px] font-medium truncate" style={{ color: 'var(--ist-text-muted)' }}>
         {lesson.title}
       </span>
-      {lesson.isFree && <FreeBadge />}
       <div className="flex items-center gap-3 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
         {lesson.attachments.length > 0 && (
           <span className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--ist-text-dim)' }}>
@@ -378,11 +377,6 @@ function LessonRow({ lesson, courseId, isLast, isFirst, admin, onEdit }: {
         </span>
       </div>
       <div className="flex items-center gap-0.5 flex-shrink-0">
-        <ActionBtn
-          icon={<Sparkles size={10} strokeWidth={2} />}
-          label={lesson.isFree ? 'A pagamento' : 'Gratis'}
-          onClick={() => admin.setFree('lessons', lesson.id, !lesson.isFree)}
-        />
         <ActionBtn icon={<Edit2 size={10} strokeWidth={2} />} label="Modifica" onClick={onEdit} />
         <ActionBtn
           icon={<Trash2 size={10} strokeWidth={2} />} label="Elimina" danger
@@ -448,12 +442,18 @@ function CoursesTab({ admin, openModal }: { admin: AdminApi; openModal: (s: Moda
                 </span>
                 <PhaseBadge phase={cat.phase} />
                 <PublishedBadge published={cat.published} />
+                {cat.isFree && <FreeBadge />}
               </div>
               <div className="flex items-center gap-0.5 flex-shrink-0">
                 <ActionBtn
                   icon={cat.published ? <EyeOff size={11} strokeWidth={2} /> : <Eye size={11} strokeWidth={2} />}
                   label={cat.published ? 'Nascondi' : 'Pubblica'}
                   onClick={() => admin.setPublished('categories', cat.id, !cat.published)}
+                />
+                <ActionBtn
+                  icon={<Sparkles size={11} strokeWidth={2} />}
+                  label={cat.isFree ? 'A pagamento' : 'Gratis'}
+                  onClick={() => admin.setFree(cat.id, !cat.isFree)}
                 />
                 <ActionBtn icon={<Edit2 size={11} strokeWidth={2} />} label="Modifica" onClick={() => openModal({ kind: 'category', mode: 'edit', id: cat.id, entity: cat })} />
                 <ActionBtn
@@ -487,17 +487,11 @@ function CoursesTab({ admin, openModal }: { admin: AdminApi; openModal: (s: Moda
                           <span className="text-[10px] hidden sm:block" style={{ color: 'var(--ist-text-dim)' }}>{course.lessons.length} lezioni</span>
                           <PhaseBadge phase={course.phase} />
                           <PublishedBadge published={course.published} />
-                          {course.isFree && <FreeBadge />}
                           <ActionBtn icon={<Plus size={11} strokeWidth={2.5} />} label="lezione" onClick={() => openModal({ kind: 'lesson', mode: 'create', parentId: course.id })} />
                           <ActionBtn
                             icon={course.published ? <EyeOff size={11} strokeWidth={2} /> : <Eye size={11} strokeWidth={2} />}
                             label={course.published ? 'Nascondi' : 'Pubblica'}
                             onClick={() => admin.setPublished('courses', course.id, !course.published)}
-                          />
-                          <ActionBtn
-                            icon={<Sparkles size={11} strokeWidth={2} />}
-                            label={course.isFree ? 'A pagamento' : 'Gratis'}
-                            onClick={() => admin.setFree('courses', course.id, !course.isFree)}
                           />
                           <ActionBtn icon={<Edit2 size={11} strokeWidth={2} />} label="Modifica" onClick={() => openModal({ kind: 'course', mode: 'edit', id: course.id, entity: course })} />
                           <ActionBtn
