@@ -217,8 +217,11 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [search, setSearch] = useState('')
   const [dmFilter, setDmFilter] = useState<'all' | 'unread'>('all')
+  // Solo l'admin può separare i DM per tier (paganti = formazione / gratuiti = vendita).
+  const [tierFilter, setTierFilter] = useState<'all' | 'full' | 'free'>('all')
   // Solo lo staff può filtrare le chat private (es. mostrare solo le non lette).
   const isStaff = userRole === 'coach' || userRole === 'mental_coach' || userRole === 'admin'
+  const isAdmin = userRole === 'admin'
 
   const groupChannels = channels.filter(ch => ch.roles.includes(userRole) && ch.channelKind === 'group')
 
@@ -236,9 +239,13 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
   const dmSearched = search.trim()
     ? dmUsers.filter(u => u.name.toLowerCase().includes(search.toLowerCase()))
     : dmUsers
-  const filteredDms = (isStaff && dmFilter === 'unread')
-    ? dmSearched.filter(u => (unreadCounts[dmChannelId(userId, u.id)] ?? 0) > 0)
+  // Admin: separa i DM per tier (studenti paganti vs gratuiti).
+  const dmTierFiltered = (isAdmin && tierFilter !== 'all')
+    ? dmSearched.filter(u => u.role === 'student' && (tierFilter === 'free' ? u.tier === 'free' : u.tier !== 'free'))
     : dmSearched
+  const filteredDms = (isStaff && dmFilter === 'unread')
+    ? dmTierFiltered.filter(u => (unreadCounts[dmChannelId(userId, u.id)] ?? 0) > 0)
+    : dmTierFiltered
 
   const toggleCategory = (cat: string) => {
     setCollapsed(p => ({ ...p, [cat]: !p[cat] }))
@@ -340,6 +347,23 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
         {/* ── DIRECT TAB ── */}
         {tab === 'direct' && (
           <div className="px-1 py-1">
+            {/* Separazione DM per tier — solo admin (paganti = formazione / gratuiti = vendita) */}
+            {isAdmin && (
+              <div className="flex gap-1 px-1 pb-2">
+                {([['all', 'Tutti'], ['full', 'Paganti'], ['free', 'Gratuiti']] as const).map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => setTierFilter(val)}
+                    className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-all"
+                    style={tierFilter === val
+                      ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' }
+                      : { background: 'var(--ist-w6)', color: 'var(--ist-text-muted)' }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             {/* Filtro chat private — solo staff */}
             {isStaff && (
               <div className="flex gap-1 px-1 pb-2">
@@ -376,9 +400,6 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
                 {isStaff && dmFilter === 'unread' ? 'Nessuna chat non letta' : 'Nessuna chat privata'}
               </p>
             ) : (() => {
-              const pinned = filteredDms.filter(u => u.role === 'coach' || u.role === 'mental_coach')
-              const others = filteredDms.filter(u => u.role !== 'coach' && u.role !== 'mental_coach')
-
               const renderUser = (u: DmUser) => {
                 const chId = dmChannelId(userId, u.id)
                 const dmUnread = unreadCounts[chId] ?? 0
@@ -407,6 +428,35 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
                 )
               }
 
+              const section = (key: string, label: string, hint: string | null, list: DmUser[]) =>
+                list.length > 0 ? (
+                  <div key={key} className="mb-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider px-2 pt-2 pb-1 flex items-center gap-1.5" style={{ color: 'var(--ist-text-muted)' }}>
+                      <span>{label}</span>
+                      {hint && <span className="normal-case font-medium" style={{ color: 'var(--ist-text-dim)' }}>· {hint}</span>}
+                      <span className="ml-auto text-[9px] px-1.5 rounded-full font-bold" style={{ background: 'var(--ist-w7)', color: 'var(--ist-text-dim)' }}>{list.length}</span>
+                    </p>
+                    {list.map(renderUser)}
+                  </div>
+                ) : null
+
+              // Admin: sezioni separate paganti (formazione) / gratuiti (vendita) / staff.
+              if (isAdmin) {
+                const staff  = filteredDms.filter(u => u.role !== 'student')
+                const paying = filteredDms.filter(u => u.role === 'student' && u.tier !== 'free')
+                const free   = filteredDms.filter(u => u.role === 'student' && u.tier === 'free')
+                return (
+                  <>
+                    {section('staff', 'Team & staff', null, staff)}
+                    {section('paganti', 'Studenti paganti', 'formazione', paying)}
+                    {section('gratuiti', 'Utenti gratuiti', 'vendita', free)}
+                  </>
+                )
+              }
+
+              // Coach / mental / studente: team (coach+mental) poi gli altri.
+              const pinned = filteredDms.filter(u => u.role === 'coach' || u.role === 'mental_coach')
+              const others = filteredDms.filter(u => u.role !== 'coach' && u.role !== 'mental_coach')
               return (
                 <>
                   {pinned.length > 0 && (

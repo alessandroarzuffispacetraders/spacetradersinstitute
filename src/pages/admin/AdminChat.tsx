@@ -38,6 +38,7 @@ const EMPTY_FORM = {
   description: '',
   type: 'chat' as ChannelType,
   category: 'Community',
+  categoryIcon: '💬',
   roles: ['student', 'coach', 'mental_coach', 'admin'] as MemberRole[],
   canPost: ['student', 'coach', 'mental_coach', 'admin'] as MemberRole[],
   free: false,
@@ -49,16 +50,24 @@ type ChannelForm = typeof EMPTY_FORM
 
 function ChannelModal({
   initial,
+  categoryIcons,
   onSave,
   onClose,
 }: {
   initial?: Partial<ChannelForm>
+  categoryIcons: Record<string, string>
   onSave: (form: ChannelForm) => Promise<string | null>
   onClose: () => void
 }) {
   const [form, setForm] = useState<ChannelForm>({ ...EMPTY_FORM, ...initial })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // Categorie note = preimpostate + quelle già usate dai canali esistenti.
+  // L'admin può anche crearne di nuove ("＋ Nuova categoria").
+  const knownCategories = Array.from(new Set([...ALL_CATEGORIES, ...Object.keys(categoryIcons)]))
+  const [newCat, setNewCat] = useState(false)
+  const iconFor = (cat: string) => CATEGORY_ICON[cat] ?? categoryIcons[cat] ?? '📁'
 
   const toggleRole = (field: 'roles' | 'canPost', role: MemberRole) => {
     setForm(prev => ({
@@ -76,6 +85,10 @@ function ChannelModal({
     }
     if (form.roles.length === 0) {
       setError('Seleziona almeno un ruolo che può vedere il canale.')
+      return
+    }
+    if (!form.category.trim()) {
+      setError('Inserisci una categoria.')
       return
     }
     setSaving(true)
@@ -202,8 +215,17 @@ function ChannelModal({
               Categoria
             </label>
             <select
-              value={form.category}
-              onChange={e => setForm(p => ({ ...p, category: e.target.value }))}
+              value={newCat ? '__new__' : form.category}
+              onChange={e => {
+                const v = e.target.value
+                if (v === '__new__') {
+                  setNewCat(true)
+                  setForm(p => ({ ...p, category: '', categoryIcon: '📁' }))
+                } else {
+                  setNewCat(false)
+                  setForm(p => ({ ...p, category: v, categoryIcon: iconFor(v) }))
+                }
+              }}
               className="w-full px-3.5 py-2.5 text-sm rounded-2xl focus:outline-none"
               style={{
                 background: 'var(--ist-w6)',
@@ -212,12 +234,36 @@ function ChannelModal({
                 appearance: 'none',
               }}
             >
-              {ALL_CATEGORIES.map(cat => (
+              {knownCategories.map(cat => (
                 <option key={cat} value={cat} style={{ background: '#0d1117' }}>
-                  {CATEGORY_ICON[cat]} {cat}
+                  {iconFor(cat)} {cat}
                 </option>
               ))}
+              <option value="__new__" style={{ background: '#0d1117' }}>＋ Nuova categoria…</option>
             </select>
+
+            {/* Nuova categoria: nome + icona */}
+            {newCat && (
+              <div className="flex gap-2 mt-2">
+                <input
+                  type="text"
+                  value={form.categoryIcon}
+                  onChange={e => setForm(p => ({ ...p, categoryIcon: e.target.value }))}
+                  placeholder="📁"
+                  maxLength={4}
+                  className="w-14 px-2 py-2.5 text-sm text-center rounded-2xl focus:outline-none"
+                  style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w10)', color: 'var(--ist-text)' }}
+                />
+                <input
+                  type="text"
+                  value={form.category}
+                  onChange={e => setForm(p => ({ ...p, category: e.target.value }))}
+                  placeholder="Nome nuova categoria (es. Vendite)"
+                  className="flex-1 px-3.5 py-2.5 text-sm rounded-2xl focus:outline-none"
+                  style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w10)', color: 'var(--ist-text)' }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Chi può vedere */}
@@ -364,6 +410,10 @@ export default function AdminChat() {
     byCategory[ch.category].push(ch)
   }
 
+  // Categoria → icona (dai canali esistenti), per il selettore nel modal.
+  const categoryIcons: Record<string, string> = {}
+  for (const ch of channels) categoryIcons[ch.category] = ch.categoryIcon
+
   const openNew = () => setModal({ open: true, editing: undefined })
   const openEdit = (ch: Channel) => setModal({ open: true, editing: ch })
   const closeModal = () => setModal({ open: false })
@@ -373,7 +423,8 @@ export default function AdminChat() {
   const handleSave = async (form: ChannelForm): Promise<string | null> => {
     const input: ChannelInput = {
       ...form,
-      categoryIcon: CATEGORY_ICON[form.category] ?? '💬',
+      category: form.category.trim(),
+      categoryIcon: form.categoryIcon.trim() || '📁',
     }
     const res = modal.editing
       ? await updateChannel(modal.editing.id, input)
@@ -427,7 +478,7 @@ export default function AdminChat() {
               className="flex items-center gap-2 px-5 py-3.5"
               style={{ borderBottom: '1px solid var(--ist-w8)' }}
             >
-              <span className="text-base">{CATEGORY_ICON[cat] ?? '📁'}</span>
+              <span className="text-base">{chs[0]?.categoryIcon ?? CATEGORY_ICON[cat] ?? '📁'}</span>
               <span className="text-sm font-bold" style={{ color: 'var(--ist-text)' }}>{cat}</span>
               <span
                 className="ml-auto text-[11px] px-2 py-0.5 rounded-full font-semibold"
@@ -570,12 +621,14 @@ export default function AdminChat() {
               description: modal.editing.description ?? '',
               type: modal.editing.type,
               category: modal.editing.category,
+              categoryIcon: modal.editing.categoryIcon ?? '📁',
               roles: [...modal.editing.roles],
               canPost: [...modal.editing.canPost],
               free: modal.editing.free ?? false,
             }
             : undefined
           }
+          categoryIcons={categoryIcons}
           onSave={handleSave}
           onClose={closeModal}
         />

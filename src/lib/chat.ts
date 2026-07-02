@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase } from './supabase'
-import { UserRole } from '../types'
+import { UserRole, UserTier } from '../types'
 import { triggerPushNotifications } from './push'
 
 export interface DbMessage {
@@ -20,6 +20,7 @@ export interface DmUser {
   id: string
   name: string
   role: UserRole
+  tier?: UserTier            // 'free' = utente gratuito; usato per separare i DM lato admin
   avatarUrl?: string
   avatarPreset?: string
 }
@@ -405,15 +406,16 @@ export function useDmUsers(currentUserId: string, _currentRole: UserRole) {
     // Tutti possono scrivere a tutti: nessun filtro per ruolo.
     supabase
       .from('profiles')
-      .select('id, name, role, avatar_url, avatar_preset')
+      .select('id, name, role, tier, avatar_url, avatar_preset')
       .neq('id', currentUserId)
       .order('role')
       .then(({ data }) => {
         if (!data) return
-        setUsers((data as { id: string; name: string; role: UserRole; avatar_url: string | null; avatar_preset: string | null }[]).map(r => ({
+        setUsers((data as { id: string; name: string; role: UserRole; tier: UserTier | null; avatar_url: string | null; avatar_preset: string | null }[]).map(r => ({
           id: r.id,
           name: r.name,
           role: r.role,
+          tier: r.tier ?? undefined,
           avatarUrl: r.avatar_url ?? undefined,
           avatarPreset: r.avatar_preset ?? undefined,
         })))
