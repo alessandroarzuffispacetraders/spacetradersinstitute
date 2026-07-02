@@ -27,8 +27,11 @@ export default function LockedSection() {
   const section =
     SECTIONS.find(s => pathname === s.prefix || pathname.startsWith(s.prefix + '/')) ?? SECTIONS[0]
 
+  // key = prefisso della sezione: cambiando sezione bloccata, PreviewLock si
+  // rimonta e il timer del popup riparte (altrimenti, dato che il guard tiene
+  // montato lo stesso componente tra le route figlie, partirebbe una volta sola).
   return (
-    <PreviewLock title={section.title} body={section.body}>
+    <PreviewLock key={section.prefix} title={section.title} body={section.body}>
       {section.decoy}
     </PreviewLock>
   )
