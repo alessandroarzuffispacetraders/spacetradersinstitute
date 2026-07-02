@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   X, Camera, Eye, EyeOff, Check, Lock, User as UserIcon,
-  Mail, Shield, ChevronRight, Upload, Bell, BellOff, Loader2,
+  ChevronRight, Upload, Bell, BellOff, Loader2,
   BookMarked, ExternalLink,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
@@ -149,20 +149,22 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
         onClick={onClose}
       />
 
-      {/* Modal */}
+      {/* Modal — la vista principale è più larga (orizzontale su desktop);
+          le sotto-schermate (form) restano strette. */}
       <div
         className="fixed z-[101] left-1/2 top-1/2 w-full"
         style={{
           transform: 'translate(-50%, -50%)',
-          maxWidth: 420,
+          maxWidth: section === 'main' ? 720 : 420,
           padding: '0 16px',
           animation: 'profileModalIn 0.22s cubic-bezier(0.22,1,0.36,1)',
         }}
         onClick={e => e.stopPropagation()}
       >
         <div
-          className="w-full rounded-[28px] overflow-hidden"
+          className="w-full rounded-[28px] overflow-y-auto no-scrollbar"
           style={{
+            maxHeight: '90vh',
             background: 'var(--ist-nav-bg)',
             border: '1px solid var(--ist-nav-border)',
             backdropFilter: 'blur(32px)',
@@ -175,104 +177,101 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
             <>
               <ModalHeader title="Profilo" onClose={onClose} />
 
-              {/* Avatar hero */}
-              <div className="flex flex-col items-center gap-3 pt-6 pb-5 px-6">
-                <div className="relative">
-                  <UserAvatar user={user} size={80} />
-                  <button
-                    onClick={() => setSection('avatar')}
-                    className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center transition-colors"
-                    style={{ background: '#5A9AB1', border: '2px solid var(--ist-nav-bg)' }}
-                  >
-                    <Camera size={13} strokeWidth={2.5} color="white" />
-                  </button>
-                </div>
-                <div className="text-center">
-                  <p className="font-semibold text-base leading-tight" style={{ color: 'var(--ist-text)' }}>
-                    {user.name}
-                  </p>
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--ist-text-muted)' }}>
-                    {user.email}
-                  </p>
-                </div>
+              {/* Layout: colonna identità + colonna azioni (orizzontale su desktop) */}
+              <div className="lg:flex">
+                {/* ── Identità ── */}
+                <div
+                  className="flex flex-col items-center text-center gap-3 px-6 pt-6 pb-6 border-b lg:border-b-0 lg:border-r lg:w-[248px] lg:flex-shrink-0 lg:justify-center"
+                  style={{ borderColor: 'var(--ist-w8)' }}
+                >
+                  <div className="relative">
+                    <UserAvatar user={user} size={84} />
+                    <button
+                      onClick={() => setSection('avatar')}
+                      className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center transition-colors"
+                      style={{ background: '#5A9AB1', border: '2px solid var(--ist-nav-bg)' }}
+                      title="Cambia immagine"
+                    >
+                      <Camera size={13} strokeWidth={2.5} color="white" />
+                    </button>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-base leading-tight" style={{ color: 'var(--ist-text)' }}>
+                      {user.name}
+                    </p>
+                    <p className="text-xs mt-1 break-all" style={{ color: 'var(--ist-text-muted)' }}>
+                      {user.email}
+                    </p>
+                  </div>
 
-                {/* Badges */}
-                <div className="flex items-center gap-2 flex-wrap justify-center">
-                  <span
-                    className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
-                    style={{ background: 'rgba(90,154,177,0.15)', color: '#7CBBD0', border: '1px solid rgba(90,154,177,0.25)' }}
-                  >
-                    {ROLE_LABELS[user.role]}
-                  </span>
-                  {user.status && STATUS_LABELS[user.status] && (
+                  {/* Badges ruolo + stato */}
+                  <div className="flex items-center gap-2 flex-wrap justify-center">
                     <span
                       className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
-                      style={{
-                        background: `${STATUS_LABELS[user.status].color}18`,
-                        color: STATUS_LABELS[user.status].color,
-                        border: `1px solid ${STATUS_LABELS[user.status].color}30`,
-                      }}
+                      style={{ background: 'rgba(90,154,177,0.15)', color: '#7CBBD0', border: '1px solid rgba(90,154,177,0.25)' }}
                     >
-                      {STATUS_LABELS[user.status].label}
+                      {ROLE_LABELS[user.role]}
                     </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Menu rows */}
-              <div className="px-4 pb-5 flex flex-col gap-4">
-                {/* Strumenti — Diario e Protocol Journal (spostati qui dalla sidebar) */}
-                <div className="flex flex-col gap-2">
-                  <SectionLabel>Strumenti</SectionLabel>
-                  <MenuRow
-                    icon={<BookMarked size={16} strokeWidth={2} />}
-                    label="Diario di trading"
-                    onClick={() => goTo('/student/diario')}
-                  />
-                  <MenuRow
-                    icon={<ExternalLink size={16} strokeWidth={2} />}
-                    label="Protocol Data Journal"
-                    onClick={() => goTo('/student/journal')}
-                  />
+                    {user.status && STATUS_LABELS[user.status] && (
+                      <span
+                        className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
+                        style={{
+                          background: `${STATUS_LABELS[user.status].color}18`,
+                          color: STATUS_LABELS[user.status].color,
+                          border: `1px solid ${STATUS_LABELS[user.status].color}30`,
+                        }}
+                      >
+                        {STATUS_LABELS[user.status].label}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
-                {/* Account */}
-                <div className="flex flex-col gap-2">
-                  <SectionLabel>Account</SectionLabel>
-                  <MenuRow
-                    icon={<UserIcon size={16} strokeWidth={2} />}
-                    label="Nome visualizzato"
-                    value={user.name}
-                    onClick={() => { setNameValue(user.name); setSection('name') }}
-                  />
-                  <MenuRow
-                    icon={<Mail size={16} strokeWidth={2} />}
-                    label="Email"
-                    value={user.email}
-                    disabled
-                  />
-                  <MenuRow
-                    icon={<Lock size={16} strokeWidth={2} />}
-                    label="Cambia password"
-                    onClick={() => setSection('password')}
-                  />
-                  <MenuRow
-                    icon={<Shield size={16} strokeWidth={2} />}
-                    label="Ruolo"
-                    value={ROLE_LABELS[user.role]}
-                    disabled
-                  />
-                  <MenuRow
-                    icon={<Bell size={16} strokeWidth={2} />}
-                    label="Notifiche"
-                    value={
-                      !('Notification' in window) ? 'Non supportate'
-                      : Notification.permission === 'granted' ? 'Attive'
-                      : Notification.permission === 'denied' ? 'Bloccate'
-                      : 'Non abilitate'
-                    }
-                    onClick={() => setSection('notifications')}
-                  />
+                {/* ── Azioni ── */}
+                <div className="flex-1 min-w-0 px-5 pt-5 pb-5 flex flex-col gap-4">
+                  {/* Strumenti — tile grandi (2 col) */}
+                  <div>
+                    <SectionLabel>Strumenti</SectionLabel>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <Tile
+                        icon={<BookMarked size={18} strokeWidth={2} />}
+                        label="Diario"
+                        hint="di trading"
+                        onClick={() => goTo('/student/diario')}
+                      />
+                      <Tile
+                        icon={<ExternalLink size={18} strokeWidth={2} />}
+                        label="Protocol"
+                        hint="Data Journal"
+                        onClick={() => goTo('/student/journal')}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Account — tile piccoli (3 col) */}
+                  <div>
+                    <SectionLabel>Account</SectionLabel>
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      <Tile
+                        icon={<UserIcon size={18} strokeWidth={2} />}
+                        label="Nome"
+                        compact
+                        onClick={() => { setNameValue(user.name); setSection('name') }}
+                      />
+                      <Tile
+                        icon={<Lock size={18} strokeWidth={2} />}
+                        label="Password"
+                        compact
+                        onClick={() => setSection('password')}
+                      />
+                      <Tile
+                        icon={<Bell size={18} strokeWidth={2} />}
+                        label="Notifiche"
+                        compact
+                        onClick={() => setSection('notifications')}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </>
@@ -538,44 +537,33 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-function MenuRow({
-  icon, label, value, onClick, disabled,
+function Tile({
+  icon, label, hint, onClick, compact,
 }: {
   icon: React.ReactNode
   label: string
-  value?: string
+  hint?: string
   onClick?: () => void
-  disabled?: boolean
+  compact?: boolean
 }) {
   return (
     <button
       onClick={onClick}
-      disabled={disabled}
-      className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all text-left"
-      style={{
-        background: 'var(--ist-w6)',
-        border: '1px solid var(--ist-w8)',
-        opacity: disabled ? 0.6 : 1,
-        cursor: disabled ? 'default' : 'pointer',
-      }}
+      className={`w-full flex flex-col items-center justify-start text-center gap-2 rounded-2xl transition-all active:scale-[0.97] hover:-translate-y-0.5 ${compact ? 'py-3 px-1.5' : 'py-4 px-2'}`}
+      style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)' }}
     >
       <div
-        className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+        className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
         style={{ background: 'rgba(90,154,177,0.12)', border: '1px solid rgba(90,154,177,0.16)', color: '#7CBBD0' }}
       >
         {icon}
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium" style={{ color: 'var(--ist-text-muted)' }}>{label}</p>
-        {value && (
-          <p className="text-sm font-medium truncate leading-tight mt-0.5" style={{ color: 'var(--ist-text)' }}>
-            {value}
-          </p>
+      <div className="min-w-0 w-full">
+        <p className="text-xs font-semibold leading-tight truncate" style={{ color: 'var(--ist-text)' }}>{label}</p>
+        {hint && (
+          <p className="text-[10px] leading-tight mt-0.5 truncate" style={{ color: 'var(--ist-text-muted)' }}>{hint}</p>
         )}
       </div>
-      {!disabled && onClick && (
-        <ChevronRight size={15} strokeWidth={2} style={{ color: 'var(--ist-text-dim)', flexShrink: 0 }} />
-      )}
     </button>
   )
 }
