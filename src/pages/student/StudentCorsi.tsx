@@ -1,14 +1,25 @@
 import { useNavigate } from 'react-router-dom'
 import PageHeader from '../../components/ui/PageHeader'
-import { useStudentCatalog, getCategoryStats, getCourseStats } from '../../lib/content'
+import { useStudentCatalog, getCategoryStats, getCourseStats, Category } from '../../lib/content'
 import { useAuth } from '../../context/AuthContext'
-import { BookOpen, ChevronRight, Play, CheckCircle2, Layers, Loader2 } from 'lucide-react'
+import {
+  BookOpen, ChevronRight, Play, CheckCircle2, Layers, Loader2,
+  Compass, Target, Rocket, Check,
+} from 'lucide-react'
 
-const PHASE_STYLE: Record<string, { bg: string; text: string; border: string }> = {
-  Onboarding: { bg: 'rgba(124,187,208,0.12)', text: '#7CBBD0',  border: 'rgba(124,187,208,0.22)' },
-  Build:      { bg: 'rgba(70,211,154,0.12)',  text: '#46D39A',  border: 'rgba(70,211,154,0.22)'  },
-  Test:       { bg: 'rgba(246,200,95,0.12)',  text: '#F6C85F',  border: 'rgba(246,200,95,0.22)'  },
-  Deploy:     { bg: 'rgba(160,120,255,0.12)', text: '#A078FF',  border: 'rgba(160,120,255,0.22)' },
+// Icona per fase (tema "percorso" Space Traders)
+const PHASE_ICON: Record<string, typeof BookOpen> = {
+  Onboarding: Compass, Build: Layers, Test: Target, Deploy: Rocket,
+}
+
+// Copertina PROCEDURALE generata dal colore accent della categoria (nessun upload).
+// Layer di glow radiali + gradiente su base scura → look "copertina" senza immagini.
+function coverBackground(accent: string): string {
+  return [
+    `radial-gradient(100% 140% at 12% 0%, ${accent}E6 0%, ${accent}80 34%, ${accent}26 66%, transparent 100%)`,
+    `radial-gradient(90% 130% at 100% 100%, ${accent}59 0%, transparent 62%)`,
+    `linear-gradient(120deg, ${accent}33 0%, ${accent}0D 100%)`,
+  ].join(', ')
 }
 
 export default function StudentCorsi() {
@@ -22,6 +33,14 @@ export default function StudentCorsi() {
   const totalPct     = totalLessons ? Math.round((totalDone / totalLessons) * 100) : 0
   const totalCourses = categories.reduce((s, c) => s + c.courses.length, 0)
 
+  // Tappa "attuale" del percorso = prima categoria non ancora completata.
+  const currentIndex = (() => {
+    for (let i = 0; i < categories.length; i++) {
+      if (getCategoryStats(categories[i]).pct < 100) return i
+    }
+    return categories.length // tutte completate
+  })()
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-32">
@@ -31,7 +50,7 @@ export default function StudentCorsi() {
   }
 
   return (
-    <div className="p-5 lg:p-8 max-w-5xl mx-auto">
+    <div className="p-5 lg:p-8 max-w-4xl mx-auto">
       <PageHeader
         title="Videocorsi"
         subtitle={`${totalDone} di ${totalLessons} lezioni completate`}
@@ -88,81 +107,143 @@ export default function StudentCorsi() {
         </div>
       </div>
 
-      {/* ── Category cards ── */}
-      <div className="space-y-4">
-        {categories.length === 0 && (
-          <div
-            className="rounded-3xl p-10 text-center"
-            style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)' }}
-          >
-            <p className="text-sm" style={{ color: 'var(--ist-text-dim)' }}>
-              Nessun videocorso disponibile al momento.
-            </p>
-          </div>
-        )}
-        {categories.map((cat) => {
-          const stats     = getCategoryStats(cat)
-          const phaseStyle = PHASE_STYLE[cat.phase] ?? PHASE_STYLE.Build
+      {/* ── Roadmap del percorso ── */}
+      {categories.length === 0 ? (
+        <div
+          className="rounded-3xl p-10 text-center"
+          style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)' }}
+        >
+          <p className="text-sm" style={{ color: 'var(--ist-text-dim)' }}>
+            Nessun videocorso disponibile al momento.
+          </p>
+        </div>
+      ) : (
+        <div className="relative">
+          {categories.map((cat: Category, i) => {
+            const stats      = getCategoryStats(cat)
+            const PhaseIcon  = PHASE_ICON[cat.phase] ?? BookOpen
+            const done       = stats.pct === 100
+            const isCurrent  = i === currentIndex
+            const isLast     = i === categories.length - 1
+            const nextAccent = !isLast ? categories[i + 1].accent : cat.accent
 
-          return (
-            <button
-              key={cat.id}
-              onClick={() => navigate(`/student/corsi/${cat.id}`)}
-              className="w-full text-left rounded-3xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5 group"
-              style={{
-                background: 'var(--ist-card-bg)',
-                border: '1px solid var(--ist-border)',
-                boxShadow: 'var(--ist-card-shadow)',
-              }}
-            >
-              {/* Accent stripe */}
-              <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${cat.accent}, ${cat.accent}40)` }} />
+            const statusLabel = done ? 'Completato' : isCurrent ? 'Sei qui' : stats.pct > 0 ? 'In corso' : 'Da fare'
+            const ctaLabel    = done ? 'Rivedi' : stats.pct > 0 ? 'Continua' : 'Inizia'
 
-              <div className="p-5 lg:p-6">
-                <div className="flex items-start gap-4">
-                  {/* Icon */}
+            return (
+              <div key={cat.id} className="relative flex gap-3 lg:gap-5 pb-6 lg:pb-8 last:pb-0">
+                {/* ── Spina + nodo ── */}
+                <div className="relative flex-shrink-0 w-10 lg:w-11 flex justify-center">
+                  {/* Connettore verticale verso la tappa successiva */}
+                  {!isLast && (
+                    <div
+                      className="absolute left-1/2 -translate-x-1/2 top-10 lg:top-11 -bottom-6 lg:-bottom-8 w-[2px] rounded-full"
+                      style={{
+                        background: done
+                          ? `linear-gradient(to bottom, ${cat.accent}, ${nextAccent})`
+                          : 'var(--ist-w10)',
+                      }}
+                    />
+                  )}
+                  {/* Nodo */}
+                  <div className="relative z-10">
+                    {isCurrent && (
+                      <span
+                        className="absolute -inset-1 rounded-full animate-ping"
+                        style={{ background: `${cat.accent}30` }}
+                      />
+                    )}
+                    <div
+                      className="relative w-10 h-10 lg:w-11 lg:h-11 rounded-full flex items-center justify-center"
+                      style={done
+                        ? { background: cat.accent, boxShadow: `0 4px 14px ${cat.accent}55` }
+                        : isCurrent
+                          ? { background: 'var(--ist-card-bg)', border: `2px solid ${cat.accent}`, color: cat.accent, boxShadow: `0 0 0 4px ${cat.accent}18` }
+                          : { background: 'var(--ist-w6)', border: '1px solid var(--ist-border)', color: 'var(--ist-text-dim)' }
+                      }
+                    >
+                      {done
+                        ? <Check size={17} strokeWidth={3} className="text-white" />
+                        : <PhaseIcon size={17} strokeWidth={2} />
+                      }
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Card categoria (copertina + corpo) ── */}
+                <button
+                  onClick={() => navigate(`/student/corsi/${cat.id}`)}
+                  className="flex-1 min-w-0 text-left rounded-3xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5 group"
+                  style={{
+                    background: 'var(--ist-card-bg)',
+                    border: '1px solid var(--ist-border)',
+                    boxShadow: 'var(--ist-card-shadow)',
+                  }}
+                >
+                  {/* Copertina procedurale */}
                   <div
-                    className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: `${cat.accent}15`, border: `1px solid ${cat.accent}25` }}
+                    className="relative h-24 lg:h-28 overflow-hidden"
+                    data-inverted="true"
+                    style={{ backgroundColor: '#0b0f18', backgroundImage: coverBackground(cat.accent) }}
                   >
-                    <BookOpen size={18} strokeWidth={2} style={{ color: cat.accent }} />
+                    {/* Watermark icona fase */}
+                    <PhaseIcon
+                      size={128}
+                      strokeWidth={1.25}
+                      className="absolute -right-5 -bottom-7 pointer-events-none"
+                      style={{ color: '#fff', opacity: 0.14 }}
+                    />
+                    {/* Scrim per leggibilità del titolo */}
+                    <div
+                      className="absolute inset-0"
+                      style={{ background: 'linear-gradient(to top, rgba(4,6,12,0.72) 0%, rgba(4,6,12,0.15) 45%, transparent 70%)' }}
+                    />
+                    {/* Badge fase + stato */}
+                    <div className="absolute top-3 left-4 flex items-center gap-1.5">
+                      <span
+                        className="text-[9px] font-bold px-2 py-0.5 rounded-full"
+                        style={{ background: 'rgba(255,255,255,0.16)', color: '#fff', border: '1px solid rgba(255,255,255,0.20)', backdropFilter: 'blur(6px)' }}
+                      >
+                        {cat.phase}
+                      </span>
+                      <span
+                        className="text-[9px] font-semibold px-2 py-0.5 rounded-full"
+                        style={done
+                          ? { background: 'rgba(70,211,154,0.22)', color: '#8CF0C4', border: '1px solid rgba(70,211,154,0.35)' }
+                          : isCurrent
+                            ? { background: 'rgba(255,255,255,0.14)', color: '#fff', border: '1px solid rgba(255,255,255,0.22)' }
+                            : { background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.12)' }
+                        }
+                      >
+                        {statusLabel}
+                      </span>
+                    </div>
+                    {/* Titolo sulla copertina */}
+                    <h3
+                      className="absolute bottom-2.5 left-4 right-4 text-lg lg:text-xl font-bold text-white leading-tight"
+                      style={{ textShadow: '0 2px 12px rgba(0,0,0,0.55)' }}
+                    >
+                      {cat.title}
+                    </h3>
                   </div>
 
-                  <div className="flex-1 min-w-0">
-                    {/* Title + badges */}
-                    <div className="flex items-start gap-2 mb-1.5 flex-wrap">
-                      <h3 className="text-base font-bold leading-tight" style={{ color: 'var(--ist-text)' }}>
-                        {cat.title}
-                      </h3>
-                      <div className="flex gap-1.5 flex-shrink-0 mt-px">
-                        <span
-                          className="text-[9px] font-bold px-2 py-0.5 rounded-full"
-                          style={{ background: phaseStyle.bg, color: phaseStyle.text, border: `1px solid ${phaseStyle.border}` }}
-                        >
-                          {cat.phase}
-                        </span>
-                      </div>
-                    </div>
-
-                    <p className="text-sm leading-relaxed mb-4" style={{ color: 'var(--ist-text-muted)' }}>
+                  {/* Corpo */}
+                  <div className="p-4 lg:p-5">
+                    <p className="text-sm leading-relaxed mb-3" style={{ color: 'var(--ist-text-muted)' }}>
                       {cat.description}
                     </p>
 
-                    {/* Meta + progress */}
-                    <div className="flex items-center gap-1 mb-3 flex-wrap">
-                      <span className="text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>
-                        {cat.courses.length} {cat.courses.length === 1 ? 'corso' : 'corsi'} ·
-                      </span>
-                      <span className="text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>
-                        {stats.total} lezioni
-                      </span>
-                      <span className="mx-1" style={{ color: 'var(--ist-border)' }}>·</span>
-                      <span className="text-[11px] font-semibold" style={{ color: cat.accent }}>
-                        {stats.done}/{stats.total} completate
-                      </span>
+                    {/* Meta */}
+                    <div className="flex items-center gap-1.5 mb-2 text-[11px] flex-wrap" style={{ color: 'var(--ist-text-dim)' }}>
+                      <span>{cat.courses.length} {cat.courses.length === 1 ? 'corso' : 'corsi'}</span>
+                      <span>·</span>
+                      <span>{stats.total} lezioni</span>
+                      <span className="mx-0.5" style={{ color: 'var(--ist-border)' }}>·</span>
+                      <span className="font-semibold" style={{ color: cat.accent }}>{stats.done}/{stats.total} completate</span>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    {/* Progress */}
+                    <div className="flex items-center gap-3 mb-4">
                       <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--ist-w10)' }}>
                         <div
                           className="h-full rounded-full transition-all duration-500"
@@ -178,57 +259,50 @@ export default function StudentCorsi() {
                         {stats.pct}%
                       </span>
                     </div>
-                  </div>
 
-                  {/* Arrow */}
-                  <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 transition-all group-hover:translate-x-0.5 group-hover:border-opacity-60"
-                    style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-border)' }}
-                  >
-                    <ChevronRight size={14} strokeWidth={2.5} style={{ color: 'var(--ist-text-muted)' }} />
-                  </div>
-                </div>
+                    {/* Anteprima corsi */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {cat.courses.map(course => {
+                        const cs = getCourseStats(course)
+                        const complete = cs.done === cs.total && cs.total > 0
+                        return (
+                          <div
+                            key={course.id}
+                            className="flex items-center gap-2.5 px-3 py-2 rounded-xl"
+                            style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)' }}
+                          >
+                            <div
+                              className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+                              style={{ background: complete ? 'rgba(70,211,154,0.15)' : `${cat.accent}15` }}
+                            >
+                              {complete
+                                ? <CheckCircle2 size={10} strokeWidth={2.5} style={{ color: '#46D39A' }} />
+                                : <Play size={9} strokeWidth={2.5} style={{ color: cat.accent }} />
+                              }
+                            </div>
+                            <span className="text-[11px] font-medium truncate flex-1" style={{ color: 'var(--ist-text-muted)' }}>
+                              {course.title}
+                            </span>
+                            <span className="text-[10px] flex-shrink-0" style={{ color: 'var(--ist-text-dim)' }}>
+                              {cs.done}/{cs.total}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
 
-                {/* Course previews */}
-                <div
-                  className="mt-4 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-1.5"
-                  style={{ borderTop: '1px solid var(--ist-border)' }}
-                >
-                  {cat.courses.map(course => {
-                    const cs = getCourseStats(course)
-                    const complete = cs.done === cs.total && cs.total > 0
-                    return (
-                      <div
-                        key={course.id}
-                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl"
-                        style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)' }}
-                      >
-                        <div
-                          className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
-                          style={{
-                            background: complete ? 'rgba(70,211,154,0.15)' : `${cat.accent}15`,
-                          }}
-                        >
-                          {complete
-                            ? <CheckCircle2 size={10} strokeWidth={2.5} style={{ color: '#46D39A' }} />
-                            : <Play size={9} strokeWidth={2.5} style={{ color: cat.accent }} />
-                          }
-                        </div>
-                        <span className="text-[11px] font-medium truncate flex-1" style={{ color: 'var(--ist-text-muted)' }}>
-                          {course.title}
-                        </span>
-                        <span className="text-[10px] flex-shrink-0" style={{ color: 'var(--ist-text-dim)' }}>
-                          {cs.done}/{cs.total}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
+                    {/* CTA */}
+                    <div className="flex items-center justify-end gap-0.5 mt-3 text-[11px] font-semibold transition-transform group-hover:translate-x-0.5" style={{ color: cat.accent }}>
+                      {ctaLabel}
+                      <ChevronRight size={13} strokeWidth={2.5} />
+                    </div>
+                  </div>
+                </button>
               </div>
-            </button>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
