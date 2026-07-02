@@ -14,7 +14,7 @@ export interface Channel {
   canPost: MemberRole[]
   unread?: number
   pinned?: boolean
-  dmWith?: { name: string; role: MemberRole; online?: boolean }
+  dmWith?: { name: string; role: MemberRole; online?: boolean; avatarUrl?: string; avatarPreset?: string }
 }
 
 export interface ChatMessage {

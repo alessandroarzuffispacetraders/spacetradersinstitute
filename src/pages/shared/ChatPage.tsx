@@ -13,9 +13,10 @@ import {
 } from '../../data/chatData'
 import {
   useChatMessages, useDmUsers, useUnreadCounts, useTypingIndicator,
-  dmChannelId, DmUser, DbMessage,
+  useAuthorAvatars, dmChannelId, DmUser, DbMessage,
 } from '../../lib/chat'
 import { useChannels } from '../../lib/channels'
+import UserAvatar from '../../components/ui/UserAvatar'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -93,12 +94,13 @@ interface UserCardProps {
   userId: string
   name: string
   role: MemberRole
+  avatar?: { avatarUrl?: string; avatarPreset?: string }
   canDm: boolean
   onStartDm: () => void
   onClose: () => void
 }
 
-function UserCard({ name, role, canDm, onStartDm, onClose }: UserCardProps) {
+function UserCard({ name, role, avatar, canDm, onStartDm, onClose }: UserCardProps) {
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center p-4"
@@ -124,12 +126,18 @@ function UserCard({ name, role, canDm, onStartDm, onClose }: UserCardProps) {
 
         {/* Identità */}
         <div className="flex flex-col items-center text-center px-5 pt-7 pb-5">
-          <div
-            className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold mb-3"
-            style={{ background: DM_AVATAR_GRADIENT[role] ?? DM_AVATAR_GRADIENT.student, color: 'white' }}
-          >
-            {name.charAt(0).toUpperCase()}
-          </div>
+          {avatar?.avatarUrl || avatar?.avatarPreset ? (
+            <div className="mb-3">
+              <UserAvatar user={{ name, avatarUrl: avatar.avatarUrl, avatarPreset: avatar.avatarPreset }} size={64} />
+            </div>
+          ) : (
+            <div
+              className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold mb-3"
+              style={{ background: DM_AVATAR_GRADIENT[role] ?? DM_AVATAR_GRADIENT.student, color: 'white' }}
+            >
+              {name.charAt(0).toUpperCase()}
+            </div>
+          )}
           <p className="w-full text-base font-semibold leading-snug break-words" style={{ color: 'var(--ist-text)' }}>
             {name}
           </p>
@@ -342,12 +350,7 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
                     style={activeChannel === chId ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' } : {}}
                   >
                     <div className="relative flex-shrink-0">
-                      <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold"
-                        style={{ background: DM_AVATAR_GRADIENT[u.role] ?? DM_AVATAR_GRADIENT.student, color: 'white' }}
-                      >
-                        {u.name.charAt(0)}
-                      </div>
+                      <UserAvatar user={{ name: u.name, avatarUrl: u.avatarUrl, avatarPreset: u.avatarPreset }} size={36} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate" style={{ color: activeChannel === chId ? 'var(--ist-accent-text)' : 'var(--ist-text)' }}>
@@ -449,7 +452,7 @@ interface ChatAreaProps {
   userRole: MemberRole
   userId: string
   userName: string
-  onShowUserCard: (card: { userId: string; name: string; role: MemberRole }) => void
+  onShowUserCard: (card: { userId: string; name: string; role: MemberRole; avatar?: { avatarUrl?: string; avatarPreset?: string } }) => void
   onBack?: () => void
   isMobile?: boolean
 }
@@ -465,6 +468,8 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
 
   const { messages, loading, reactions, sendMessage: sendToDb, editMessage, deleteMessage, toggleReaction } = useChatMessages(channel.id, userId)
   const { typingUsers, notifyTyping, stopTyping } = useTypingIndicator(channel.id, userId, userName)
+  // Avatar reali (foto/preset) degli autori, risolti per user_id.
+  const authorAvatars = useAuthorAvatars(useMemo(() => messages.map(m => m.user_id), [messages]))
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -610,9 +615,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
 
         {isDirect && dmPartner ? (
           <div className="flex-shrink-0">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold" style={{ background: DM_AVATAR_GRADIENT[dmPartner.role], color: 'white' }}>
-              {dmPartner.name.charAt(0)}
-            </div>
+            <UserAvatar user={{ name: dmPartner.name, avatarUrl: dmPartner.avatarUrl, avatarPreset: dmPartner.avatarPreset }} size={36} />
           </div>
         ) : (
           <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--ist-w8)', color: 'var(--ist-accent-text)' }}>
@@ -672,17 +675,27 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                 <div className={`flex gap-2.5 mt-3 group/msggroup ${group.own ? 'flex-row-reverse' : ''}`}>
                   {/* Avatar */}
                   <button
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 mt-0.5 transition-opacity hover:opacity-80 active:opacity-60 self-end"
-                    style={group.own
-                      ? { background: 'linear-gradient(135deg, #5A9AB1, #286680)', color: 'white' }
-                      : { background: DM_AVATAR_GRADIENT[group.authorRole] ?? 'var(--ist-w12)', color: 'white' }
-                    }
+                    className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 self-end overflow-hidden transition-opacity hover:opacity-80 active:opacity-60"
                     onClick={(e) => {
                       e.stopPropagation()
-                      if (!group.own) onShowUserCard({ userId: group.authorId, name: group.author, role: group.authorRole })
+                      if (!group.own) onShowUserCard({ userId: group.authorId, name: group.author, role: group.authorRole, avatar: authorAvatars[group.authorId] })
                     }}
                   >
-                    {group.author.charAt(0)}
+                    {(() => {
+                      const a = authorAvatars[group.authorId]
+                      if (a?.avatarUrl || a?.avatarPreset) {
+                        return <UserAvatar user={{ name: a.name || group.author, avatarUrl: a.avatarUrl, avatarPreset: a.avatarPreset }} size={28} />
+                      }
+                      // Fallback: iniziale su gradiente (proprio = blu, altri = per ruolo)
+                      return (
+                        <span
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white"
+                          style={{ background: group.own ? 'linear-gradient(135deg, #5A9AB1, #286680)' : (DM_AVATAR_GRADIENT[group.authorRole] ?? 'var(--ist-w12)') }}
+                        >
+                          {group.author.charAt(0)}
+                        </span>
+                      )
+                    })()}
                   </button>
 
                   <div className={`flex flex-col gap-0.5 min-w-0 max-w-[75%] ${group.own ? 'items-end' : 'items-start'}`}>
@@ -1250,12 +1263,12 @@ export default function ChatPage() {
   const visibleChannels = channels.filter(ch => ch.roles.includes(userRole))
   const [activeChannelId, setActiveChannelId] = useState('generale')
   const [mobileView, setMobileView] = useState<'channels' | 'chat'>('channels')
-  const [userCard, setUserCard] = useState<{ userId: string; name: string; role: MemberRole } | null>(null)
+  const [userCard, setUserCard] = useState<{ userId: string; name: string; role: MemberRole; avatar?: { avatarUrl?: string; avatarPreset?: string } } | null>(null)
 
   // Cache id→{name,role} per costruire la DM anche se il partner non è in dmUsers
   // (es. RLS su profiles che nasconde gli altri studenti). Popolata aprendo la card.
   const [knownUsers, setKnownUsers] = useState<Record<string, { name: string; role: MemberRole }>>({})
-  const showUserCard = useCallback((card: { userId: string; name: string; role: MemberRole }) => {
+  const showUserCard = useCallback((card: { userId: string; name: string; role: MemberRole; avatar?: { avatarUrl?: string; avatarPreset?: string } }) => {
     setKnownUsers(prev => ({ ...prev, [card.userId]: { name: card.name, role: card.role } }))
     setUserCard(card)
   }, [])
@@ -1304,7 +1317,7 @@ export default function ChatPage() {
   const activeDmUser = isDmChannel
     ? (dmUsers.find(u => u.id === dmPartnerId)
        ?? (dmPartnerId && knownUsers[dmPartnerId]
-           ? { id: dmPartnerId, name: knownUsers[dmPartnerId].name, role: knownUsers[dmPartnerId].role }
+           ? { id: dmPartnerId, name: knownUsers[dmPartnerId].name, role: knownUsers[dmPartnerId].role, avatarUrl: undefined, avatarPreset: undefined }
            : null))
     : null
 
@@ -1319,7 +1332,7 @@ export default function ChatPage() {
       categoryIcon: '',
       roles: ['student', 'coach', 'mental_coach', 'admin'],
       canPost: ['student', 'coach', 'mental_coach', 'admin'],
-      dmWith: { name: activeDmUser.name, role: activeDmUser.role },
+      dmWith: { name: activeDmUser.name, role: activeDmUser.role, avatarUrl: activeDmUser.avatarUrl, avatarPreset: activeDmUser.avatarPreset },
     }
     : null
 
@@ -1394,6 +1407,7 @@ export default function ChatPage() {
           userId={userCard.userId}
           name={userCard.name}
           role={userCard.role}
+          avatar={userCard.avatar}
           canDm={userCard.userId !== userId}
           onStartDm={() => { const ch = dmChannelId(userId, userCard.userId); selectChannel(ch) }}
           onClose={() => setUserCard(null)}

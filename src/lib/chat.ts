@@ -19,6 +19,8 @@ export interface DmUser {
   id: string
   name: string
   role: UserRole
+  avatarUrl?: string
+  avatarPreset?: string
 }
 
 // Per message: emoji → { count, reacted (did current user react?) }
@@ -352,6 +354,40 @@ export function useUnreadCounts(
   return { counts, markRead }
 }
 
+export interface AuthorAvatar {
+  name: string
+  avatarUrl?: string
+  avatarPreset?: string
+}
+
+// Risolve nome + avatar (foto o preset) degli autori dei messaggi, per user_id,
+// così accanto ai messaggi in chat compare la foto profilo reale.
+export function useAuthorAvatars(userIds: string[]): Record<string, AuthorAvatar> {
+  const [map, setMap] = useState<Record<string, AuthorAvatar>>({})
+  const key = Array.from(new Set(userIds.filter(Boolean))).sort().join(',')
+
+  useEffect(() => {
+    const ids = key ? key.split(',') : []
+    if (ids.length === 0) return
+    let cancelled = false
+    supabase
+      .from('profiles')
+      .select('id, name, avatar_url, avatar_preset')
+      .in('id', ids)
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        const next: Record<string, AuthorAvatar> = {}
+        for (const p of data as { id: string; name: string; avatar_url: string | null; avatar_preset: string | null }[]) {
+          next[p.id] = { name: p.name, avatarUrl: p.avatar_url ?? undefined, avatarPreset: p.avatar_preset ?? undefined }
+        }
+        setMap(next)
+      })
+    return () => { cancelled = true }
+  }, [key])
+
+  return map
+}
+
 export function useDmUsers(currentUserId: string, _currentRole: UserRole) {
   const [users, setUsers] = useState<DmUser[]>([])
 
@@ -361,11 +397,18 @@ export function useDmUsers(currentUserId: string, _currentRole: UserRole) {
     // Tutti possono scrivere a tutti: nessun filtro per ruolo.
     supabase
       .from('profiles')
-      .select('id, name, role')
+      .select('id, name, role, avatar_url, avatar_preset')
       .neq('id', currentUserId)
       .order('role')
       .then(({ data }) => {
-        if (data) setUsers(data as DmUser[])
+        if (!data) return
+        setUsers((data as { id: string; name: string; role: UserRole; avatar_url: string | null; avatar_preset: string | null }[]).map(r => ({
+          id: r.id,
+          name: r.name,
+          role: r.role,
+          avatarUrl: r.avatar_url ?? undefined,
+          avatarPreset: r.avatar_preset ?? undefined,
+        })))
       })
   }, [currentUserId])
 
