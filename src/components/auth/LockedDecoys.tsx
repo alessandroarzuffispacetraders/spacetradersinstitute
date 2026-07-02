@@ -1,12 +1,15 @@
-import { CheckCircle2, Lock, CheckSquare, Square, ExternalLink, MessageCircle, Radio, ChevronRight, Clock, Trash2, ImagePlus } from 'lucide-react'
+import { CheckCircle2, Lock, CheckSquare, Square, ExternalLink, MessageCircle, Radio, Calendar, ChevronRight, Clock, Trash2, ImagePlus } from 'lucide-react'
 import { CSSProperties } from 'react'
 import PageHeader from '../ui/PageHeader'
 import Card from '../ui/Card'
+import LiveCalendar from '../ui/LiveCalendar'
+import { LiveEvent, liveDateLabel } from '../../lib/live'
 
-// ⚠️ ESCHE (decoy) — dati COMPLETAMENTE INVENTATI, mostrati offuscati dietro
-// PreviewLock all'utente gratuito. Non arrivano MAI dal database: nessun fetch,
-// nessun contenuto reale qui dentro. Servono solo a far intuire cosa c'è nel
-// percorso completo. Modificarli liberamente: non influenzano dati reali.
+// ⚠️ ESCHE (decoy) — dati COMPLETAMENTE INVENTATI, mostrati all'utente gratuito
+// come anteprima "abilitata" della sezione (poi compare il popup di upsell).
+// Non arrivano MAI dal database: nessun fetch, nessun contenuto reale qui
+// dentro. Ricalcano il layout delle pagine vere per sembrare realistici.
+// Modificarli liberamente: non influenzano dati reali.
 
 /* ── Percorso ──────────────────────────────────────────────── */
 
@@ -198,7 +201,29 @@ export function DecoyMentalCoach() {
   )
 }
 
-/* ── Live & Replay ─────────────────────────────────────────── */
+/* ── Live & Calendario — eventi finti condivisi ────────────── */
+
+// Ancorati al momento del caricamento → cadono nelle prossime settimane, così
+// il calendario mostra i pallini nel mese corrente.
+function isoAt(offsetDays: number, h: number, m: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + offsetDays)
+  d.setHours(h, m, 0, 0)
+  return d.toISOString()
+}
+
+const mkEvent = (id: string, title: string, host: string, hostRole: LiveEvent['hostRole'], offset: number, h: number, min: number, accent: string, accentEnd: string): LiveEvent => ({
+  id, title, description: '', host, hostRole, status: 'upcoming',
+  startsAt: isoAt(offset, h, min), zoomUrl: null, liveEmbedUrl: null, replayVimeoId: null,
+  durationMinutes: 60, accent, accentEnd, ownerId: null,
+})
+
+const DECOY_UPCOMING: LiveEvent[] = [
+  mkEvent('d1', 'Live analisi di mercato', 'Coach Marco', 'coach', 2, 18, 0, '#7CBBD0', '#286680'),
+  mkEvent('d2', 'Sessione mental coach di gruppo', 'Mental Coach Sara', 'mental_coach', 5, 20, 30, '#B48CE0', '#6B4FA0'),
+  mkEvent('d3', 'Q&A settimanale con il coach', 'Coach Marco', 'coach', 9, 19, 0, '#7CBBD0', '#286680'),
+  mkEvent('d4', 'Workshop: gestione del rischio', 'Coach Marco', 'coach', 16, 18, 30, '#F6C85F', '#B8860B'),
+]
 
 const DECOY_REPLAYS = [
   { title: 'Analisi di mercato — settimana 24', host: 'Coach Marco', meta: '22 giu 2026', dur: '58 min', accent: '#7CBBD0' },
@@ -206,14 +231,19 @@ const DECOY_REPLAYS = [
   { title: 'Live Q&A — gestione del rischio', host: 'Coach Marco', meta: '8 giu 2026', dur: '1h 12min', accent: '#7CBBD0' },
 ]
 
+/* ── Live & Replay ─────────────────────────────────────────── */
+
 export function DecoyLive() {
   return (
     <div className="p-5 lg:p-8 max-w-4xl mx-auto">
       <PageHeader title="Live & Replay" subtitle="Sessioni in diretta e registrazioni" />
 
+      {/* LIVE ORA */}
       <div className="w-full text-left mb-8 rounded-3xl overflow-hidden relative"
-        style={{ background: 'linear-gradient(135deg, #0A1628 0%, #0D2A3F 50%, #071420 100%)', border: '1px solid rgba(255,255,255,0.10)' }}>
-        <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #FF5050, #FF8A50)' }} />
+        style={{ background: 'linear-gradient(135deg, #0A1628 0%, #0D2A3F 50%, #071420 100%)', border: '1px solid rgba(255,255,255,0.10)', boxShadow: '0 24px 60px rgba(0,0,0,0.45)' }}>
+        <div className="absolute -top-16 -right-16 w-56 h-56 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, #7CBBD030 0%, transparent 70%)' }} />
+        <div className="absolute -bottom-20 -left-12 w-64 h-64 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, #286680 20%, transparent 70%)' }} />
+        <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #7CBBD0, #286680)' }} />
         <div className="relative p-6 lg:p-7">
           <div className="flex items-start gap-4">
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255,80,80,0.15)', border: '1px solid rgba(255,80,80,0.28)' }}>
@@ -227,40 +257,62 @@ export function DecoyLive() {
               <p className="text-sm mb-3" style={{ color: 'rgba(255,255,255,0.55)' }}>Coach Marco · Coach</p>
               <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.50)' }}>Analizziamo il mercato in tempo reale e rispondiamo alle domande in chat.</p>
             </div>
+            <div className="hidden sm:flex w-9 h-9 rounded-full items-center justify-center flex-shrink-0" style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)' }}>
+              <ChevronRight size={15} strokeWidth={2.5} style={{ color: 'rgba(255,255,255,0.70)' }} />
+            </div>
+          </div>
+          <div className="mt-5 pt-4 flex items-center justify-between flex-wrap gap-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.38)' }}>Entra e partecipa alla chat in tempo reale</p>
+            <span className="text-sm font-bold px-5 py-2 rounded-full text-white" style={{ background: 'linear-gradient(135deg, #7CBBD0, #286680)' }}>Entra →</span>
           </div>
         </div>
       </div>
 
-      <h2 className="text-xs font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--ist-text-dim)' }}>Replay disponibili</h2>
-      <div className="space-y-2.5">
-        {DECOY_REPLAYS.map((r) => (
-          <Card key={r.title} className="p-5 flex items-center gap-4">
-            <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: `${r.accent}12`, border: `1px solid ${r.accent}22` }}>
-              <Radio size={17} strokeWidth={2} style={{ color: r.accent }} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-sm mb-0.5" style={{ color: 'var(--ist-text)' }}>{r.title}</p>
-              <p className="text-xs mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>{r.host} · {r.meta}</p>
-              <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>
-                <span className="flex items-center gap-1"><Clock size={11} strokeWidth={2} /> {r.dur}</span>
+      {/* IN PROGRAMMA */}
+      <section className="mb-8">
+        <h2 className="text-xs font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--ist-text-dim)' }}>In programma</h2>
+        <div className="space-y-2.5">
+          {DECOY_UPCOMING.slice(0, 3).map((e) => (
+            <div key={e.id} className="flex items-center gap-4 p-4 lg:p-5 rounded-2xl" style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: 'var(--ist-card-shadow)' }}>
+              <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: `${e.accent}12`, border: `1px solid ${e.accent}22` }}>
+                <Calendar size={17} strokeWidth={2} style={{ color: e.accent }} />
               </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm mb-0.5" style={{ color: 'var(--ist-text)' }}>{e.title}</p>
+                <p className="text-xs" style={{ color: 'var(--ist-text-muted)' }}>{e.host} · {liveDateLabel(e)}</p>
+              </div>
+              <span className="text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0" style={{ background: `${e.accent}12`, color: e.accent, border: `1px solid ${e.accent}22` }}>Programmata</span>
             </div>
-            <ChevronRight size={15} strokeWidth={2} className="flex-shrink-0" style={{ color: 'var(--ist-text-dim)' }} />
-          </Card>
-        ))}
-      </div>
+          ))}
+        </div>
+      </section>
+
+      {/* REPLAY */}
+      <section>
+        <h2 className="text-xs font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--ist-text-dim)' }}>Replay disponibili</h2>
+        <div className="space-y-2.5">
+          {DECOY_REPLAYS.map((r) => (
+            <Card key={r.title} className="p-5 flex items-center gap-4">
+              <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: `${r.accent}12`, border: `1px solid ${r.accent}22` }}>
+                <Radio size={17} strokeWidth={2} style={{ color: r.accent }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm mb-0.5" style={{ color: 'var(--ist-text)' }}>{r.title}</p>
+                <p className="text-xs mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>{r.host} · {r.meta}</p>
+                <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>
+                  <span className="flex items-center gap-1"><Clock size={11} strokeWidth={2} /> {r.dur}</span>
+                </div>
+              </div>
+              <ChevronRight size={15} strokeWidth={2} className="flex-shrink-0" style={{ color: 'var(--ist-text-dim)' }} />
+            </Card>
+          ))}
+        </div>
+      </section>
     </div>
   )
 }
 
 /* ── Calendario ────────────────────────────────────────────── */
-
-const DECOY_EVENTS = [
-  { title: 'Live analisi di mercato', date: 'Lun 6 lug · 18:00', accent: '#7CBBD0' },
-  { title: 'Sessione mental coach di gruppo', date: 'Gio 9 lug · 20:30', accent: '#B48CE0' },
-  { title: 'Q&A settimanale con il coach', date: 'Ven 10 lug · 19:00', accent: '#7CBBD0' },
-]
-const DECOY_MARKED = new Set([6, 9, 10, 17, 24])
 
 export function DecoyCalendario() {
   return (
@@ -268,21 +320,7 @@ export function DecoyCalendario() {
       <PageHeader title="Calendario" subtitle="Le live in programma" />
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6">
         <Card className="p-5 h-fit">
-          <p className="text-sm font-semibold text-white mb-4 text-center">Luglio 2026</p>
-          <div className="grid grid-cols-7 gap-1.5 text-center">
-            {['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((d, i) => (
-              <span key={i} className="text-[10px] font-bold py-1" style={{ color: 'var(--ist-text-dim)' }}>{d}</span>
-            ))}
-            {Array.from({ length: 2 }).map((_, i) => <span key={`e${i}`} />)}
-            {Array.from({ length: 31 }).map((_, i) => {
-              const day = i + 1
-              const marked = DECOY_MARKED.has(day)
-              return (
-                <span key={day} className="text-xs py-1.5 rounded-lg flex items-center justify-center"
-                  style={marked ? { background: 'rgba(90,154,177,0.18)', color: '#7CBBD0', fontWeight: 700 } : { color: 'var(--ist-text-muted)' }}>{day}</span>
-              )
-            })}
-          </div>
+          <LiveCalendar events={DECOY_UPCOMING} onPickDay={() => {}} />
           <div className="flex items-center gap-4 mt-4 pt-3 text-[11px]" style={{ borderTop: '1px solid var(--ist-w7)', color: 'var(--ist-text-dim)' }}>
             <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#FF5050' }} /> In diretta</span>
             <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#7CBBD0' }} /> In programma</span>
@@ -292,14 +330,17 @@ export function DecoyCalendario() {
         <div>
           <h2 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--ist-text-dim)' }}>Prossimi appuntamenti</h2>
           <div className="space-y-2.5">
-            {DECOY_EVENTS.map((e) => (
-              <Card key={e.title} className="p-4 flex items-center gap-3">
+            {DECOY_UPCOMING.map((e) => (
+              <Card key={e.id} className="p-4 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: `${e.accent}12`, border: `1px solid ${e.accent}22` }}>
                   <Radio size={16} strokeWidth={2} style={{ color: e.accent }} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm truncate" style={{ color: 'var(--ist-text)' }}>{e.title}</p>
-                  <p className="text-xs flex items-center gap-1" style={{ color: 'var(--ist-text-muted)' }}><Clock size={11} strokeWidth={2} /> {e.date}</p>
+                  <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                    <p className="font-semibold text-sm truncate" style={{ color: 'var(--ist-text)' }}>{e.title}</p>
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: 'rgba(90,154,177,0.12)', color: '#7CBBD0' }}>In programma</span>
+                  </div>
+                  <p className="text-xs flex items-center gap-1" style={{ color: 'var(--ist-text-muted)' }}><Clock size={11} strokeWidth={2} /> {liveDateLabel(e)}</p>
                 </div>
                 <ChevronRight size={15} strokeWidth={2} className="flex-shrink-0" style={{ color: 'var(--ist-text-dim)' }} />
               </Card>

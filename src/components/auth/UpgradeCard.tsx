@@ -1,4 +1,4 @@
-import { Sparkles, Lock, Check, MessageCircle } from 'lucide-react'
+import { Sparkles, Lock, Check, MessageCircle, X } from 'lucide-react'
 import { useContactAdmin } from '../../lib/upgradeContact'
 
 const INCLUDED = [
@@ -15,15 +15,17 @@ export default function UpgradeCard({
   title = 'Sblocca il percorso completo',
   body = 'Questa sezione fa parte del percorso completo IST. Passa alla versione completa per accedere al coaching 1:1, a tutti i videocorsi e alla community.',
   floating = false,
+  onClose,
 }: {
   title?: string
   body?: string
   floating?: boolean
+  onClose?: () => void
 }) {
   const { contactAdmin, ready } = useContactAdmin()
   return (
     <div
-      className="w-full max-w-lg rounded-[28px] px-7 py-9 flex flex-col items-center text-center"
+      className="relative w-full max-w-lg rounded-[28px] px-7 py-9 flex flex-col items-center text-center"
       style={{
         background: 'var(--ist-card-bg)',
         border: '1px solid var(--ist-border)',
@@ -32,6 +34,16 @@ export default function UpgradeCard({
         WebkitBackdropFilter: floating ? 'blur(24px)' : undefined,
       }}
     >
+      {onClose && (
+        <button
+          onClick={onClose}
+          aria-label="Chiudi"
+          className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-white/[0.08]"
+          style={{ color: 'var(--ist-text-muted)', border: '1px solid var(--ist-border)' }}
+        >
+          <X size={16} strokeWidth={2.2} />
+        </button>
+      )}
       <div
         className="w-16 h-16 rounded-3xl flex items-center justify-center mb-6"
         style={{ background: 'rgba(90,154,177,0.16)', border: '1px solid rgba(124,187,208,0.28)' }}
