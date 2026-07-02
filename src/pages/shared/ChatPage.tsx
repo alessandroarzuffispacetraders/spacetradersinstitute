@@ -214,6 +214,9 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
   const [tab, setTab] = useState<'groups' | 'direct'>(initialTab ?? 'groups')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [search, setSearch] = useState('')
+  const [dmFilter, setDmFilter] = useState<'all' | 'unread'>('all')
+  // Solo lo staff può filtrare le chat private (es. mostrare solo le non lette).
+  const isStaff = userRole === 'coach' || userRole === 'mental_coach' || userRole === 'admin'
 
   const groupChannels = channels.filter(ch => ch.roles.includes(userRole) && ch.channelKind === 'group')
 
@@ -228,9 +231,12 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
     ? groupChannels.filter(ch => ch.name.toLowerCase().includes(search.toLowerCase()))
     : null
 
-  const filteredDms = search.trim()
+  const dmSearched = search.trim()
     ? dmUsers.filter(u => u.name.toLowerCase().includes(search.toLowerCase()))
     : dmUsers
+  const filteredDms = (isStaff && dmFilter === 'unread')
+    ? dmSearched.filter(u => (unreadCounts[dmChannelId(userId, u.id)] ?? 0) > 0)
+    : dmSearched
 
   const toggleCategory = (cat: string) => {
     setCollapsed(p => ({ ...p, [cat]: !p[cat] }))
@@ -238,6 +244,7 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
 
   const groupUnread = groupChannels.reduce((n, ch) => n + (unreadCounts[ch.id] ?? 0), 0)
   const directUnread = dmUsers.reduce((n, u) => n + (unreadCounts[dmChannelId(userId, u.id)] ?? 0), 0)
+  const unreadDmCount = dmUsers.filter(u => (unreadCounts[dmChannelId(userId, u.id)] ?? 0) > 0).length
 
   return (
     <div
@@ -331,9 +338,40 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
         {/* ── DIRECT TAB ── */}
         {tab === 'direct' && (
           <div className="px-1 py-1">
+            {/* Filtro chat private — solo staff */}
+            {isStaff && (
+              <div className="flex gap-1 px-1 pb-2">
+                <button
+                  onClick={() => setDmFilter('all')}
+                  className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-all"
+                  style={dmFilter === 'all'
+                    ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' }
+                    : { background: 'var(--ist-w6)', color: 'var(--ist-text-muted)' }}
+                >
+                  Tutte
+                </button>
+                <button
+                  onClick={() => setDmFilter('unread')}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all"
+                  style={dmFilter === 'unread'
+                    ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' }
+                    : { background: 'var(--ist-w6)', color: 'var(--ist-text-muted)' }}
+                >
+                  Non lette
+                  {unreadDmCount > 0 && (
+                    <span
+                      className="text-[9px] font-bold text-white px-1 rounded-full min-w-[15px] text-center leading-[15px]"
+                      style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)' }}
+                    >
+                      {unreadDmCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
             {filteredDms.length === 0 ? (
               <p className="text-xs px-3 py-4 text-center" style={{ color: 'var(--ist-text-dim)' }}>
-                Nessuna chat privata
+                {isStaff && dmFilter === 'unread' ? 'Nessuna chat non letta' : 'Nessuna chat privata'}
               </p>
             ) : (() => {
               const pinned = filteredDms.filter(u => u.role === 'coach' || u.role === 'mental_coach')
