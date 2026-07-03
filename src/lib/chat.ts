@@ -14,6 +14,8 @@ export interface DbMessage {
   created_at: string
   edited_at?: string | null
   deleted_at?: string | null
+  kind?: string | null            // 'welcome' = messaggio automatico di benvenuto
+  target_user_id?: string | null  // destinatario del messaggio di sistema (es. benvenuto)
 }
 
 export interface DmUser {

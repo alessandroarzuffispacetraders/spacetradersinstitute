@@ -70,6 +70,9 @@ const DM_AVATAR_GRADIENT: Record<MemberRole, string> = {
 
 const QUICK_EMOJIS = ['👍', '❤️', '😂', '🔥', '🎯']
 
+// Risposta preimpostata al messaggio di benvenuto automatico (canale 'benvenuto').
+const WELCOME_REPLY = 'Grazie mille! Felice di essere qui 🚀'
+
 // ─── channel icon ────────────────────────────────────────────────────────────
 
 function ChannelIcon({ type, size = 14 }: { type: 'chat' | 'bacheca'; size?: number }) {
@@ -620,6 +623,9 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
   }
 
   const canPost = channel.canPost.includes(userRole)
+  // Ha già scritto in questo canale? (nel 'benvenuto' = ha già risposto al
+  // messaggio automatico → nasconde il tastino di risposta preimpostata.)
+  const hasRepliedWelcome = messages.some(m => m.user_id === userId)
 
   const pickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -991,6 +997,19 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                                   <span className="font-semibold">{count}</span>
                                 </button>
                               ))}
+                            </div>
+                          )}
+
+                          {/* Tastino di risposta preimpostata al benvenuto (solo al destinatario) */}
+                          {msg.fullMsg.kind === 'welcome' && msg.fullMsg.target_user_id === userId && canPost && !hasRepliedWelcome && (
+                            <div className={`flex mt-2 ${group.own ? 'justify-end' : 'justify-start'}`}>
+                              <button
+                                onClick={() => sendToDb(WELCOME_REPLY, userName, userRole)}
+                                className="px-3.5 py-2 rounded-2xl text-sm font-semibold transition-all hover:scale-[1.03] active:scale-95"
+                                style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)', color: 'white', boxShadow: '0 4px 14px rgba(40,102,128,0.35)' }}
+                              >
+                                👋 {WELCOME_REPLY}
+                              </button>
                             </div>
                           )}
                         </div>
