@@ -106,6 +106,32 @@ export async function deleteAvatar(userId: string): Promise<void> {
   await supabase.storage.from(AVATAR_BUCKET).remove([`${userId}/avatar.jpg`])
 }
 
+// ── Copertine categorie videocorsi (bucket pubblico 'category-covers') ────────
+const COVER_BUCKET = 'category-covers'
+const COVER_MAX = 1280 // lato max in px (banner largo)
+
+// Carica la copertina (ridimensionata) di una categoria e ritorna l'URL pubblico
+// (cache-busted). Scrittura riservata all'admin via RLS.
+export async function uploadCategoryCover(categoryId: string, file: File): Promise<string | null> {
+  try {
+    const blob = await resizeToBlob(file, COVER_MAX, 0.82)
+    const path = `${categoryId}/cover.jpg`
+    const { error } = await supabase.storage.from(COVER_BUCKET).upload(path, blob, {
+      contentType: 'image/jpeg',
+      upsert: true,
+    })
+    if (error) return null
+    const { data } = supabase.storage.from(COVER_BUCKET).getPublicUrl(path)
+    return `${data.publicUrl}?v=${Date.now()}`
+  } catch {
+    return null
+  }
+}
+
+export async function deleteCategoryCover(categoryId: string): Promise<void> {
+  await supabase.storage.from(COVER_BUCKET).remove([`${categoryId}/cover.jpg`])
+}
+
 // ── Immagini in chat (bucket pubblico 'chat-images') ──────────────────────────
 const CHAT_IMAGE_BUCKET = 'chat-images'
 const CHAT_IMAGE_MAX = 1280 // lato max in px

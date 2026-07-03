@@ -45,6 +45,7 @@ export interface Category {
   published: boolean
   isFree: boolean           // categoria in vetrina: tutto il suo contenuto è
                             // accessibile all'utente gratuito (gating a cascata)
+  coverUrl: string | null   // copertina reale caricata dall'admin (null = procedurale)
   courses: Course[]
 }
 
@@ -109,11 +110,11 @@ interface RawCourse {
 }
 interface RawCategory {
   id: string; title: string; description: string; accent: string
-  phase: string; published: boolean; is_free: boolean; position: number; courses: RawCourse[] | null
+  phase: string; published: boolean; is_free: boolean; cover_url: string | null; position: number; courses: RawCourse[] | null
 }
 
 const SELECT = `
-  id, title, description, accent, phase, published, is_free, position,
+  id, title, description, accent, phase, published, is_free, cover_url, position,
   courses (
     id, category_id, title, description, phase, published, position,
     lessons (
@@ -144,6 +145,7 @@ function buildTree(
       phase: phaseLabel(cat.phase),
       published: cat.published,
       isFree: cat.is_free ?? false,
+      coverUrl: cat.cover_url ?? null,
       courses: (cat.courses ?? [])
         .slice()
         .sort(byPosition)
@@ -390,6 +392,13 @@ export function useContentAdmin() {
     return !error
   }, [load])
 
+  // ---- copertina reale della categoria (URL pubblico su Storage, o null) ----
+  const setCover = useCallback(async (id: string, coverUrl: string | null): Promise<boolean> => {
+    const { error } = await supabase.from('categories').update({ cover_url: coverUrl }).eq('id', id)
+    if (!error) await load(true)
+    return !error
+  }, [load])
+
   // ---- reorder: renormalize the whole sibling list to 0..n in the new order ----
   const move = useCallback(async (table: ContentTable, siblings: { id: string }[], id: string, dir: 'up' | 'down'): Promise<boolean> => {
     const idx = siblings.findIndex(s => s.id === id)
@@ -426,6 +435,6 @@ export function useContentAdmin() {
     createCategory, updateCategory, deleteCategory,
     createCourse, updateCourse, deleteCourse,
     createLesson, updateLesson, deleteLesson,
-    setPublished, setFree, moveCategory, moveCourse, moveLesson,
+    setPublished, setFree, setCover, moveCategory, moveCourse, moveLesson,
   }
 }

@@ -1,16 +1,16 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import PageHeader from '../../components/ui/PageHeader'
 import {
   ChevronDown, Plus, Edit2, Trash2,
   Paperclip, Video, FolderOpen, BookOpen, Radio, Clock,
-  ChevronUp, Eye, EyeOff, Loader2, X, Upload, Sparkles,
+  ChevronUp, Eye, EyeOff, Loader2, X, Upload, Sparkles, ImagePlus,
 } from 'lucide-react'
 import {
   useContentAdmin, Category, Course, Lesson,
   CategoryInput, CourseInput, LessonInput,
 } from '../../lib/content'
 import { parseVimeo } from '../../lib/vimeo'
-import { uploadAttachment, deleteAttachment } from '../../lib/storage'
+import { uploadAttachment, deleteAttachment, uploadCategoryCover, deleteCategoryCover } from '../../lib/storage'
 import { useLiveAdmin } from '../../lib/live'
 import LiveManager from '../../components/live/LiveManager'
 import { useAuth } from '../../context/AuthContext'
@@ -99,6 +99,57 @@ function ActionBtn({ icon, label, danger, onClick, disabled }: {
       {icon}
       <span className="hidden sm:inline">{label}</span>
     </button>
+  )
+}
+
+// Upload/rimozione copertina reale della categoria.
+function CoverBtn({ cat, admin }: { cat: Category; admin: AdminApi }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setBusy(true)
+    const url = await uploadCategoryCover(cat.id, file)
+    if (url) await admin.setCover(cat.id, url)
+    else alert('Caricamento copertina non riuscito.')
+    setBusy(false)
+  }
+
+  const removeCover = async () => {
+    if (!confirm('Rimuovere la copertina? Tornerà quella generata automaticamente.')) return
+    setBusy(true)
+    await deleteCategoryCover(cat.id)
+    await admin.setCover(cat.id, null)
+    setBusy(false)
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
+        className="flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-lg transition-colors hover:bg-white/[0.04] disabled:opacity-30"
+        style={{ color: cat.coverUrl ? 'var(--ist-accent-text)' : 'var(--ist-text-dim)' }}
+        title={cat.coverUrl ? 'Cambia copertina' : 'Carica copertina'}
+      >
+        {busy ? <Loader2 size={11} className="animate-spin" /> : <ImagePlus size={11} strokeWidth={2} />}
+        <span className="hidden sm:inline">Copertina</span>
+      </button>
+      {cat.coverUrl && !busy && (
+        <button
+          onClick={removeCover}
+          className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-white/[0.04]"
+          style={{ color: 'rgba(255,107,122,0.70)' }}
+          title="Rimuovi copertina"
+        >
+          <X size={11} strokeWidth={2} />
+        </button>
+      )}
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
+    </>
   )
 }
 
@@ -455,6 +506,7 @@ function CoursesTab({ admin, openModal }: { admin: AdminApi; openModal: (s: Moda
                   label={cat.isFree ? 'A pagamento' : 'Gratis'}
                   onClick={() => admin.setFree(cat.id, !cat.isFree)}
                 />
+                <CoverBtn cat={cat} admin={admin} />
                 <ActionBtn icon={<Edit2 size={11} strokeWidth={2} />} label="Modifica" onClick={() => openModal({ kind: 'category', mode: 'edit', id: cat.id, entity: cat })} />
                 <ActionBtn
                   icon={<Trash2 size={11} strokeWidth={2} />} label="Elimina" danger

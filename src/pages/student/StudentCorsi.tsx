@@ -217,19 +217,30 @@ export default function StudentCorsi() {
                     boxShadow: 'var(--ist-card-shadow)',
                   }}
                 >
-                  {/* Copertina procedurale */}
+                  {/* Copertina: reale (upload admin) o procedurale */}
                   <div
                     className="relative h-24 lg:h-28 overflow-hidden"
                     data-inverted="true"
                     style={{ backgroundColor: '#0b0f18', backgroundImage: coverBackground(cat.accent) }}
                   >
-                    {/* Watermark icona fase */}
-                    <PhaseIcon
-                      size={128}
-                      strokeWidth={1.25}
-                      className="absolute -right-5 -bottom-7 pointer-events-none"
-                      style={{ color: '#fff', opacity: 0.14 }}
-                    />
+                    {/* Copertina reale caricata dall'admin */}
+                    {cat.coverUrl && (
+                      <img
+                        src={cat.coverUrl}
+                        alt=""
+                        className="absolute inset-0 w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    )}
+                    {/* Watermark icona fase — solo con copertina procedurale */}
+                    {!cat.coverUrl && (
+                      <PhaseIcon
+                        size={128}
+                        strokeWidth={1.25}
+                        className="absolute -right-5 -bottom-7 pointer-events-none"
+                        style={{ color: '#fff', opacity: 0.14 }}
+                      />
+                    )}
                     {/* Scrim per leggibilità del titolo */}
                     <div
                       className="absolute inset-0"
