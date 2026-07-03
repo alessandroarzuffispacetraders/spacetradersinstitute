@@ -47,6 +47,10 @@ export default function VimeoPlayer({
   onProgressRef.current = onProgress
   onEndedRef.current = onEnded
 
+  // Rapporto d'aspetto reale del video (letto dall'SDK): la cornice ci si adatta
+  // così il video la riempie senza bande nere (default 16:9 finché non si sa).
+  const [aspect, setAspect] = useState('16 / 9')
+
   // Posizione + visibilità del watermark: cambia ciclicamente.
   const [wm, setWm] = useState<{ top: string; left: string; on: boolean }>({ top: '8%', left: '8%', on: true })
   useEffect(() => {
@@ -78,6 +82,11 @@ export default function VimeoPlayer({
     let lastSaved = 0   // ultimo secondo salvato (throttle)
     let latest = 0      // ultimo secondo visto (per salvare all'uscita)
     const save = (s: number) => { latest = s; lastSaved = s; onProgressRef.current?.(s) }
+
+    // Adatta la cornice al rapporto reale del video (niente bande nere).
+    Promise.all([player.getVideoWidth(), player.getVideoHeight()])
+      .then(([w, h]) => { if (!cancelled && w > 0 && h > 0) setAspect(`${w} / ${h}`) })
+      .catch(() => { /* ignore */ })
 
     // Riprendi dall'ultimo punto (se non è praticamente finito).
     if (startAt > 3) {
@@ -123,9 +132,9 @@ export default function VimeoPlayer({
 
   return (
     <div
-      className="relative w-full rounded-2xl lg:rounded-3xl overflow-hidden"
+      className="ist-vimeo-frame relative w-full rounded-2xl lg:rounded-3xl overflow-hidden"
       style={{
-        aspectRatio: '16/9',
+        aspectRatio: aspect,
         background: '#000',
         border: '1px solid rgba(255,255,255,0.08)',
         boxShadow: '0 24px 64px rgba(0,0,0,0.55)',
