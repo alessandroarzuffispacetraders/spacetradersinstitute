@@ -1,9 +1,24 @@
 import webPush from 'npm:web-push@3.6.7'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY')!
 const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY')!
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SERVICE_ROLE_KEY')!
+
+// Client service-role usato SOLO per verificare crittograficamente il JWT del
+// chiamante (getUser). Necessario perché questa funzione gira con verify_jwt=false
+// per compatibilità: il decode "a mano" del token NON verifica la firma ed è
+// falsificabile, quindi ogni identità va confermata con getUser().
+const authClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, { auth: { persistSession: false } })
+
+async function verifyCaller(req: Request): Promise<{ id: string } | null> {
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  if (!token) return null
+  const { data, error } = await authClient.auth.getUser(token)
+  if (error || !data.user) return null
+  return { id: data.user.id }
+}
 
 webPush.setVapidDetails(
   'mailto:admin@innerspacetrad.com',
@@ -49,21 +64,8 @@ function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
 }
 
-// Estrae il `sub` (user id) dal JWT del chiamante (base64url → JSON del payload).
-function callerId(req: Request): string | null {
-  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
-  const parts = token.split('.')
-  if (parts.length < 3) return null
-  try {
-    let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-    b64 += '='.repeat((4 - (b64.length % 4)) % 4)
-    const payload = JSON.parse(atob(b64))
-    return typeof payload.sub === 'string' ? payload.sub : null
-  } catch { return null }
-}
-
-async function getProfile(userId: string): Promise<{ role: string; roles: string[] | null } | null> {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=role,roles`, { headers: REST_HEADERS })
+async function getProfile(userId: string): Promise<{ name: string | null; role: string; roles: string[] | null } | null> {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=name,role,roles`, { headers: REST_HEADERS })
   const rows = await r.json().catch(() => [])
   return Array.isArray(rows) && rows[0] ? rows[0] : null
 }
@@ -88,9 +90,9 @@ type NotifyBody = {
 }
 
 async function handleNotify(notify: NotifyBody, req: Request) {
-  const caller = callerId(req)
+  const caller = await verifyCaller(req)
   if (!caller) return jsonRes({ error: 'unauthenticated' }, 401)
-  const callerProfile = await getProfile(caller)
+  const callerProfile = await getProfile(caller.id)
 
   // Segnalazione creata da coach/mental → notifica TUTTI gli admin.
   if (notify.type === 'flag_to_admin') {
@@ -162,6 +164,14 @@ Deno.serve(async (req) => {
 
     const message = payload.message!
 
+    // Verifica crittografica del chiamante: deve essere l'AUTORE del messaggio
+    // (niente push falsificate a nome di altri utenti / canali arbitrari). Il
+    // titolo usa il nome REALE dal profilo, non quello passato dal client.
+    const caller = await verifyCaller(req)
+    if (!caller) return jsonRes({ error: 'unauthenticated' }, 401)
+    if (caller.id !== message.user_id) return jsonRes({ error: 'forbidden' }, 403)
+    const senderName = (await getProfile(caller.id))?.name?.trim() || 'Nuovo messaggio'
+
     // Determina a chi mandare la notifica
     let userFilter = `user_id=neq.${message.user_id}`
 
@@ -193,7 +203,7 @@ Deno.serve(async (req) => {
       subscriptions.map((sub) =>
         webPush.sendNotification(
           { endpoint: sub.endpoint, keys: sub.keys },
-          JSON.stringify({ title: message.author_name, body, url, channel_id: message.channel_id }),
+          JSON.stringify({ title: senderName, body, url, channel_id: message.channel_id }),
         )
       ),
     )
