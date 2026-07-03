@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Player from '@vimeo/player'
 import { parseVimeo } from '../../lib/vimeo'
+import { useAuth } from '../../context/AuthContext'
 
 // Native Vimeo player via SDK (@vimeo/player). L'SDK crea l'iframe DENTRO il
 // container che React gestisce: così destroy() rimuove solo l'iframe iniettato
@@ -11,6 +12,12 @@ import { parseVimeo } from '../../lib/vimeo'
 //  - salva la posizione durante la riproduzione (onProgress, throttle 10s + pause + uscita)
 //  - segna la lezione completata a fine video (onEnded)
 // Senza quei prop (es. video di benvenuto) fa solo da player.
+//
+// WATERMARK forense: un codice legato all'utente (email) viene sovrapposto al
+// video, si sposta e riappare in punti diversi. Se qualcuno registra lo schermo
+// e ripubblica, il leak è tracciabile fino all'account. NB: è un deterrente
+// lato client (un utente tecnico può rimuoverlo da DevTools); la protezione
+// definitiva contro la condivisione del LINK è la privacy per dominio su Vimeo.
 export default function VimeoPlayer({
   vimeoId,
   accent,
@@ -30,12 +37,31 @@ export default function VimeoPlayer({
     ? (ref.hash ? `https://vimeo.com/${ref.id}/${ref.hash}` : `https://vimeo.com/${ref.id}`)
     : null
 
+  const { user } = useAuth()
+  const watermark = user ? (user.email || user.id) : ''
+
   const containerRef = useRef<HTMLDivElement>(null)
   // Ref ai callback così l'effetto non si ri-aggancia a ogni render.
   const onProgressRef = useRef(onProgress)
   const onEndedRef = useRef(onEnded)
   onProgressRef.current = onProgress
   onEndedRef.current = onEnded
+
+  // Posizione + visibilità del watermark: cambia ciclicamente.
+  const [wm, setWm] = useState<{ top: string; left: string; on: boolean }>({ top: '8%', left: '8%', on: true })
+  useEffect(() => {
+    if (!watermark || !videoUrl) return
+    let hideT: number
+    const cycle = () => {
+      const top = 6 + Math.floor(Math.random() * 78)   // 6%..84%
+      const left = 5 + Math.floor(Math.random() * 60)  // 5%..65% (lascia spazio al testo)
+      setWm({ top: `${top}%`, left: `${left}%`, on: true })
+      hideT = window.setTimeout(() => setWm(p => ({ ...p, on: false })), 4200)
+    }
+    cycle()
+    const iv = window.setInterval(cycle, 6800)
+    return () => { window.clearInterval(iv); window.clearTimeout(hideT) }
+  }, [watermark, videoUrl])
 
   useEffect(() => {
     const container = containerRef.current
@@ -97,7 +123,6 @@ export default function VimeoPlayer({
 
   return (
     <div
-      ref={containerRef}
       className="relative w-full rounded-2xl lg:rounded-3xl overflow-hidden"
       style={{
         aspectRatio: '16/9',
@@ -105,6 +130,32 @@ export default function VimeoPlayer({
         border: '1px solid rgba(255,255,255,0.08)',
         boxShadow: '0 24px 64px rgba(0,0,0,0.55)',
       }}
-    />
+    >
+      {/* Il container dell'SDK NON ha figli React: evita conflitti con l'iframe iniettato. */}
+      <div ref={containerRef} className="absolute inset-0" />
+      {/* Watermark forense: sibling sovrapposto, non intercetta i click del player. */}
+      {watermark && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            top: wm.top,
+            left: wm.left,
+            zIndex: 20,
+            pointerEvents: 'none',
+            userSelect: 'none',
+            font: '600 11px/1.1 ui-monospace, SFMono-Regular, Menlo, monospace',
+            color: 'rgba(255,255,255,0.30)',
+            textShadow: '0 1px 3px rgba(0,0,0,0.7)',
+            letterSpacing: '0.02em',
+            whiteSpace: 'nowrap',
+            opacity: wm.on ? 1 : 0,
+            transition: 'opacity 1.2s ease, top 1.2s ease, left 1.2s ease',
+          }}
+        >
+          {watermark}
+        </div>
+      )}
+    </div>
   )
 }
