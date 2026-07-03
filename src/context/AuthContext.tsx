@@ -54,28 +54,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [justLoggedIn, setJustLoggedIn] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      // Authorize the realtime socket with the user's JWT so RLS-protected
-      // postgres_changes (chat messages/reactions) are delivered live.
-      supabase.realtime.setAuth(session?.access_token ?? null)
-      if (session?.user) {
-        const profile = await fetchProfile(session.user.id)
-        setUser(profile)
-      }
-      setLoading(false)
-    })
+    let mounted = true
+
+    // Rete di sicurezza: se l'init auth si impianta (rete mobile instabile,
+    // refresh token bloccato, storage inaccessibile in webview/incognito),
+    // sblocca comunque la UI invece di restare sullo spinner all'infinito.
+    const safety = setTimeout(() => { if (mounted) setLoading(false) }, 7000)
+    const finish = () => { if (mounted) { clearTimeout(safety); setLoading(false) } }
+
+    supabase.auth.getSession()
+      .then(async ({ data: { session } }) => {
+        // Authorize the realtime socket with the user's JWT so RLS-protected
+        // postgres_changes (chat messages/reactions) are delivered live.
+        supabase.realtime.setAuth(session?.access_token ?? null)
+        if (session?.user) {
+          const profile = await fetchProfile(session.user.id)
+          if (mounted) setUser(profile)
+        }
+      })
+      // getSession può fallire/rifiutare su mobile: procedi come non loggato,
+      // ma NON lasciare mai il loading appeso.
+      .catch(() => { /* sessione non recuperabile */ })
+      .finally(finish)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       supabase.realtime.setAuth(session?.access_token ?? null)
       if (session?.user) {
         const profile = await fetchProfile(session.user.id)
-        setUser(profile)
-      } else {
+        if (mounted) setUser(profile)
+      } else if (mounted) {
         setUser(null)
       }
+      // Anche l'evento auth (incl. INITIAL_SESSION) sblocca il loading: copre
+      // il caso in cui getSession resti appeso ma l'evento arrivi.
+      finish()
     })
 
-    return () => subscription.unsubscribe()
+    return () => { mounted = false; clearTimeout(safety); subscription.unsubscribe() }
   }, [])
 
   const login = async (email: string, password: string): Promise<{ error: string | null }> => {
