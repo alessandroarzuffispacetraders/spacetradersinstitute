@@ -81,7 +81,11 @@ async function subsForUserIds(ids: string[]): Promise<{ endpoint: string; keys: 
 
 // Notifiche "di sistema" per le segnalazioni. Testo e destinatari sono decisi
 // qui e il RUOLO del chiamante è verificato → niente push arbitrarie.
-type NotifyBody = { type?: string; recipientId?: string; authorName?: string | null; studentName?: string | null }
+type NotifyBody = {
+  type?: string; recipientId?: string; authorName?: string | null; studentName?: string | null
+  // broadcast (admin → studenti)
+  title?: string; body?: string; url?: string; tier?: 'all' | 'full' | 'free'
+}
 
 async function handleNotify(notify: NotifyBody, req: Request) {
   const caller = callerId(req)
@@ -119,6 +123,26 @@ async function handleNotify(notify: NotifyBody, req: Request) {
     const title = '📩 Nuova segnalazione dall\'admin'
     const body = `Hai ricevuto una segnalazione dall'admin${student ? ` su ${student}` : ''}.`
     return jsonRes(await sendToSubscriptions(subs, JSON.stringify({ title, body, url })))
+  }
+
+  // Annuncio broadcast dell'admin → tutti gli studenti (o un segmento per tier).
+  // Titolo/testo sono dell'admin (fidato: ruolo verificato).
+  if (notify.type === 'broadcast') {
+    if (!hasRole(callerProfile, 'admin')) return jsonRes({ error: 'forbidden' }, 403)
+    const body = (notify.body ?? '').trim()
+    if (!body) return jsonRes({ error: 'missing body' }, 400)
+    const title = (notify.title ?? '').trim() || '📢 Annuncio IST'
+    let q = `${SUPABASE_URL}/rest/v1/profiles?role=eq.student&select=id`
+    if (notify.tier === 'free') q += '&tier=eq.free'
+    else if (notify.tier === 'full') q += '&or=(tier.eq.full,tier.is.null)'
+    const res = await fetch(q, { headers: REST_HEADERS })
+    const students = await res.json().catch(() => [])
+    const ids = (Array.isArray(students) ? students : []).map((s: { id: string }) => s.id)
+    const subs = await subsForUserIds(ids)
+    if (subs.length === 0) return jsonRes({ sent: 0, total: 0 })
+    const url = (notify.url ?? '').trim() || '/student'
+    const shortBody = body.length > 140 ? body.slice(0, 140) + '…' : body
+    return jsonRes(await sendToSubscriptions(subs, JSON.stringify({ title, body: shortBody, url })))
   }
 
   return jsonRes({ error: 'unknown notify type' }, 400)

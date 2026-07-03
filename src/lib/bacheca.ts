@@ -44,6 +44,24 @@ function sortPosts(posts: BachecaPost[]): BachecaPost[] {
   })
 }
 
+// Inserimento diretto (senza hook) di un post bacheca — usato dal broadcast admin.
+export async function postAnnouncement(
+  channelId: string, userId: string, authorName: string, authorRole: MemberRole, input: NewBachecaPost,
+): Promise<boolean> {
+  if (!channelId || !userId || !input.content.trim()) return false
+  const { error } = await supabase.from('bacheca_posts').insert({
+    channel_id: channelId,
+    author_id: userId,
+    author_name: authorName,
+    author_role: authorRole,
+    title: input.title?.trim() || null,
+    content: input.content.trim(),
+    tag: input.tag?.trim() || null,
+    pinned: input.pinned ?? false,
+  })
+  return !error
+}
+
 export function useBachecaPosts(channelId: string | null, userId: string) {
   const [posts, setPosts] = useState<BachecaPost[]>([])
   const [loading, setLoading] = useState(false)

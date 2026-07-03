@@ -103,3 +103,23 @@ export function notifyFlagToAdmin(authorName: string | null, studentName: string
 export function notifyFlagToRecipient(recipientId: string, studentName: string | null) {
   callNotify({ type: 'flag_to_recipient', recipientId, studentName })
 }
+
+// Annuncio broadcast dell'admin → tutti gli studenti (o un segmento per tier).
+// Awaitable: ritorna { sent, total } per mostrare il feedback (o null su errore).
+export async function notifyBroadcast(
+  title: string, body: string, url: string, tier: 'all' | 'full' | 'free',
+): Promise<{ sent: number; total?: number } | null> {
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) return null
+  try {
+    const res = await fetch(`${FUNCTIONS_URL}/send-push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ notify: { type: 'broadcast', title, body, url, tier } }),
+    })
+    return await res.json().catch(() => null)
+  } catch {
+    return null
+  }
+}

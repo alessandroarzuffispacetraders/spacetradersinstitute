@@ -4,6 +4,7 @@ import Card from '../../components/ui/Card'
 import PageHeader from '../../components/ui/PageHeader'
 import { Channel, ChannelType, MemberRole } from '../../data/chatData'
 import { useChannelsAdmin, ChannelInput } from '../../lib/channels'
+import BroadcastModal from '../../components/admin/BroadcastModal'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -399,6 +400,9 @@ export default function AdminChat() {
   const { channels, loading, createChannel, updateChannel, deleteChannel } = useChannelsAdmin()
   const [modal, setModal] = useState<{ open: boolean; editing?: Channel }>({ open: false })
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [broadcastOpen, setBroadcastOpen] = useState(false)
+
+  const bachecaChannels = channels.filter(c => c.type === 'bacheca').map(c => ({ id: c.id, name: c.name, free: c.free }))
 
   const totalChat = channels.filter(c => c.type === 'chat').length
   const totalBacheca = channels.filter(c => c.type === 'bacheca').length
@@ -443,17 +447,27 @@ export default function AdminChat() {
         title="Gestione Chat"
         subtitle="Crea, modifica e gestisci i canali della community IST"
         action={
-          <button
-            onClick={openNew}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold text-white transition-all hover:-translate-y-0.5"
-            style={{
-              background: 'linear-gradient(135deg, #5A9AB1, #286680)',
-              boxShadow: '0 4px 16px rgba(40,102,128,0.30)',
-            }}
-          >
-            <Plus size={16} strokeWidth={2.5} />
-            Nuovo Canale
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setBroadcastOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold transition-all hover:-translate-y-0.5"
+              style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-border)', color: 'var(--ist-text)' }}
+            >
+              <Megaphone size={16} strokeWidth={2.2} />
+              Annuncio
+            </button>
+            <button
+              onClick={openNew}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold text-white transition-all hover:-translate-y-0.5"
+              style={{
+                background: 'linear-gradient(135deg, #5A9AB1, #286680)',
+                boxShadow: '0 4px 16px rgba(40,102,128,0.30)',
+              }}
+            >
+              <Plus size={16} strokeWidth={2.5} />
+              Nuovo Canale
+            </button>
+          </div>
         }
       />
 
@@ -632,6 +646,10 @@ export default function AdminChat() {
           onSave={handleSave}
           onClose={closeModal}
         />
+      )}
+
+      {broadcastOpen && (
+        <BroadcastModal bachecaChannels={bachecaChannels} onClose={() => setBroadcastOpen(false)} />
       )}
     </div>
   )
