@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import PageHeader from '../../components/ui/PageHeader'
-import { ChevronDown, Radio, Upload, Shield, X, Loader2, Mail, KeyRound, Trash2, Globe, MapPin } from 'lucide-react'
+import { ChevronDown, Radio, Upload, Shield, X, Loader2, Mail, KeyRound, Trash2, Globe, MapPin, Download } from 'lucide-react'
 import { UserPermissions, UserRole, StudentStatus, StudentPhase, UserTier } from '../../types'
 import { supabase } from '../../lib/supabase'
 import { updateUserAuth, deleteUserAccount } from '../../lib/adminUsers'
 import { useAccessSummaries, fetchUserAccessLogs, AccessSummary, AccessLog } from '../../lib/accessLog'
+import { downloadCsv } from '../../lib/csv'
 
 const STAFF_ROLES: UserRole[] = ['coach', 'mental_coach', 'admin']
 
@@ -683,6 +684,33 @@ export default function AdminUtenti() {
     setUsers(prev => prev.map(u => u.id === id ? { ...u, tier: 'full' } : u))
   }
 
+  // Esporta gli utenti attualmente filtrati in CSV (nome/email/stato/piano/
+  // coach/accessi) — utile lato vendita/CRM esterno.
+  const handleExportCsv = () => {
+    const nameById = (id: string | null) => id ? (users.find(u => u.id === id)?.name ?? '') : ''
+    const fmtD = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
+    const headers = ['Nome', 'Email', 'Ruolo', 'Stato', 'Piano', 'Fase', 'Coach', 'Mental coach', 'Registrato il', 'Ultimo accesso', 'Città distinte', 'Luoghi']
+    const rows = filtered.map(u => {
+      const s = summaries[u.id]
+      return [
+        u.name,
+        u.email,
+        ROLE_LABELS[u.role] ?? u.role,
+        u.status ? (STATUS_LABELS[u.status] ?? u.status) : '',
+        u.role === 'student' ? (u.tier === 'free' ? 'Gratuito' : 'Completo') : '',
+        u.phase ?? '',
+        nameById(u.assigned_coach_id),
+        nameById(u.assigned_mental_coach_id),
+        fmtD(u.created_at),
+        s?.lastSeen ? fmtD(s.lastSeen) : '',
+        s ? s.distinctCities : '',
+        s?.places?.join(' · ') ?? '',
+      ]
+    })
+    const stamp = new Date().toISOString().slice(0, 10)
+    downloadCsv(`utenti-ist-${stamp}.csv`, headers, rows)
+  }
+
   const inputStyle: React.CSSProperties = {
     background: 'var(--ist-w6)',
     border: '1px solid var(--ist-border)',
@@ -698,10 +726,14 @@ export default function AdminUtenti() {
         subtitle={loading ? 'Caricamento...' : `${users.length} utenti totali`}
         action={
           <button
-            className="px-5 py-2.5 text-white text-sm font-bold rounded-full transition-all hover:-translate-y-0.5"
-            style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 8px 24px rgba(40,102,128,0.36)' }}
+            onClick={handleExportCsv}
+            disabled={loading || filtered.length === 0}
+            className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-full transition-all hover:-translate-y-0.5 disabled:opacity-45"
+            style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', boxShadow: '0 8px 24px rgba(40,102,128,0.36)' }}
+            title="Scarica gli utenti filtrati in CSV"
           >
-            + Nuovo
+            <Download size={15} strokeWidth={2} />
+            Esporta CSV
           </button>
         }
       />
