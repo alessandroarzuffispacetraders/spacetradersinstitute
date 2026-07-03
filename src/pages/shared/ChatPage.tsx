@@ -1049,7 +1049,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                                   ? {
                                     background: 'var(--ist-bubble-own-bg)',
                                     color: 'var(--ist-bubble-own-text)',
-                                    border: '1px solid var(--ist-bubble-own-border)',
+                                    boxShadow: 'var(--ist-bubble-shadow)',
                                     borderRadius: mi === 0
                                       ? (isLastInGroup ? '18px 4px 18px 18px' : '18px 18px 4px 18px')
                                       : (isLastInGroup ? '4px 4px 18px 18px' : '4px 18px 4px 4px'),
@@ -1058,7 +1058,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                                   : {
                                     background: 'var(--ist-bubble-other-bg)',
                                     color: 'var(--ist-text)',
-                                    border: '1px solid var(--ist-bubble-other-border)',
+                                    boxShadow: 'var(--ist-bubble-shadow)',
                                     borderRadius: mi === 0
                                       ? (isLastInGroup ? '4px 18px 18px 18px' : '18px 18px 18px 4px')
                                       : (isLastInGroup ? '4px 4px 18px 18px' : '4px 18px 4px 4px'),

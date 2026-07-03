@@ -51,8 +51,11 @@ export function VoiceMessage({
   const total = duration > 0 ? duration : metaDur
   const progress = total > 0 ? Math.min(1, current / total) : 0
 
-  const accent = own ? 'var(--ist-bubble-own-text)' : 'var(--ist-accent-text)'
-  const track = own ? 'rgba(255,255,255,0.30)' : 'var(--ist-w12)'
+  // Colori derivati dai token bolla (solidi e adattivi chiaro/scuro): `fg`
+  // contrasta sempre lo sfondo bolla, `bubbleBg` è lo sfondo → il tasto play
+  // è pieno e nitido in entrambi i temi, le barre sono sempre leggibili.
+  const fg = own ? 'var(--ist-bubble-own-text)' : 'var(--ist-text)'
+  const bubbleBg = own ? 'var(--ist-bubble-own-bg)' : 'var(--ist-bubble-other-bg)'
 
   const toggle = () => {
     const a = audioRef.current
@@ -87,10 +90,7 @@ export function VoiceMessage({
       <button
         onClick={toggle}
         className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-transform active:scale-95"
-        style={{
-          background: own ? 'rgba(255,255,255,0.22)' : 'linear-gradient(135deg, #5A9AB1, #286680)',
-          color: own ? 'var(--ist-bubble-own-text)' : 'white',
-        }}
+        style={{ background: fg, color: bubbleBg }}
         title={playing ? 'Pausa' : 'Riproduci'}
       >
         {playing ? <Pause size={16} strokeWidth={2.5} /> : <Play size={16} strokeWidth={2.5} className="translate-x-[1px]" />}
@@ -113,9 +113,9 @@ export function VoiceMessage({
               style={{
                 height: `${Math.round(b * 100)}%`,
                 minWidth: 2,
-                background: filled ? accent : track,
-                opacity: filled ? 1 : 0.9,
-                transition: 'background 0.08s linear',
+                background: fg,
+                opacity: filled ? 1 : 0.32,
+                transition: 'opacity 0.08s linear',
               }}
             />
           )
@@ -124,7 +124,7 @@ export function VoiceMessage({
 
       <span
         className="text-[10px] font-medium tabular-nums flex-shrink-0 w-8 text-right"
-        style={{ color: own ? 'var(--ist-bubble-own-text)' : 'var(--ist-text-muted)', opacity: 0.85 }}
+        style={{ color: fg, opacity: 0.72 }}
       >
         {formatDuration(playing || current > 0 ? current : total, true)}
       </span>
@@ -155,7 +155,10 @@ export function FileAttachment({
   own: boolean
 }) {
   const ext = (name.split('.').pop() ?? '').toLowerCase()
-  const color = EXT_COLOR[ext] ?? (own ? 'rgba(255,255,255,0.9)' : 'var(--ist-accent-text)')
+  // fg = testo che contrasta la bolla (adattivo). Le tinte w* si adattano al
+  // tema → la tile resta leggibile su bolla propria (teal/azzurra) e altrui.
+  const fg = own ? 'var(--ist-bubble-own-text)' : 'var(--ist-text)'
+  const color = EXT_COLOR[ext] ?? fg
 
   return (
     <a
@@ -164,31 +167,23 @@ export function FileAttachment({
       rel="noreferrer"
       download={name}
       className="flex items-center gap-3 rounded-xl px-2.5 py-2 transition-colors"
-      style={{
-        background: own ? 'rgba(255,255,255,0.14)' : 'var(--ist-w6)',
-        border: `1px solid ${own ? 'rgba(255,255,255,0.18)' : 'var(--ist-w9)'}`,
-        minWidth: 200,
-        maxWidth: 260,
-      }}
+      style={{ background: 'var(--ist-w12)', minWidth: 200, maxWidth: 260 }}
     >
       <div
         className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 relative"
-        style={{ background: own ? 'rgba(255,255,255,0.16)' : 'var(--ist-w8)' }}
+        style={{ background: 'var(--ist-w16)' }}
       >
         <FileText size={18} strokeWidth={2} style={{ color }} />
       </div>
       <div className="flex-1 min-w-0">
-        <p
-          className="text-xs font-semibold truncate"
-          style={{ color: own ? 'var(--ist-bubble-own-text)' : 'var(--ist-text)' }}
-        >
+        <p className="text-xs font-semibold truncate" style={{ color: fg }}>
           {name}
         </p>
-        <p className="text-[10px]" style={{ color: own ? 'var(--ist-bubble-own-text)' : 'var(--ist-text-muted)', opacity: 0.8 }}>
+        <p className="text-[10px]" style={{ color: fg, opacity: 0.72 }}>
           {[ext.toUpperCase(), formatBytes(size)].filter(Boolean).join(' · ')}
         </p>
       </div>
-      <Download size={15} strokeWidth={2} className="flex-shrink-0" style={{ color: own ? 'var(--ist-bubble-own-text)' : 'var(--ist-text-muted)', opacity: 0.8 }} />
+      <Download size={15} strokeWidth={2} className="flex-shrink-0" style={{ color: fg, opacity: 0.72 }} />
     </a>
   )
 }
