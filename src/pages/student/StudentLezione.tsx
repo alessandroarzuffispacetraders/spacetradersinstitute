@@ -158,7 +158,7 @@ export default function StudentLezione() {
   const navigate     = useNavigate()
   const { setHideBottomNav } = useUI()
   const { user } = useAuth()
-  const { findLesson, markDone, loading } = useStudentCatalog(user?.id ?? '')
+  const { findLesson, markDone, saveLastPosition, loading } = useStudentCatalog(user?.id ?? '')
   const [mobileTab, setMobileTab] = useState<MobileTab>('playlist')
   const [marking, setMarking] = useState(false)
 
@@ -247,8 +247,16 @@ export default function StudentLezione() {
           </span>
         </nav>
 
-        {/* Video player */}
-        <VimeoPlayer vimeoId={lesson.vimeoId} accent={category.accent} />
+        {/* Video player — riprende dall'ultimo punto, salva la posizione e
+            segna la lezione completata a fine video. */}
+        <VimeoPlayer
+          key={lesson.id}
+          vimeoId={lesson.vimeoId}
+          accent={category.accent}
+          startAt={lesson.lastPositionSeconds}
+          onProgress={sec => saveLastPosition(lesson.id, sec)}
+          onEnded={() => { if (!lesson.done) markDone(lesson.id, true) }}
+        />
 
         {/* Lesson info */}
         <div>
