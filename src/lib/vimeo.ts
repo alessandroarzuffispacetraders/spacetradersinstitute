@@ -4,23 +4,30 @@
 
 export interface VimeoRef { id: string; hash?: string }
 
+// Tollerante: accetta id nudo, URL vimeo.com/<id>[/<hash>], player URL con ?h=,
+// il link "share" con parametri, e anche il codice <iframe> dell'embed incollato
+// per intero (estrae id + hash di privacy da qualunque stringa lo contenga).
 export function parseVimeo(input: string | null | undefined): VimeoRef | null {
   if (!input) return null
   const s = input.trim()
   if (!s) return null
   if (/^\d+$/.test(s)) return { id: s }
-  try {
-    const url = new URL(s.startsWith('http') ? s : `https://${s}`)
-    // player.vimeo.com/video/<id>?h=<hash>
-    let m = url.pathname.match(/\/video\/(\d+)/)
-    if (m) return { id: m[1], hash: url.searchParams.get('h') ?? undefined }
-    // vimeo.com/<id> or vimeo.com/<id>/<hash>
-    m = url.pathname.match(/^\/(\d+)(?:\/(\w+))?/)
-    if (m) return { id: m[1], hash: m[2] || url.searchParams.get('h') || undefined }
-  } catch {
-    /* not a URL */
+
+  // ID: da player.vimeo.com/video/<id> oppure vimeo.com/<id> (anche dentro un iframe).
+  const idMatch = s.match(/(?:player\.)?vimeo\.com\/(?:video\/)?(\d+)/i)
+  if (!idMatch) return null
+  const id = idMatch[1]
+
+  // Hash di privacy: da ?h=<hash> oppure dal path /<id>/<hash>.
+  let hash: string | undefined
+  const hParam = s.match(/[?&]h=([0-9a-zA-Z]+)/i)
+  if (hParam) {
+    hash = hParam[1]
+  } else {
+    const pathHash = s.match(new RegExp(`vimeo\\.com\\/(?:video\\/)?${id}\\/([0-9a-zA-Z]+)`, 'i'))
+    if (pathHash) hash = pathHash[1]
   }
-  return null
+  return { id, hash }
 }
 
 export function vimeoEmbedSrc(input: string, opts?: { autoplay?: boolean }): string | null {
