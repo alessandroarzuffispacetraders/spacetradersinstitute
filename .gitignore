@@ -6,3 +6,5 @@ dist
 *.log
 .DS_Store
 .claude/worktrees/
+# Dati importati (liste utenti, ecc.): contengono PII, mai su GitHub
+import/
