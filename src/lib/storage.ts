@@ -153,3 +153,71 @@ export async function uploadChatImage(userId: string, file: File): Promise<strin
     return null
   }
 }
+
+// ── Audio + file nelle chat private (bucket pubblico 'chat-media') ────────────
+// Bucket condiviso da vocali e allegati: path <uid>/<uuid>.<ext> (non enumerabile).
+// Il gating (audio ovunque nei DM, file solo staff) è enforced dalla RLS su messages.
+const CHAT_MEDIA_BUCKET = 'chat-media'
+
+// Vocali stile WhatsApp: il blob registrato viene caricato così com'è (già
+// compresso in opus/aac dal MediaRecorder). `ext`/`mime` arrivano dal recorder.
+export async function uploadChatAudio(
+  userId: string,
+  blob: Blob,
+  ext: string,
+  mime: string,
+): Promise<string | null> {
+  try {
+    const path = `${userId}/${crypto.randomUUID()}.${ext || 'webm'}`
+    const { error } = await supabase.storage.from(CHAT_MEDIA_BUCKET).upload(path, blob, {
+      contentType: mime || blob.type || 'audio/webm',
+      upsert: false,
+    })
+    if (error) return null
+    const { data } = supabase.storage.from(CHAT_MEDIA_BUCKET).getPublicUrl(path)
+    return data.publicUrl
+  } catch {
+    return null
+  }
+}
+
+export interface UploadedChatFile {
+  url: string
+  name: string
+  size: number
+}
+
+// Documenti + immagini allegabili dallo staff. Limite lato client (25 MB);
+// la RLS blocca comunque i non-staff a prescindere.
+export const CHAT_FILE_MAX_BYTES = 25 * 1024 * 1024
+
+// Estensioni consentite (documenti). Le immagini passano dal filtro `image/*`.
+const ALLOWED_FILE_EXT = new Set([
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'zip',
+  'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic',
+])
+
+// `accept` per l'<input type="file"> (documenti + immagini).
+export const CHAT_FILE_ACCEPT =
+  '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,image/*'
+
+export function isAllowedChatFile(file: File): boolean {
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+  return ALLOWED_FILE_EXT.has(ext) || file.type.startsWith('image/')
+}
+
+// Carica un file (documento) e ritorna url + metadati per la riga messaggio.
+export async function uploadChatFile(userId: string, file: File): Promise<UploadedChatFile | null> {
+  try {
+    const path = `${userId}/${crypto.randomUUID()}-${safeName(file.name)}`
+    const { error } = await supabase.storage.from(CHAT_MEDIA_BUCKET).upload(path, file, {
+      contentType: file.type || 'application/octet-stream',
+      upsert: false,
+    })
+    if (error) return null
+    const { data } = supabase.storage.from(CHAT_MEDIA_BUCKET).getPublicUrl(path)
+    return { url: data.publicUrl, name: file.name, size: file.size }
+  } catch {
+    return null
+  }
+}

@@ -11,11 +11,26 @@ export interface DbMessage {
   author_role: UserRole
   content: string
   image_url?: string | null
+  audio_url?: string | null           // vocale (bucket chat-media) — solo nei DM
+  audio_duration_sec?: number | null  // durata del vocale in secondi
+  file_url?: string | null            // allegato (documento/immagine) — solo staff, nei DM
+  file_name?: string | null
+  file_size?: number | null           // byte
   created_at: string
   edited_at?: string | null
   deleted_at?: string | null
   kind?: string | null            // 'welcome' = messaggio automatico di benvenuto
   target_user_id?: string | null  // destinatario del messaggio di sistema (es. benvenuto)
+}
+
+// Allegati opzionali di un messaggio (immagine inline, vocale, file).
+export interface MessageMedia {
+  imageUrl?: string | null
+  audioUrl?: string | null
+  audioDuration?: number | null
+  fileUrl?: string | null
+  fileName?: string | null
+  fileSize?: number | null
 }
 
 export interface DmUser {
@@ -161,9 +176,10 @@ export function useChatMessages(channelId: string | null, userId: string) {
     }
   }, [channelId, userId])
 
-  const sendMessage = async (content: string, authorName: string, authorRole: UserRole, imageUrl?: string | null) => {
+  const sendMessage = async (content: string, authorName: string, authorRole: UserRole, media?: MessageMedia) => {
     const trimmed = content.trim()
-    if (!channelId || !userId || (!trimmed && !imageUrl)) return
+    const { imageUrl, audioUrl, audioDuration, fileUrl, fileName, fileSize } = media ?? {}
+    if (!channelId || !userId || (!trimmed && !imageUrl && !audioUrl && !fileUrl)) return
     const tempId = `temp_${Date.now()}`
     const optimistic: DbMessage = {
       id: tempId,
@@ -173,6 +189,11 @@ export function useChatMessages(channelId: string | null, userId: string) {
       author_role: authorRole,
       content: trimmed,
       image_url: imageUrl ?? null,
+      audio_url: audioUrl ?? null,
+      audio_duration_sec: audioDuration ?? null,
+      file_url: fileUrl ?? null,
+      file_name: fileName ?? null,
+      file_size: fileSize ?? null,
       created_at: new Date().toISOString(),
     }
     setMessages(prev => [...prev, optimistic])
@@ -184,12 +205,20 @@ export function useChatMessages(channelId: string | null, userId: string) {
       author_role: authorRole,
       content: trimmed,
       image_url: imageUrl ?? null,
+      audio_url: audioUrl ?? null,
+      audio_duration_sec: audioDuration ?? null,
+      file_url: fileUrl ?? null,
+      file_name: fileName ?? null,
+      file_size: fileSize ?? null,
     })
     if (error) {
       setMessages(prev => prev.filter(m => m.id !== tempId))
       return
     }
-    triggerPushNotifications({ channel_id: channelId, user_id: userId, author_name: authorName, content: trimmed || '📷 Foto' })
+    // Anteprima notifica: testo se presente, altrimenti il tipo di allegato.
+    const preview = trimmed
+      || (audioUrl ? '🎤 Messaggio vocale' : fileUrl ? `📎 ${fileName ?? 'File'}` : imageUrl ? '📷 Foto' : '')
+    triggerPushNotifications({ channel_id: channelId, user_id: userId, author_name: authorName, content: preview })
   }
 
   const editMessage = useCallback(async (id: string, content: string) => {

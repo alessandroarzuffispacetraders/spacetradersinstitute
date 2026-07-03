@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import {
   Hash, Megaphone, ChevronDown, ChevronRight,
   Send, ArrowLeft, Search, Pin, MessageCircle, UsersRound, Loader2, X,
-  Edit2, Trash2, SmilePlus, ImagePlus, Plus,
+  Edit2, Trash2, SmilePlus, ImagePlus, Plus, Mic, Paperclip, FileText,
 } from 'lucide-react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
@@ -13,11 +13,16 @@ import {
 import { useBachecaPosts, BachecaPost, NewBachecaPost } from '../../lib/bacheca'
 import {
   useChatMessages, useDmUsers, useUnreadCounts, useTypingIndicator,
-  useAuthorAvatars, dmChannelId, DmUser, DbMessage,
+  useAuthorAvatars, dmChannelId, DmUser, DbMessage, MessageMedia,
 } from '../../lib/chat'
 import { useChannels } from '../../lib/channels'
 import { setActiveChat } from '../../lib/activeChat'
-import { uploadChatImage } from '../../lib/storage'
+import {
+  uploadChatImage, uploadChatFile, uploadChatAudio,
+  isAllowedChatFile, CHAT_FILE_MAX_BYTES, CHAT_FILE_ACCEPT,
+} from '../../lib/storage'
+import { useAudioRecorder, isAudioRecordingSupported, formatDuration } from '../../lib/audioRecorder'
+import { VoiceMessage, FileAttachment } from '../../components/chat/ChatMedia'
 import { isFreeUser } from '../../lib/freeTier'
 import UserAvatar from '../../components/ui/UserAvatar'
 
@@ -561,8 +566,20 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [newMsgCount, setNewMsgCount] = useState(0)
   const [imageFile, setImageFile] = useState<File | null>(null)
+  const [fileAttachment, setFileAttachment] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Registrazione vocali (stile WhatsApp): tieni premuto il mic, scorri a
+  // sinistra per annullare, scorri in alto per bloccare (hands-free).
+  const recorder = useAudioRecorder()
+  const [recLocked, setRecLocked] = useState(false)
+  const [recCancelArmed, setRecCancelArmed] = useState(false)
+  const [micHint, setMicHint] = useState(false)
+  const holdingRef = useRef(false)
+  const startPtRef = useRef<{ x: number; y: number } | null>(null)
+  const audioSupported = isAudioRecordingSupported()
 
   // Anteprima locale dell'immagine selezionata (object URL, revocata al cambio).
   const imagePreview = useMemo(() => imageFile ? URL.createObjectURL(imageFile) : null, [imageFile])
@@ -581,7 +598,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
   // NB: ChatArea è montata con key={channel.id}, quindi lo stato si azzera già al
   // cambio canale. Non resettiamo `input` qui per non cancellare l'eventuale
   // testo precompilato (es. richiesta d'accesso all'admin).
-  useEffect(() => { setEditingId(null); setHoveredMsgId(null); setImageFile(null) }, [channel.id])
+  useEffect(() => { setEditingId(null); setHoveredMsgId(null); setImageFile(null); setFileAttachment(null) }, [channel.id])
 
   // Segnala qual è la chat aperta → sopprime le notifiche (in-app + push) del
   // canale che stai già guardando; azzera quando esci dalla chat.
@@ -641,24 +658,104 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
     if (!f) return
     if (!f.type.startsWith('image/')) return
     if (f.size > 15 * 1024 * 1024) { alert('Immagine troppo grande (max 15 MB).'); return }
+    setFileAttachment(null)
     setImageFile(f)
+  }
+
+  // File allegato (solo staff, solo DM). Un'immagine scelta qui viene mostrata
+  // inline come le foto; i documenti diventano un allegato scaricabile.
+  const pickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    if (f.size > CHAT_FILE_MAX_BYTES) { alert('File troppo grande (max 25 MB).'); return }
+    if (!isAllowedChatFile(f)) { alert('Tipo di file non consentito.'); return }
+    if (f.type.startsWith('image/')) { setImageFile(f); setFileAttachment(null); return }
+    setImageFile(null)
+    setFileAttachment(f)
   }
 
   const sendMessage = async () => {
     const text = input.trim()
-    if ((!text && !imageFile) || !canPost || uploading) return
-    let imageUrl: string | null = null
-    if (imageFile) {
-      setUploading(true)
-      imageUrl = await uploadChatImage(userId, imageFile)
+    if ((!text && !imageFile && !fileAttachment) || !canPost || uploading) return
+    const media: MessageMedia = {}
+    setUploading(true)
+    try {
+      if (imageFile) {
+        const url = await uploadChatImage(userId, imageFile)
+        if (!url) { alert('Caricamento immagine non riuscito. Riprova.'); return }
+        media.imageUrl = url
+      }
+      if (fileAttachment) {
+        const up = await uploadChatFile(userId, fileAttachment)
+        if (!up) { alert('Caricamento file non riuscito. Riprova.'); return }
+        media.fileUrl = up.url; media.fileName = up.name; media.fileSize = up.size
+      }
+    } finally {
       setUploading(false)
-      if (!imageUrl) { alert('Caricamento immagine non riuscito. Riprova.'); return }
     }
     setInput('')
     setImageFile(null)
+    setFileAttachment(null)
     stopTyping()
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
-    await sendToDb(text, userName, userRole, imageUrl)
+    await sendToDb(text, userName, userRole, media)
+  }
+
+  // ── Vocali: registra tenendo premuto, invia al rilascio ────────────────────
+  const finishAndSendAudio = async () => {
+    setRecCancelArmed(false)
+    setRecLocked(false)
+    const rec = await recorder.stop()
+    if (!rec) return
+    setUploading(true)
+    const url = await uploadChatAudio(userId, rec.blob, rec.ext, rec.mime)
+    setUploading(false)
+    if (!url) { alert('Invio del vocale non riuscito. Riprova.'); return }
+    await sendToDb('', userName, userRole, { audioUrl: url, audioDuration: rec.durationSec })
+  }
+
+  const cancelAudio = () => {
+    setRecCancelArmed(false)
+    setRecLocked(false)
+    recorder.cancel()
+  }
+
+  const onMicPointerDown = async (e: React.PointerEvent) => {
+    if (channel.channelKind !== 'direct' || !audioSupported || uploading || recorder.recording) return
+    e.preventDefault()
+    holdingRef.current = true
+    startPtRef.current = { x: e.clientX, y: e.clientY }
+    setRecCancelArmed(false)
+    setRecLocked(false)
+    setMicHint(false)
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* noop */ }
+    const ok = await recorder.start()
+    // L'utente potrebbe aver già rilasciato (o negato il permesso) durante l'attesa.
+    if (!ok || !holdingRef.current) { recorder.cancel() }
+  }
+
+  const onMicPointerMove = (e: React.PointerEvent) => {
+    if (!holdingRef.current || recLocked || !startPtRef.current) return
+    const dx = e.clientX - startPtRef.current.x
+    const dy = e.clientY - startPtRef.current.y
+    setRecCancelArmed(dx < -70)
+    if (dy < -70) { setRecLocked(true); holdingRef.current = false }
+  }
+
+  const onMicPointerUp = (e: React.PointerEvent) => {
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* noop */ }
+    if (!holdingRef.current) return // già bloccato (hands-free) o non in registrazione
+    holdingRef.current = false
+    if (!recorder.recording) return
+    if (recCancelArmed) { cancelAudio(); return }
+    if (recorder.elapsedMs < 700) { // tap troppo corto → annulla e suggerisci
+      cancelAudio()
+      setMicHint(true)
+      setTimeout(() => setMicHint(false), 1800)
+      return
+    }
+    void finishAndSendAudio()
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -727,6 +824,12 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
 
   const isDirect = channel.channelKind === 'direct'
   const dmPartner = channel.dmWith
+
+  // Audio + file: solo nelle chat private (DM). I file solo allo staff.
+  const isStaff = userRole === 'coach' || userRole === 'mental_coach' || userRole === 'admin'
+  const canAttachFile = isDirect && isStaff
+  const showSend = !!input.trim() || !!imageFile || !!fileAttachment
+  const showMic = isDirect && audioSupported && !showSend
 
   return (
     <div className="flex flex-col h-full relative">
@@ -980,6 +1083,26 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                                     />
                                   </a>
                                 )}
+                                {msg.fullMsg.audio_url && (
+                                  <div style={{ marginBottom: msg.text ? 6 : 0 }}>
+                                    <VoiceMessage
+                                      id={msg.id}
+                                      url={msg.fullMsg.audio_url}
+                                      duration={msg.fullMsg.audio_duration_sec ?? 0}
+                                      own={group.own}
+                                    />
+                                  </div>
+                                )}
+                                {msg.fullMsg.file_url && (
+                                  <div style={{ marginBottom: msg.text ? 6 : 0 }}>
+                                    <FileAttachment
+                                      url={msg.fullMsg.file_url}
+                                      name={msg.fullMsg.file_name ?? 'File'}
+                                      size={msg.fullMsg.file_size ?? 0}
+                                      own={group.own}
+                                    />
+                                  </div>
+                                )}
                                 {msg.text}
                                 {msg.editedAt && (
                                   <span className="text-[9px] ml-1.5 opacity-50">modificato</span>
@@ -1096,37 +1219,137 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             </div>
           )}
 
-          <div className="flex items-center gap-2">
-            <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={pickImage} />
-            <button
-              onClick={() => imageInputRef.current?.click()}
-              className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110"
-              style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
-              title="Allega immagine"
-            >
-              <ImagePlus size={17} strokeWidth={2} />
-            </button>
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={onInputChange}
-              onKeyDown={onKeyDown}
-              placeholder={isDirect && dmPartner ? `Scrivi a ${dmPartner.name}…` : `Scrivi in #${channel.name}…`}
-              rows={1}
-              className="flex-1 resize-none px-3.5 py-2.5 text-sm focus:outline-none no-scrollbar"
-              style={{ background: 'var(--ist-input-surface)', border: '1px solid var(--ist-input-border)', borderRadius: 16, color: 'var(--ist-text)', maxHeight: 120, lineHeight: 1.5 }}
-            />
-            <button
-              onClick={sendMessage}
-              disabled={(!input.trim() && !imageFile) || uploading}
-              className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)', boxShadow: (input.trim() || imageFile) ? '0 4px 16px rgba(40,102,128,0.36)' : 'none' }}
-            >
-              {uploading
-                ? <Loader2 size={15} strokeWidth={2} className="text-white animate-spin" />
-                : <Send size={15} strokeWidth={2} className="text-white" />}
-            </button>
-          </div>
+          {/* Anteprima file selezionato (documento, solo staff) */}
+          {fileAttachment && (
+            <div className="relative self-start flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w10)' }}>
+              <FileText size={16} strokeWidth={2} style={{ color: 'var(--ist-accent-text)' }} />
+              <span className="text-xs max-w-[200px] truncate" style={{ color: 'var(--ist-text)' }}>{fileAttachment.name}</span>
+              <button
+                onClick={() => setFileAttachment(null)}
+                className="ml-1 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+                title="Rimuovi file"
+              >
+                <X size={11} strokeWidth={2.5} />
+              </button>
+            </div>
+          )}
+
+          {recorder.recording && recLocked ? (
+            /* Registrazione BLOCCATA (hands-free): annulla · timer · invia */
+            <div className="flex items-center gap-3">
+              <button
+                onClick={cancelAudio}
+                className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-transform active:scale-95"
+                style={{ background: 'var(--ist-w8)', color: '#FF6B7A' }}
+                title="Annulla"
+              >
+                <Trash2 size={16} strokeWidth={2} />
+              </button>
+              <div className="flex-1 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full animate-pulse flex-shrink-0" style={{ background: '#FF6B7A' }} />
+                <span className="text-sm font-medium tabular-nums" style={{ color: 'var(--ist-text)' }}>{formatDuration(recorder.elapsedMs)}</span>
+                <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>registrazione…</span>
+              </div>
+              <button
+                onClick={finishAndSendAudio}
+                disabled={uploading}
+                className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all hover:-translate-y-0.5 disabled:opacity-40"
+                style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)', boxShadow: '0 4px 16px rgba(40,102,128,0.36)' }}
+                title="Invia vocale"
+              >
+                {uploading
+                  ? <Loader2 size={15} strokeWidth={2} className="text-white animate-spin" />
+                  : <Send size={15} strokeWidth={2} className="text-white" />}
+              </button>
+            </div>
+          ) : (
+            <div className="relative flex items-center gap-2">
+              <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={pickImage} />
+              {canAttachFile && (
+                <input ref={fileInputRef} type="file" accept={CHAT_FILE_ACCEPT} className="hidden" onChange={pickFile} />
+              )}
+              <button
+                onClick={() => imageInputRef.current?.click()}
+                className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110"
+                style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+                title="Allega immagine"
+              >
+                <ImagePlus size={17} strokeWidth={2} />
+              </button>
+              {canAttachFile && (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110"
+                  style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+                  title="Allega file"
+                >
+                  <Paperclip size={17} strokeWidth={2} />
+                </button>
+              )}
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={onInputChange}
+                onKeyDown={onKeyDown}
+                placeholder={isDirect && dmPartner ? `Scrivi a ${dmPartner.name}…` : `Scrivi in #${channel.name}…`}
+                rows={1}
+                className="flex-1 resize-none px-3.5 py-2.5 text-sm focus:outline-none no-scrollbar"
+                style={{ background: 'var(--ist-input-surface)', border: '1px solid var(--ist-input-border)', borderRadius: 16, color: 'var(--ist-text)', maxHeight: 120, lineHeight: 1.5 }}
+              />
+              {showMic ? (
+                <button
+                  onPointerDown={onMicPointerDown}
+                  onPointerMove={onMicPointerMove}
+                  onPointerUp={onMicPointerUp}
+                  onContextMenu={(e) => e.preventDefault()}
+                  className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110 select-none touch-none"
+                  style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+                  title="Tieni premuto per registrare un vocale"
+                >
+                  <Mic size={18} strokeWidth={2} />
+                </button>
+              ) : (
+                <button
+                  onClick={sendMessage}
+                  disabled={!showSend || uploading}
+                  className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)', boxShadow: showSend ? '0 4px 16px rgba(40,102,128,0.36)' : 'none' }}
+                >
+                  {uploading
+                    ? <Loader2 size={15} strokeWidth={2} className="text-white animate-spin" />
+                    : <Send size={15} strokeWidth={2} className="text-white" />}
+                </button>
+              )}
+
+              {/* Overlay mentre si tiene premuto il mic (il bottone ha il pointer capture) */}
+              {recorder.recording && !recLocked && (
+                <div
+                  className="absolute inset-0 flex items-center gap-2 rounded-2xl px-3"
+                  style={{ background: 'var(--ist-nav-bg)', pointerEvents: 'none' }}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full animate-pulse flex-shrink-0" style={{ background: '#FF6B7A' }} />
+                  <span className="text-sm font-medium tabular-nums" style={{ color: recCancelArmed ? '#FF6B7A' : 'var(--ist-text)' }}>
+                    {formatDuration(recorder.elapsedMs)}
+                  </span>
+                  <span className="flex-1 text-xs flex items-center justify-end gap-1 text-right" style={{ color: recCancelArmed ? '#FF6B7A' : 'var(--ist-text-dim)' }}>
+                    <Trash2 size={13} strokeWidth={2} />
+                    {recCancelArmed ? 'Rilascia per annullare' : '‹ scorri per annullare · ↑ blocca'}
+                  </span>
+                </div>
+              )}
+
+              {/* Suggerimento se il tap è troppo breve */}
+              {micHint && (
+                <div
+                  className="absolute right-0 -top-10 px-3 py-1.5 rounded-xl text-[11px] whitespace-nowrap"
+                  style={{ background: 'var(--ist-nav-bg)', border: '1px solid var(--ist-nav-border)', color: 'var(--ist-text-muted)', boxShadow: '0 4px 14px rgba(0,0,0,0.30)' }}
+                >
+                  Tieni premuto per registrare
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div
