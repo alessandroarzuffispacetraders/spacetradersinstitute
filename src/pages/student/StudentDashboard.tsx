@@ -167,8 +167,6 @@ export default function StudentDashboard() {
           in alto (ordine DOM naturale). */}
       <div className="px-5 lg:px-10 pt-8 pb-32 lg:pb-12 flex flex-col gap-6">
 
-        {isFreeUser(user) && <UpgradeBanner />}
-
         {/* ── Header saluto (sticky su mobile, frosted durante lo scroll) ── */}
         <div className="home-greeting-bar -mx-5 lg:mx-0">
           <div className="home-greeting-bar-bg">
@@ -192,6 +190,10 @@ export default function StudentDashboard() {
             </header>
           </div>
         </div>
+
+        {/* Banner "versione gratuita" SOTTO il saluto: sopra si accavallava con
+            la barra sticky del saluto (margin-top negativo per la safe-area). */}
+        {isFreeUser(user) && <UpgradeBanner />}
 
         {/* ── Onboarding: video di benvenuto (prima settimana) + primi passi ── */}
         {user?.role === 'student' && (
