@@ -555,9 +555,10 @@ interface ChatAreaProps {
   onBack?: () => void
   isMobile?: boolean
   initialInput?: string
+  keyboardOpen?: boolean
 }
 
-function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack, isMobile, initialInput }: ChatAreaProps) {
+function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack, isMobile, initialInput, keyboardOpen }: ChatAreaProps) {
   const [input, setInput] = useState(initialInput ?? '')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
@@ -632,6 +633,15 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
       bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior })
     }
   }, [loading])
+
+  // Quando si apre la tastiera (mobile), tieni l'ultimo messaggio visibile
+  // appena sopra l'input (se eri già in fondo).
+  useEffect(() => {
+    if (keyboardOpen && isAtBottom) {
+      const t = setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 120)
+      return () => clearTimeout(t)
+    }
+  }, [keyboardOpen])
 
   const handleScroll = () => {
     const el = scrollContainerRef.current
@@ -1197,7 +1207,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
       {canPost ? (
         <div
           className="flex flex-col gap-2 px-3 pt-3 flex-shrink-0"
-          style={{ borderTop: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
+          style={{ borderTop: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)', paddingBottom: keyboardOpen ? 12 : 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
         >
           {/* Anteprima immagine selezionata */}
           {imagePreview && (
@@ -1354,7 +1364,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
       ) : (
         <div
           className="flex items-center justify-center gap-2 px-4 pt-3 flex-shrink-0"
-          style={{ borderTop: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
+          style={{ borderTop: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)', paddingBottom: keyboardOpen ? 12 : 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
         >
           <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>🔒 Solo lettura — non puoi scrivere in questo canale</span>
         </div>
@@ -1668,11 +1678,36 @@ function BachecaArea({
   )
 }
 
+// Altezza (px) di cui la tastiera software copre il viewport, via VisualViewport.
+// 0 = tastiera chiusa. Serve a far combaciare la barra di scrittura col bordo
+// della tastiera (il layout `fixed` non si ridimensiona da solo su iOS/Android).
+function useKeyboardInset(): number {
+  const [inset, setInset] = useState(0)
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const update = () => {
+      const overlap = window.innerHeight - vv.height - vv.offsetTop
+      // Soglia: ignora le micro-variazioni (barra URL) e considera solo la tastiera.
+      setInset(overlap > 100 ? Math.round(overlap) : 0)
+    }
+    update()
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [])
+  return inset
+}
+
 // ─── main component ───────────────────────────────────────────────────────────
 
 export default function ChatPage() {
   const { user } = useAuth()
   const { setHideBottomNav } = useUI()
+  const keyboardInset = useKeyboardInset()
   const location = useLocation()
   const navigate = useNavigate()
   const userRole = (user?.role ?? 'student') as MemberRole
@@ -1808,7 +1843,7 @@ export default function ChatPage() {
   const goBack = () => setMobileView('channels')
 
   return (
-    <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+    <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)', bottom: keyboardInset || 0, transition: 'bottom 0.18s ease-out' }}>
       {/* Sidebar */}
       <div
         className={`flex-shrink-0 ${mobileView === 'channels' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[240px] lg:ml-[108px] flex-col overflow-hidden`}
@@ -1852,6 +1887,7 @@ export default function ChatPage() {
             onBack={goBack}
             isMobile={mobileView === 'chat'}
             initialInput={prefill?.channelId === activeChannelId ? prefill.text : undefined}
+            keyboardOpen={keyboardInset > 0}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
