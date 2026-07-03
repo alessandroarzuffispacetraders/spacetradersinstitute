@@ -16,6 +16,7 @@ import {
   useAuthorAvatars, dmChannelId, DmUser, DbMessage,
 } from '../../lib/chat'
 import { useChannels } from '../../lib/channels'
+import { setActiveChat } from '../../lib/activeChat'
 import { uploadChatImage } from '../../lib/storage'
 import { isFreeUser } from '../../lib/freeTier'
 import UserAvatar from '../../components/ui/UserAvatar'
@@ -581,6 +582,13 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
   // cambio canale. Non resettiamo `input` qui per non cancellare l'eventuale
   // testo precompilato (es. richiesta d'accesso all'admin).
   useEffect(() => { setEditingId(null); setHoveredMsgId(null); setImageFile(null) }, [channel.id])
+
+  // Segnala qual è la chat aperta → sopprime le notifiche (in-app + push) del
+  // canale che stai già guardando; azzera quando esci dalla chat.
+  useEffect(() => {
+    setActiveChat(channel.id)
+    return () => setActiveChat(null)
+  }, [channel.id])
 
   // Auto-scroll: only if already at bottom
   const prevMsgCount = useRef(0)

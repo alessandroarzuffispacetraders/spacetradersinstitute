@@ -9,6 +9,7 @@ import AppPrompts from '../ui/AppPrompts'
 import { useAuth } from '../../context/AuthContext'
 import { hasManagement, normalizeRoles } from '../../router/navConfig'
 import { supabase } from '../../lib/supabase'
+import { isViewingChannel } from '../../lib/activeChat'
 
 // Ponte tra il service worker e il router: quando si clicca una notifica push
 // mentre l'app è già aperta, il SW invia { type:'ist-navigate', url } e qui
@@ -22,6 +23,10 @@ function PushNavigationBridge() {
       const data = event.data
       if (data?.type === 'ist-navigate' && typeof data.url === 'string') {
         navigate(data.url)
+      }
+      // Il SW chiede se stai già guardando quel canale (per non mostrare la push).
+      if (data?.type === 'ist-viewing?' && event.ports[0]) {
+        event.ports[0].postMessage({ viewing: isViewingChannel(data.channelId) })
       }
     }
     navigator.serviceWorker.addEventListener('message', handler)
@@ -55,6 +60,8 @@ function NotificationManager() {
           }
           if (msg.user_id === user.id) return
           if (localStorage.getItem('ist_notif_enabled') === 'false') return
+          // Sei già dentro (e vedi) quella chat → niente notifica.
+          if (isViewingChannel(msg.channel_id)) return
 
           try {
             const n = new Notification(msg.author_name, {
