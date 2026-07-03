@@ -120,8 +120,8 @@ export default function StudentDashboard() {
     ;(async () => {
       const [own, co, me] = await Promise.all([
         supabase.from('profiles').select('created_at').eq('id', user.id).maybeSingle(),
-        user.assignedCoachId ? supabase.from('profiles').select('name').eq('id', user.assignedCoachId).maybeSingle() : Promise.resolve({ data: null as { name: string } | null }),
-        user.assignedMentalCoachId ? supabase.from('profiles').select('name').eq('id', user.assignedMentalCoachId).maybeSingle() : Promise.resolve({ data: null as { name: string } | null }),
+        user.assignedCoachId ? supabase.from('profiles_public').select('name').eq('id', user.assignedCoachId).maybeSingle() : Promise.resolve({ data: null as { name: string } | null }),
+        user.assignedMentalCoachId ? supabase.from('profiles_public').select('name').eq('id', user.assignedMentalCoachId).maybeSingle() : Promise.resolve({ data: null as { name: string } | null }),
       ])
       if (!active) return
       setMeta({

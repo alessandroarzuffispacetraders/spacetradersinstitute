@@ -369,7 +369,7 @@ export function useStaffDirectory() {
 
   useEffect(() => {
     let active = true
-    supabase.from('profiles').select('id,name,role,roles').order('name').then(({ data }) => {
+    supabase.from('profiles_public').select('id,name,role,roles').order('name').then(({ data }) => {
       if (!active) return
       const rows = (data ?? []) as { id: string; name: string; role: string; roles: string[] | null }[]
       const has = (u: typeof rows[number], r: string) => u.role === r || (u.roles ?? []).includes(r)

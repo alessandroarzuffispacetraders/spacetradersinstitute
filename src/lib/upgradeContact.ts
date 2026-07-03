@@ -15,7 +15,7 @@ export function useContactAdmin() {
   useEffect(() => {
     let cancelled = false
     supabase
-      .from('profiles')
+      .from('profiles_public')
       .select('id, name, created_at')
       .or('role.eq.admin,roles.cs.{admin}')
       .order('created_at', { ascending: true })

@@ -380,7 +380,7 @@ export function useAuthorAvatars(userIds: string[]): Record<string, AuthorAvatar
     if (ids.length === 0) return
     let cancelled = false
     supabase
-      .from('profiles')
+      .from('profiles_public')
       .select('id, name, avatar_url, avatar_preset')
       .in('id', ids)
       .then(({ data }) => {
@@ -397,21 +397,29 @@ export function useAuthorAvatars(userIds: string[]): Record<string, AuthorAvatar
   return map
 }
 
-export function useDmUsers(currentUserId: string, _currentRole: UserRole) {
+export function useDmUsers(currentUserId: string, currentRole: UserRole) {
   const [users, setUsers] = useState<DmUser[]>([])
 
   useEffect(() => {
     if (!currentUserId) return
 
-    // Tutti possono scrivere a tutti: nessun filtro per ruolo.
+    // Rubrica: solo colonne non sensibili via `profiles_public` (id/name/role/
+    // avatar). L'admin, che separa i DM per tier (paganti vs gratuiti), legge il
+    // tier dalla tabella base (ha accesso completo); gli altri ruoli non vedono
+    // il tier altrui. Tutti possono scrivere a tutti: nessun filtro per ruolo.
+    const isAdmin = currentRole === 'admin'
+    const table = isAdmin ? 'profiles' : 'profiles_public'
+    const cols = isAdmin
+      ? 'id, name, role, tier, avatar_url, avatar_preset'
+      : 'id, name, role, avatar_url, avatar_preset'
     supabase
-      .from('profiles')
-      .select('id, name, role, tier, avatar_url, avatar_preset')
+      .from(table)
+      .select(cols)
       .neq('id', currentUserId)
       .order('role')
       .then(({ data }) => {
         if (!data) return
-        setUsers((data as { id: string; name: string; role: UserRole; tier: UserTier | null; avatar_url: string | null; avatar_preset: string | null }[]).map(r => ({
+        setUsers((data as unknown as { id: string; name: string; role: UserRole; tier?: UserTier | null; avatar_url: string | null; avatar_preset: string | null }[]).map(r => ({
           id: r.id,
           name: r.name,
           role: r.role,
@@ -420,7 +428,7 @@ export function useDmUsers(currentUserId: string, _currentRole: UserRole) {
           avatarPreset: r.avatar_preset ?? undefined,
         })))
       })
-  }, [currentUserId])
+  }, [currentUserId, currentRole])
 
   return users
 }
