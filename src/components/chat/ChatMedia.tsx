@@ -155,9 +155,11 @@ export function FileAttachment({
   own: boolean
 }) {
   const ext = (name.split('.').pop() ?? '').toLowerCase()
-  // fg = testo che contrasta la bolla (adattivo). Le tinte w* si adattano al
-  // tema → la tile resta leggibile su bolla propria (teal/azzurra) e altrui.
+  // fg = testo che contrasta la bolla; le superfici sono legate alla bolla
+  // (propria/altrui) e adattive al tema → tile leggibile in ogni combinazione.
   const fg = own ? 'var(--ist-bubble-own-text)' : 'var(--ist-text)'
+  const surface = own ? 'var(--ist-bubble-own-surface)' : 'var(--ist-bubble-other-surface)'
+  const surface2 = own ? 'var(--ist-bubble-own-surface-2)' : 'var(--ist-bubble-other-surface-2)'
   const color = EXT_COLOR[ext] ?? fg
 
   return (
@@ -167,11 +169,11 @@ export function FileAttachment({
       rel="noreferrer"
       download={name}
       className="flex items-center gap-3 rounded-xl px-2.5 py-2 transition-colors"
-      style={{ background: 'var(--ist-w12)', minWidth: 200, maxWidth: 260 }}
+      style={{ background: surface, minWidth: 200, maxWidth: 260 }}
     >
       <div
         className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 relative"
-        style={{ background: 'var(--ist-w16)' }}
+        style={{ background: surface2 }}
       >
         <FileText size={18} strokeWidth={2} style={{ color }} />
       </div>
