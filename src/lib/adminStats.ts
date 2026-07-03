@@ -52,3 +52,29 @@ export function useAdminStatistics() {
 
   return { data, loading }
 }
+
+// ─── Grafici: andamento iscrizioni/completamenti (12 mesi) + split tier ──────────
+
+export interface MonthPoint { month: string; count: number } // month = 'YYYY-MM'
+export interface AdminChartsData {
+  signups: MonthPoint[]
+  completions: MonthPoint[]
+  tier: { full: number; free: number }
+}
+
+export function useAdminCharts() {
+  const [data, setData] = useState<AdminChartsData | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    supabase.rpc('admin_charts').then(({ data }) => {
+      if (!active) return
+      setData((data as AdminChartsData) ?? null)
+      setLoading(false)
+    })
+    return () => { active = false }
+  }, [])
+
+  return { data, loading }
+}
