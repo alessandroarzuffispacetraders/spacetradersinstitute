@@ -171,25 +171,25 @@ export default function StudentCorsi() {
               <div key={cat.id} className="relative flex gap-3 lg:gap-5 pb-6 lg:pb-8 last:pb-0">
                 {/* ── Spina + nodo ── */}
                 <div className="relative flex-shrink-0 w-10 lg:w-11 flex justify-center">
-                  {/* Connettore verticale verso la tappa successiva */}
+                  {/* Connettore verticale: barra che si riempie in base al
+                      completamento della tappa, fino alla sezione successiva. */}
                   {!isLast && (
                     <div
-                      className="absolute left-1/2 -translate-x-1/2 top-10 lg:top-11 -bottom-6 lg:-bottom-8 w-[2px] rounded-full"
-                      style={{
-                        background: done
-                          ? `linear-gradient(to bottom, ${cat.accent}, ${nextAccent})`
-                          : 'var(--ist-w10)',
-                      }}
-                    />
+                      className="absolute left-1/2 -translate-x-1/2 top-10 lg:top-11 -bottom-6 lg:-bottom-8 w-[2px] rounded-full overflow-hidden"
+                      style={{ background: 'var(--ist-w10)' }}
+                    >
+                      <div
+                        className="absolute top-0 left-0 w-full rounded-full"
+                        style={{
+                          height: `${stats.pct}%`,
+                          background: `linear-gradient(to bottom, ${cat.accent}, ${nextAccent})`,
+                          transition: 'height .6s ease',
+                        }}
+                      />
+                    </div>
                   )}
                   {/* Nodo */}
                   <div className="relative z-10">
-                    {isCurrent && (
-                      <span
-                        className="absolute -inset-1 rounded-full animate-ping"
-                        style={{ background: `${cat.accent}30` }}
-                      />
-                    )}
                     <div
                       className="relative w-10 h-10 lg:w-11 lg:h-11 rounded-full flex items-center justify-center"
                       style={done
