@@ -12,6 +12,7 @@ interface AuthContextType {
   logout: () => Promise<void>
   updateProfile: (data: ProfileUpdate) => Promise<void>
   changePassword: (current: string, next: string) => Promise<{ error: string | null }>
+  deleteAccount: () => Promise<{ error: string | null }>
   isAuthenticated: boolean
   loading: boolean
   justLoggedIn: boolean
@@ -126,6 +127,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null }
   }
 
+  // Cancellazione account self-service (obbligo App Store): elimina il PROPRIO
+  // account via edge function (verifica il JWT lato server), poi chiude la sessione.
+  const deleteAccount = async (): Promise<{ error: string | null }> => {
+    if (!user) return { error: 'Non autenticato' }
+    const { data, error } = await supabase.functions.invoke('delete-own-account', { body: {} })
+    if (error) return { error: error.message || "Errore durante l'eliminazione dell'account" }
+    if (data && (data as { error?: string }).error) return { error: (data as { error: string }).error }
+    await supabase.auth.signOut().catch(() => {/* sessione già invalidata lato server */})
+    setUser(null)
+    return { error: null }
+  }
+
   const updateProfile = async (data: ProfileUpdate) => {
     if (!user) return
 
@@ -139,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, updateProfile, changePassword, isAuthenticated: !!user, loading, justLoggedIn, clearJustLoggedIn: () => setJustLoggedIn(false) }}>
+    <AuthContext.Provider value={{ user, login, signup, logout, updateProfile, changePassword, deleteAccount, isAuthenticated: !!user, loading, justLoggedIn, clearJustLoggedIn: () => setJustLoggedIn(false) }}>
       {children}
     </AuthContext.Provider>
   )

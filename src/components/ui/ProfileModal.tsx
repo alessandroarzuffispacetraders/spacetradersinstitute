@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   X, Camera, Eye, EyeOff, Check, Lock, User as UserIcon,
   ChevronRight, Upload, Bell, BellOff, Loader2,
-  BookMarked, ExternalLink,
+  BookMarked, ExternalLink, Trash2, AlertTriangle,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import UserAvatar, { PRESET_AVATARS } from './UserAvatar'
@@ -26,7 +26,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   blocked: { label: 'Bloccato', color: '#FF6B7A' },
 }
 
-type Section = 'main' | 'avatar' | 'name' | 'password' | 'notifications'
+type Section = 'main' | 'avatar' | 'name' | 'password' | 'notifications' | 'delete'
 
 interface Props {
   isOpen: boolean
@@ -274,6 +274,16 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
                       />
                     </div>
                   </div>
+
+                  {/* Elimina account (obbligo App Store: cancellazione self-service) */}
+                  <button
+                    onClick={() => setSection('delete')}
+                    className="mt-1 self-center flex items-center gap-1.5 text-xs font-medium py-2 px-3 rounded-xl transition-colors hover:bg-white/[0.04]"
+                    style={{ color: '#FF6B7A' }}
+                  >
+                    <Trash2 size={13} strokeWidth={2} />
+                    Elimina account
+                  </button>
                 </div>
               </div>
             </>
@@ -418,6 +428,11 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
           {/* ── NOTIFICATIONS SECTION ── */}
           {section === 'notifications' && (
             <NotificationsSection onBack={() => setSection('main')} onClose={onClose} />
+          )}
+
+          {/* ── DELETE ACCOUNT SECTION ── */}
+          {section === 'delete' && (
+            <DeleteAccountSection onBack={() => setSection('main')} onClose={onClose} />
           )}
 
           {/* ── PASSWORD SECTION ── */}
@@ -842,6 +857,79 @@ function NativeNotificationsSection({ onBack, onClose }: { onBack: () => void; o
             sul tuo telefono.
           </p>
         )}
+      </div>
+    </>
+  )
+}
+
+// Cancellazione account self-service (obbligo App Store 5.1.1(v)). Doppia
+// barriera: schermata dedicata + digitazione di "ELIMINA". Al successo la
+// sessione è già chiusa lato AuthContext → l'app torna al login.
+function DeleteAccountSection({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  const { deleteAccount } = useAuth()
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const ready = confirm.trim().toUpperCase() === 'ELIMINA'
+
+  const handleDelete = async () => {
+    if (!ready || busy) return
+    setBusy(true)
+    setError(null)
+    const { error } = await deleteAccount()
+    if (error) { setError(error); setBusy(false); return }
+    onClose()
+  }
+
+  return (
+    <>
+      <ModalHeader title="Elimina account" onBack={onBack} onClose={onClose} />
+      <div className="px-5 pb-6 pt-3 flex flex-col gap-4">
+        <div
+          className="rounded-2xl px-4 py-3 flex items-start gap-3"
+          style={{ background: 'rgba(255,107,122,0.08)', border: '1px solid rgba(255,107,122,0.20)' }}
+        >
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: 'rgba(255,107,122,0.12)', color: '#FF6B7A' }}
+          >
+            <AlertTriangle size={17} strokeWidth={2} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>Azione irreversibile</p>
+            <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--ist-text-muted)' }}>
+              Il tuo account e tutti i dati collegati (profilo, messaggi, diario, compiti, progressi) verranno eliminati definitivamente. Non è possibile annullare.
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs mb-2" style={{ color: 'var(--ist-text-muted)' }}>
+            Per confermare, scrivi <span style={{ color: '#FF6B7A', fontWeight: 700 }}>ELIMINA</span> qui sotto.
+          </p>
+          <input
+            value={confirm}
+            onChange={e => setConfirm(e.target.value)}
+            placeholder="ELIMINA"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            className="w-full px-4 py-3 rounded-2xl text-sm outline-none"
+            style={{ background: 'var(--ist-w8)', border: '1px solid var(--ist-w12)', color: 'var(--ist-text)' }}
+          />
+        </div>
+
+        {error && <p className="text-xs px-1" style={{ color: '#FF6B7A' }}>{error}</p>}
+
+        <button
+          onClick={handleDelete}
+          disabled={!ready || busy}
+          className="w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: '#FF6B7A', color: 'white' }}
+        >
+          {busy ? <Loader2 size={15} strokeWidth={2} className="animate-spin" /> : <Trash2 size={15} strokeWidth={2} />}
+          Elimina definitivamente
+        </button>
       </div>
     </>
   )
