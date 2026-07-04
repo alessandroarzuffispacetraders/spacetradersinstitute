@@ -39,10 +39,11 @@
     --ist-w20: rgba(255,255,255,0.20);
     --ist-track: rgba(255,255,255,0.09);
     /* Chat-specific tokens */
-    /* Scuro: i MIEI messaggi = azzurro chiaro (spiccano); ricevuti = slate scuro */
-    --ist-bubble-own-bg: #C2E6F6;
-    --ist-bubble-own-border: rgba(90,154,177,0.30);
-    --ist-bubble-own-text: #0A2A38;
+    /* Scuro: i MIEI messaggi = grigio chiarissimo (spiccano sul fondo scuro);
+       ricevuti = slate scuro */
+    --ist-bubble-own-bg: #E4E8EE;
+    --ist-bubble-own-border: rgba(20,30,45,0.06);
+    --ist-bubble-own-text: #16202B;
     --ist-bubble-own-name: #7CBBD0;
     --ist-bubble-other-bg: #1C2734;
     --ist-bubble-other-border: rgba(255,255,255,0.11);
@@ -98,13 +99,14 @@
     --ist-w20: rgba(10,20,40,0.12);
     --ist-track: rgba(10,20,40,0.10);
     /* Chat-specific tokens */
-    /* Chiaro: i MIEI messaggi = teal scuro + testo bianco; ricevuti = azzurro */
+    /* Chiaro: i MIEI messaggi = teal scuro + testo bianco; ricevuti = grigio
+       chiarissimo (si stacca dal bianco dello sfondo) */
     --ist-bubble-own-bg: #123E51;
     --ist-bubble-own-border: rgba(40,102,128,0.28);
     --ist-bubble-own-text: #EAF6FA;
     --ist-bubble-own-name: #155A72;
-    --ist-bubble-other-bg: #C2E6F6;
-    --ist-bubble-other-border: rgba(90,154,177,0.20);
+    --ist-bubble-other-bg: #E8EBF0;
+    --ist-bubble-other-border: rgba(10,20,40,0.07);
     --ist-bubble-shadow: 0 1px 2px rgba(20,40,60,0.10);
     /* superfici (tile file) sovrapposte alla bolla */
     --ist-bubble-own-surface: rgba(255,255,255,0.13);
