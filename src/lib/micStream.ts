@@ -37,8 +37,13 @@ export function releaseMicNow() {
 }
 
 if (typeof window !== 'undefined') {
+  // Chiusura reale della pagina → rilascio immediato.
   window.addEventListener('pagehide', releaseMicNow)
+  // App in background → NON rilascio subito: programmo il rilascio (idle). Se
+  // rientri a breve, la prossima registrazione riusa il microfono senza prompt;
+  // se resti fuori a lungo il timer lo libera (e comunque iOS lo recupera al
+  // sospendere l'app). Così un "esci e rientra veloce" non richiede il permesso.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') releaseMicNow()
+    if (document.visibilityState === 'hidden') scheduleMicRelease()
   })
 }
