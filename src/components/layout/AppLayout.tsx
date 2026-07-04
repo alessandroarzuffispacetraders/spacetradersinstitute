@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Capacitor } from '@capacitor/core'
 import { Outlet, useNavigate } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
@@ -126,7 +127,9 @@ function AppShell() {
         </main>
         <BottomNav />
         <ProfileModal isOpen={profileOpen} onClose={() => setProfileOpen(false)} />
-        <AppPrompts />
+        {/* Banner "Aggiungi alla home" + richiesta notifiche: solo sul web.
+            Nell'app nativa non servono (è già installata) → nascosti. */}
+        {!Capacitor.isNativePlatform() && <AppPrompts />}
         <NotificationManager />
         <PushNavigationBridge />
       </div>
