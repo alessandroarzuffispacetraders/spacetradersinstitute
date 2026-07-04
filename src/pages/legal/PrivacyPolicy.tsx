@@ -4,7 +4,7 @@
 // NB: i dati del Titolare (ragione sociale, indirizzo, email) sono da confermare.
 import type { ReactNode } from 'react'
 
-const CONTACT_EMAIL = 'privacy@spacetradersinstitute.com'
+const CONTACT_EMAIL = 'alessandroarzuffi.spacetraders@gmail.com'
 const LAST_UPDATE = '4 luglio 2026'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -30,14 +30,17 @@ export default function PrivacyPolicy() {
         </p>
 
         <p style={{ fontSize: 14.5, lineHeight: 1.7, marginTop: 22 }}>
-          La presente informativa descrive come Space Traders Institute (“noi”, il “Titolare”)
-          raccoglie e tratta i dati personali degli utenti dell'applicazione e della piattaforma
-          web Space Traders Institute (l'“App”), una scuola di coaching 1:1 per trader.
+          La presente informativa descrive come Orion Trade Dynamics LLC (“noi”, il “Titolare”),
+          che gestisce Space Traders Institute, raccoglie e tratta i dati personali degli utenti
+          dell'applicazione e della piattaforma web Space Traders Institute (l'“App”), una scuola
+          di coaching 1:1 per trader.
         </p>
 
         <Section title="1. Titolare del trattamento">
-          Titolare del trattamento è Space Traders Institute. Per qualsiasi richiesta relativa ai
-          tuoi dati puoi scriverci a <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: '#7CBBD0' }}>{CONTACT_EMAIL}</a>.
+          Il Titolare del trattamento è <strong style={{ color: '#dfe5ec' }}>Orion Trade Dynamics LLC</strong>,
+          con sede in 30 N Gould St, Ste R, Sheridan, WY 82801, Stati Uniti (EIN 61-2254267), operante
+          come “Space Traders Institute”. Per qualsiasi richiesta relativa ai tuoi dati puoi scriverci
+          a <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: '#7CBBD0' }}>{CONTACT_EMAIL}</a>.
         </Section>
 
         <Section title="2. Dati che raccogliamo">
@@ -103,7 +106,7 @@ export default function PrivacyPolicy() {
           Per domande o richieste sui tuoi dati: <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: '#7CBBD0' }}>{CONTACT_EMAIL}</a>.
         </Section>
 
-        <p style={{ fontSize: 12, color: '#6b7480', marginTop: 40 }}>© {new Date().getFullYear()} Space Traders Institute. Tutti i diritti riservati.</p>
+        <p style={{ fontSize: 12, color: '#6b7480', marginTop: 40 }}>© {new Date().getFullYear()} Orion Trade Dynamics LLC — Space Traders Institute. Tutti i diritti riservati.</p>
       </div>
     </div>
   )

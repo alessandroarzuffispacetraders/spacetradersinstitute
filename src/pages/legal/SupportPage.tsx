@@ -2,7 +2,7 @@
 // la pubblicazione su App Store (campo "Support URL"). Auto-contenuta e sempre
 // leggibile. NB: l'email di supporto è da confermare.
 
-const SUPPORT_EMAIL = 'supporto@spacetradersinstitute.com'
+const SUPPORT_EMAIL = 'alessandroarzuffi.spacetraders@gmail.com'
 
 function Faq({ q, children }: { q: string; children: string }) {
   return (
@@ -57,7 +57,7 @@ export default function SupportPage() {
           Consulta anche la nostra <a href="/privacy" style={{ color: '#7CBBD0' }}>Informativa sulla Privacy</a>.
         </p>
 
-        <p style={{ fontSize: 12, color: '#6b7480', marginTop: 32 }}>© {new Date().getFullYear()} Space Traders Institute.</p>
+        <p style={{ fontSize: 12, color: '#6b7480', marginTop: 32 }}>© {new Date().getFullYear()} Orion Trade Dynamics LLC — Space Traders Institute.</p>
       </div>
     </div>
   )
