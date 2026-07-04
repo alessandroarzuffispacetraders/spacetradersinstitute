@@ -26,6 +26,13 @@ const config: CapacitorConfig = {
       // Fade dello splash del plugin (Android); su iOS il fade lo passa hide()
       launchFadeOutDuration: 250,
     },
+    Keyboard: {
+      // 'none': il webview NON si ridimensiona con la tastiera → resta a schermo
+      // pieno (dipinto dalla web app, niente sfondo nativo che spunta) e la barra
+      // di scrittura viene posizionata via VisualViewport/CSS (useVisibleViewport),
+      // estendendo il proprio colore dietro la tastiera → niente striscia scura.
+      resize: 'none',
+    },
   },
 }
 

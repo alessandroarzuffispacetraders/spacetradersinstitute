@@ -556,9 +556,10 @@ interface ChatAreaProps {
   isMobile?: boolean
   initialInput?: string
   keyboardOpen?: boolean
+  keyboardInset?: number
 }
 
-function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack, isMobile, initialInput, keyboardOpen }: ChatAreaProps) {
+function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack, isMobile, initialInput, keyboardOpen, keyboardInset = 0 }: ChatAreaProps) {
   const [input, setInput] = useState(initialInput ?? '')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
@@ -858,16 +859,16 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
 
   return (
     <div className="flex flex-col h-full relative">
-      {/* Header — stesso teal scuro del composer, testo/icone chiari */}
+      {/* Header — colore standard: bianco in chiaro, scuro in scuro (nav-bg) */}
       <div
         className="flex items-center gap-3 px-4 py-3 flex-shrink-0"
-        style={{ borderBottom: '1px solid var(--ist-composer-border)', background: 'var(--ist-composer-bg)' }}
+        style={{ borderBottom: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)', backdropFilter: 'blur(16px)' }}
       >
         {isMobile && onBack && (
           <button
             onClick={onBack}
             className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors"
-            style={{ background: 'rgba(255,255,255,0.14)', color: 'var(--ist-composer-text)' }}
+            style={{ background: 'var(--ist-w8)', color: 'var(--ist-text)' }}
           >
             <ArrowLeft size={16} strokeWidth={2} />
           </button>
@@ -878,14 +879,14 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             <UserAvatar user={{ name: dmPartner.name, avatarUrl: dmPartner.avatarUrl, avatarPreset: dmPartner.avatarPreset }} size={36} />
           </div>
         ) : (
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255,255,255,0.14)', color: 'var(--ist-composer-text)' }}>
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--ist-w8)', color: 'var(--ist-accent-text)' }}>
             <ChannelIcon type={channel.type} size={15} />
           </div>
         )}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold truncate" style={{ color: 'var(--ist-composer-text)' }}>{channel.name}</span>
+            <span className="text-sm font-semibold truncate" style={{ color: 'var(--ist-text)' }}>{channel.name}</span>
             {isDirect && dmPartner && (
               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: ROLE_COLOR[dmPartner.role], color: ROLE_TEXT[dmPartner.role] }}>
                 {ROLE_LABEL[dmPartner.role]}
@@ -893,7 +894,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             )}
           </div>
           {!isDirect && channel.description ? (
-            <p className="text-[11px] truncate" style={{ color: 'var(--ist-composer-text-dim)' }}>{channel.description}</p>
+            <p className="text-[11px] truncate" style={{ color: 'var(--ist-text-muted)' }}>{channel.description}</p>
           ) : null}
         </div>
       </div>
@@ -902,7 +903,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-4 no-scrollbar"
+        className="flex-1 overflow-y-auto px-4 py-4 lg:pb-28 no-scrollbar"
         style={{ overscrollBehavior: 'contain' }}
         onClick={() => { setHoveredMsgId(null); setShowReactFor(null) }}
       >
@@ -1221,8 +1222,15 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
       {/* Input bar */}
       {canPost ? (
         <div
-          className="flex flex-col gap-2 px-3 pt-3 flex-shrink-0"
-          style={{ borderTop: '1px solid var(--ist-composer-border)', background: 'var(--ist-composer-bg)', paddingBottom: keyboardOpen ? 12 : 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
+          className="flex flex-col gap-2 px-3 pt-3 flex-shrink-0 border-t z-20 lg:border lg:border-t lg:rounded-[26px] lg:absolute lg:bottom-4 lg:left-1/2 lg:-translate-x-1/2 lg:w-[min(680px,calc(100%-2.5rem))] lg:shadow-[0_14px_44px_rgba(0,0,0,0.28)]"
+          style={{
+            borderColor: 'var(--ist-composer-border)',
+            background: 'var(--ist-composer-bg)',
+            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+            paddingBottom: keyboardOpen
+              ? (keyboardInset > 0 ? keyboardInset + 12 : 12)
+              : 'calc(12px + env(safe-area-inset-bottom, 0px))',
+          }}
         >
           {/* Anteprima immagine selezionata */}
           {imagePreview && (
@@ -1266,15 +1274,15 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
               <button
                 onClick={cancelAudio}
                 className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-transform active:scale-95"
-                style={{ background: 'var(--ist-composer-btn)', color: '#E23B4E' }}
+                style={{ background: 'var(--ist-w8)', color: '#FF6B7A' }}
                 title="Annulla"
               >
                 <Trash2 size={16} strokeWidth={2} />
               </button>
               <div className="flex-1 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full animate-pulse flex-shrink-0" style={{ background: '#FF6B7A' }} />
-                <span className="text-sm font-medium tabular-nums" style={{ color: 'var(--ist-composer-text)' }}>{formatDuration(recorder.elapsedMs)}</span>
-                <span className="text-xs" style={{ color: 'var(--ist-composer-text-dim)' }}>registrazione…</span>
+                <span className="text-sm font-medium tabular-nums" style={{ color: 'var(--ist-text)' }}>{formatDuration(recorder.elapsedMs)}</span>
+                <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>registrazione…</span>
               </div>
               <button
                 onClick={finishAndSendAudio}
@@ -1297,7 +1305,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
               <button
                 onClick={() => imageInputRef.current?.click()}
                 className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110"
-                style={{ background: 'var(--ist-composer-btn)', color: 'var(--ist-composer-btn-icon)' }}
+                style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
                 title="Allega immagine"
               >
                 <ImagePlus size={17} strokeWidth={2} />
@@ -1306,7 +1314,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110"
-                  style={{ background: 'var(--ist-composer-btn)', color: 'var(--ist-composer-btn-icon)' }}
+                  style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
                   title="Allega file"
                 >
                   <Paperclip size={17} strokeWidth={2} />
@@ -1320,7 +1328,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                 placeholder=""
                 rows={1}
                 className="flex-1 resize-none px-4 py-1.5 text-sm focus:outline-none no-scrollbar"
-                style={{ background: 'var(--ist-composer-input)', border: '1px solid var(--ist-composer-input-border)', borderRadius: 9999, color: 'var(--ist-composer-input-text)', maxHeight: 120, lineHeight: 1.5 }}
+                style={{ background: 'var(--ist-input-surface)', border: '1px solid var(--ist-input-border)', borderRadius: 9999, color: 'var(--ist-text)', maxHeight: 120, lineHeight: 1.5 }}
               />
               {showMic ? (
                 <button
@@ -1331,7 +1339,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                   onLostPointerCapture={onMicPointerCancel}
                   onContextMenu={(e) => e.preventDefault()}
                   className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110 select-none touch-none"
-                  style={{ background: 'var(--ist-composer-btn)', color: 'var(--ist-composer-btn-icon)' }}
+                  style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
                   title="Tieni premuto per registrare un vocale"
                 >
                   <Mic size={18} strokeWidth={2} />
@@ -1356,10 +1364,10 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                   style={{ background: 'var(--ist-composer-bg)', pointerEvents: 'none' }}
                 >
                   <span className="w-2.5 h-2.5 rounded-full animate-pulse flex-shrink-0" style={{ background: '#FF6B7A' }} />
-                  <span className="text-sm font-medium tabular-nums" style={{ color: recCancelArmed ? '#FF6B7A' : 'var(--ist-composer-text)' }}>
+                  <span className="text-sm font-medium tabular-nums" style={{ color: recCancelArmed ? '#FF6B7A' : 'var(--ist-text)' }}>
                     {formatDuration(recorder.elapsedMs)}
                   </span>
-                  <span className="flex-1 text-xs flex items-center justify-end gap-1 text-right" style={{ color: recCancelArmed ? '#FF6B7A' : 'var(--ist-composer-text-dim)' }}>
+                  <span className="flex-1 text-xs flex items-center justify-end gap-1 text-right" style={{ color: recCancelArmed ? '#FF6B7A' : 'var(--ist-text-dim)' }}>
                     <Trash2 size={13} strokeWidth={2} />
                     {recCancelArmed ? 'Rilascia per annullare' : '‹ scorri per annullare · ↑ blocca'}
                   </span>
@@ -1370,7 +1378,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
               {micHint && (
                 <div
                   className="absolute right-0 -top-10 px-3 py-1.5 rounded-xl text-[11px] whitespace-nowrap"
-                  style={{ background: '#1C2734', border: '1px solid var(--ist-composer-border)', color: 'var(--ist-composer-text)', boxShadow: '0 4px 14px rgba(0,0,0,0.40)' }}
+                  style={{ background: 'var(--ist-nav-bg)', border: '1px solid var(--ist-nav-border)', color: 'var(--ist-text-muted)', boxShadow: '0 4px 14px rgba(0,0,0,0.30)' }}
                 >
                   Tieni premuto per registrare
                 </div>
@@ -1380,10 +1388,15 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
         </div>
       ) : (
         <div
-          className="flex items-center justify-center gap-2 px-4 pt-3 flex-shrink-0"
-          style={{ borderTop: '1px solid var(--ist-composer-border)', background: 'var(--ist-composer-bg)', paddingBottom: keyboardOpen ? 12 : 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
+          className="flex items-center justify-center gap-2 px-4 pt-3 flex-shrink-0 border-t z-20 lg:border lg:border-t lg:rounded-[26px] lg:absolute lg:bottom-4 lg:left-1/2 lg:-translate-x-1/2 lg:w-[min(680px,calc(100%-2.5rem))] lg:shadow-[0_14px_44px_rgba(0,0,0,0.28)]"
+          style={{
+            borderColor: 'var(--ist-composer-border)',
+            background: 'var(--ist-composer-bg)',
+            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+            paddingBottom: keyboardOpen ? 12 : 'calc(12px + env(safe-area-inset-bottom, 0px))',
+          }}
         >
-          <span className="text-xs" style={{ color: 'var(--ist-composer-text-dim)' }}>🔒 Solo lettura — non puoi scrivere in questo canale</span>
+          <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>🔒 Solo lettura — non puoi scrivere in questo canale</span>
         </div>
       )}
     </div>
@@ -1702,7 +1715,7 @@ function BachecaArea({
 // confrontare le altezze non basta — un input a fuoco = tastiera su. Le misure
 // top/height arrivano da VisualViewport (aggiornate mentre la tastiera anima).
 function useVisibleViewport() {
-  const [vp, setVp] = useState<{ top: number; height: number; kbOpen: boolean } | null>(null)
+  const [vp, setVp] = useState<{ top: number; height: number; kbOpen: boolean; kbHeight: number } | null>(null)
   useEffect(() => {
     const vv = window.visualViewport
     let focused = false
@@ -1710,11 +1723,15 @@ function useVisibleViewport() {
       const n = el as HTMLElement | null
       return !!n && (n.tagName === 'INPUT' || n.tagName === 'TEXTAREA' || n.isContentEditable)
     }
-    const measure = () => setVp({
-      top: vv ? Math.round(vv.offsetTop) : 0,
-      height: vv ? Math.round(vv.height) : window.innerHeight,
-      kbOpen: focused,
-    })
+    const measure = () => {
+      const height = vv ? Math.round(vv.height) : window.innerHeight
+      const top = vv ? Math.round(vv.offsetTop) : 0
+      // Altezza tastiera: significativa solo se il webview NON si ridimensiona
+      // (app nativa con Keyboard resize:'none' → innerHeight resta pieno). Sul web
+      // PWA innerHeight cala con la tastiera → ~0, e si usa l'altro ramo.
+      const kbHeight = focused ? Math.max(0, Math.round(window.innerHeight - height - top)) : 0
+      setVp({ top, height, kbOpen: focused, kbHeight })
+    }
     const onFocusIn = (e: FocusEvent) => {
       if (!isEditable(e.target)) return
       focused = true
@@ -1883,8 +1900,15 @@ export default function ChatPage() {
 
   const goBack = () => setMobileView('channels')
 
+  // App nativa (Keyboard resize:'none' → innerHeight pieno): il contenitore resta
+  // a schermo pieno e la barra si "alza" con un padding pari alla tastiera (la barra
+  // stessa dipinge dietro la tastiera → niente striscia scura). Web/PWA: il webview
+  // si rimpicciolisce con la tastiera → allineiamo il contenitore all'area visibile.
+  const nativeKb = !!vp?.kbOpen && vp.kbHeight > 60
+  const keyboardInset = nativeKb ? vp!.kbHeight : 0
+
   return (
-    <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)', ...(vp?.kbOpen ? { top: vp.top, height: vp.height, bottom: 'auto' } : null) }}>
+    <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)', ...(vp?.kbOpen && !nativeKb ? { top: vp.top, height: vp.height, bottom: 'auto' } : null) }}>
       {/* Sidebar */}
       <div
         className={`flex-shrink-0 ${mobileView === 'channels' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[240px] lg:ml-[108px] flex-col overflow-hidden`}
@@ -1927,6 +1951,7 @@ export default function ChatPage() {
             onShowUserCard={showUserCard}
             onBack={goBack}
             isMobile={mobileView === 'chat'}
+            keyboardInset={keyboardInset}
             initialInput={prefill?.channelId === activeChannelId ? prefill.text : undefined}
             keyboardOpen={vp?.kbOpen ?? false}
           />

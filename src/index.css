@@ -57,19 +57,11 @@
     --ist-accent-text: #7CBBD0;
     --ist-avatar-other-bg: rgba(255,255,255,0.12);
     --ist-avatar-other-text: #8495A3;
-    /* Barre chat (header in alto + composer in basso) — SEMPRE lo stesso teal
-       scuro (in ENTRAMBI i temi: definiti solo qui, .light non li sovrascrive),
-       coerente col brand ma non nero; input + tasti "chiari" spiccano sopra.
-       È il colore delle bolle dei propri messaggi in tema chiaro. */
-    --ist-composer-bg: #123E51;
-    --ist-composer-border: rgba(255,255,255,0.10);
-    --ist-composer-btn: rgba(255,255,255,0.92);
-    --ist-composer-btn-icon: #2A3948;
-    --ist-composer-input: #FFFFFF;
-    --ist-composer-input-text: #0F1923;
-    --ist-composer-input-border: rgba(90,154,177,0.30);
-    --ist-composer-text: #F7FAFC;
-    --ist-composer-text-dim: #9FB0BE;
+    /* Barra composer chat — sfondo ADATTIVO: scuro brand (≈ originale) nel tema
+       scuro; grigio stile tastiera iOS nel tema chiaro (override in .light).
+       Header e messaggi restano sui token standard (nav-bg / testo). */
+    --ist-composer-bg: rgba(7,8,18,0.82);
+    --ist-composer-border: var(--ist-w8);
   }
 
   .light {
@@ -124,6 +116,9 @@
     --ist-accent-text: #155A72;
     --ist-avatar-other-bg: #E2EFF6;
     --ist-avatar-other-text: #286680;
+    /* Composer chat in tema CHIARO: grigio stile barra tastiera iOS */
+    --ist-composer-bg: #AEB6BD;
+    --ist-composer-border: rgba(10,20,40,0.12);
   }
 
   * { box-sizing: border-box; }
