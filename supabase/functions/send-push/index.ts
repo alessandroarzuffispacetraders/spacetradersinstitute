@@ -1,6 +1,7 @@
 import webPush from 'npm:web-push@3.6.7'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { sendApns } from './apns.ts'
+import { sendFcm } from './fcm.ts'
 
 const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY')!
 const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY')!
@@ -46,7 +47,9 @@ type PushPayload = { title: string; body: string; url?: string; channel_id?: str
 // le native via APNs (no-op finché non configurato). Pulisce endpoint e token morti.
 async function dispatch(subscriptions: Sub[], payload: PushPayload) {
   const web = subscriptions.filter((s) => !s.native_token)
-  const native = subscriptions.filter((s) => !!s.native_token)
+  // Native split: iOS → APNs, Android → FCM (qualsiasi native non-android resta APNs).
+  const iosSubs = subscriptions.filter((s) => !!s.native_token && s.platform !== 'android')
+  const androidSubs = subscriptions.filter((s) => !!s.native_token && s.platform === 'android')
 
   // ── WEB PUSH ──────────────────────────────────────────────────────────────
   const webJson = JSON.stringify(payload)
@@ -58,12 +61,12 @@ async function dispatch(subscriptions: Sub[], payload: PushPayload) {
     .map((r, i) => (r.status === 'rejected' && [404, 410].includes((r.reason as { statusCode?: number })?.statusCode ?? 0) ? web[i].endpoint : null))
     .filter((e): e is string => e !== null)
 
-  // ── NATIVE PUSH (APNs) — no-op finché non configurato ───────────────────────
-  const { sent: apnsSent, dead: deadTokens } = await sendApns(
-    native.map((s) => s.native_token as string),
-    { title: payload.title, body: payload.body, url: payload.url, channelId: payload.channel_id },
-  )
-  sent += apnsSent
+  // ── NATIVE PUSH — iOS via APNs, Android via FCM (ciascuno no-op se non configurato) ──
+  const media = { title: payload.title, body: payload.body, url: payload.url, channelId: payload.channel_id }
+  const apns = await sendApns(iosSubs.map((s) => s.native_token as string), media)
+  const fcm = await sendFcm(androidSubs.map((s) => s.native_token as string), media)
+  sent += apns.sent + fcm.sent
+  const deadTokens = [...apns.dead, ...fcm.dead]
 
   // ── Pulizia dei destinatari morti ──────────────────────────────────────────
   if (deadEndpoints.length > 0) {

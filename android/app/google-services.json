@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "121571491792",
+    "project_id": "space-traders-institute",
+    "storage_bucket": "space-traders-institute.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:121571491792:android:fb313d60c8294f8c9b43d5",
+        "android_client_info": {
+          "package_name": "com.spacetradersinstitute.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCahvImQZjOBEM-e4rryXvRp9rFXRlAFDQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
