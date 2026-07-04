@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { Capacitor } from '@capacitor/core'
+import { Keyboard } from '@capacitor/keyboard'
 import {
   Hash, Megaphone, ChevronDown, ChevronRight,
   Send, ArrowLeft, Search, Pin, MessageCircle, UsersRound, Loader2, X,
@@ -1715,7 +1717,7 @@ function BachecaArea({
 // confrontare le altezze non basta — un input a fuoco = tastiera su. Le misure
 // top/height arrivano da VisualViewport (aggiornate mentre la tastiera anima).
 function useVisibleViewport() {
-  const [vp, setVp] = useState<{ top: number; height: number; kbOpen: boolean; kbHeight: number } | null>(null)
+  const [vp, setVp] = useState<{ top: number; height: number; kbOpen: boolean } | null>(null)
   useEffect(() => {
     const vv = window.visualViewport
     let focused = false
@@ -1723,15 +1725,11 @@ function useVisibleViewport() {
       const n = el as HTMLElement | null
       return !!n && (n.tagName === 'INPUT' || n.tagName === 'TEXTAREA' || n.isContentEditable)
     }
-    const measure = () => {
-      const height = vv ? Math.round(vv.height) : window.innerHeight
-      const top = vv ? Math.round(vv.offsetTop) : 0
-      // Altezza tastiera: significativa solo se il webview NON si ridimensiona
-      // (app nativa con Keyboard resize:'none' → innerHeight resta pieno). Sul web
-      // PWA innerHeight cala con la tastiera → ~0, e si usa l'altro ramo.
-      const kbHeight = focused ? Math.max(0, Math.round(window.innerHeight - height - top)) : 0
-      setVp({ top, height, kbOpen: focused, kbHeight })
-    }
+    const measure = () => setVp({
+      top: vv ? Math.round(vv.offsetTop) : 0,
+      height: vv ? Math.round(vv.height) : window.innerHeight,
+      kbOpen: focused,
+    })
     const onFocusIn = (e: FocusEvent) => {
       if (!isEditable(e.target)) return
       focused = true
@@ -1760,12 +1758,28 @@ function useVisibleViewport() {
   return vp
 }
 
+// Altezza della tastiera NATIVA (app Capacitor). Con Keyboard resize:'none' il
+// webview non si ridimensiona e VisualViewport non "vede" la tastiera → l'altezza
+// va presa dagli eventi del plugin. Sul web resta 0 (lì si usa VisualViewport).
+function useNativeKeyboardHeight() {
+  const [h, setH] = useState(0)
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    const handles: { remove: () => void }[] = []
+    Keyboard.addListener('keyboardWillShow', (info) => setH(info.keyboardHeight)).then((l) => handles.push(l))
+    Keyboard.addListener('keyboardWillHide', () => setH(0)).then((l) => handles.push(l))
+    return () => { handles.forEach((l) => l.remove()) }
+  }, [])
+  return h
+}
+
 // ─── main component ───────────────────────────────────────────────────────────
 
 export default function ChatPage() {
   const { user } = useAuth()
   const { setHideBottomNav } = useUI()
   const vp = useVisibleViewport()
+  const nativeKbHeight = useNativeKeyboardHeight()
   const location = useLocation()
   const navigate = useNavigate()
   const userRole = (user?.role ?? 'student') as MemberRole
@@ -1900,12 +1914,13 @@ export default function ChatPage() {
 
   const goBack = () => setMobileView('channels')
 
-  // App nativa (Keyboard resize:'none' → innerHeight pieno): il contenitore resta
-  // a schermo pieno e la barra si "alza" con un padding pari alla tastiera (la barra
-  // stessa dipinge dietro la tastiera → niente striscia scura). Web/PWA: il webview
-  // si rimpicciolisce con la tastiera → allineiamo il contenitore all'area visibile.
-  const nativeKb = !!vp?.kbOpen && vp.kbHeight > 60
-  const keyboardInset = nativeKb ? vp!.kbHeight : 0
+  // App nativa (Keyboard resize:'none' → il webview NON si ridimensiona e
+  // VisualViewport non vede la tastiera): l'altezza arriva dagli eventi del plugin.
+  // Il contenitore resta a schermo pieno e la barra si "alza" con un padding pari
+  // alla tastiera (dipingendo il proprio colore dietro → niente striscia scura).
+  // Web/PWA: nativeKbHeight=0 → si usa il ramo VisualViewport (height area visibile).
+  const nativeKb = nativeKbHeight > 0
+  const keyboardInset = nativeKbHeight
 
   return (
     <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)', ...(vp?.kbOpen && !nativeKb ? { top: vp.top, height: vp.height, bottom: 'auto' } : null) }}>
@@ -1953,7 +1968,7 @@ export default function ChatPage() {
             isMobile={mobileView === 'chat'}
             keyboardInset={keyboardInset}
             initialInput={prefill?.channelId === activeChannelId ? prefill.text : undefined}
-            keyboardOpen={vp?.kbOpen ?? false}
+            keyboardOpen={(vp?.kbOpen ?? false) || nativeKb}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
