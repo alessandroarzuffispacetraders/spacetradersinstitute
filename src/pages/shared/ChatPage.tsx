@@ -1346,11 +1346,11 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                   onPointerCancel={onMicPointerCancel}
                   onLostPointerCapture={onMicPointerCancel}
                   onContextMenu={(e) => e.preventDefault()}
-                  className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110 select-none touch-none"
-                  style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+                  className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-transform hover:brightness-110 hover:-translate-y-0.5 select-none touch-none"
+                  style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)', color: 'white', boxShadow: '0 4px 16px rgba(40,102,128,0.36)' }}
                   title="Tieni premuto per registrare un vocale"
                 >
-                  <Mic size={18} strokeWidth={2} />
+                  <Mic size={18} strokeWidth={2} className="text-white" />
                 </button>
               ) : (
                 <button
