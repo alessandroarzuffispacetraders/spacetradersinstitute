@@ -717,7 +717,9 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
     setRecCancelArmed(false)
     setRecLocked(false)
     const rec = await recorder.stop()
-    if (!rec) return
+    // Blob vuoto/registrazione fallita: NON restare in silenzio (il vocale è
+    // "fondamentale") → avvisa così l'utente riprova invece di credere sia partito.
+    if (!rec) { alert('Vocale non registrato. Riprova tenendo premuto un istante in più.'); return }
     setUploading(true)
     const url = await uploadChatAudio(userId, rec.blob, rec.ext, rec.mime)
     setUploading(false)
@@ -732,7 +734,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
   }
 
   const onMicPointerDown = async (e: React.PointerEvent) => {
-    if (channel.channelKind !== 'direct' || !audioSupported || uploading || recorder.recording) return
+    if (channel.channelKind !== 'direct' || !audioSupported || uploading || recorder.isActive()) return
     e.preventDefault()
     holdingRef.current = true
     startPtRef.current = { x: e.clientX, y: e.clientY }
@@ -753,20 +755,29 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
     if (dy < -70) { setRecLocked(true); holdingRef.current = false }
   }
 
-  const onMicPointerUp = (e: React.PointerEvent) => {
+  // Fine del "tieni premuto": rilascio normale (pointerup) o interruzione di
+  // sistema (pointercancel — tipica nel WebView iOS quando il gesto viene rubato).
+  // In entrambi i casi FINALIZZIAMO: senza gestire pointercancel il vocale andava
+  // perso in silenzio e il recorder restava bloccato.
+  const endHold = (e: React.PointerEvent, interrupted: boolean) => {
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* noop */ }
-    if (!holdingRef.current) return // già bloccato (hands-free) o non in registrazione
+    if (!holdingRef.current) return // già bloccato (hands-free) o già finalizzato
     holdingRef.current = false
-    if (!recorder.recording) return
+    if (!recorder.isActive()) return // start non ancora completato → il guard in pointerDown annulla
     if (recCancelArmed) { cancelAudio(); return }
-    if (recorder.elapsedMs < 700) { // tap troppo corto → annulla e suggerisci
+    if (recorder.getElapsedMs() < 500) { // tap troppo corto (tempo REALE) → annulla e suggerisci
       cancelAudio()
-      setMicHint(true)
-      setTimeout(() => setMicHint(false), 1800)
+      if (!interrupted) {
+        setMicHint(true)
+        setTimeout(() => setMicHint(false), 1800)
+      }
       return
     }
     void finishAndSendAudio()
   }
+
+  const onMicPointerUp = (e: React.PointerEvent) => endHold(e, false)
+  const onMicPointerCancel = (e: React.PointerEvent) => endHold(e, true)
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1312,6 +1323,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                   onPointerDown={onMicPointerDown}
                   onPointerMove={onMicPointerMove}
                   onPointerUp={onMicPointerUp}
+                  onPointerCancel={onMicPointerCancel}
                   onContextMenu={(e) => e.preventDefault()}
                   className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110 select-none touch-none"
                   style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}

@@ -146,7 +146,16 @@ export function useAudioRecorder() {
     }
   }, [cleanup])
 
-  return { recording, elapsedMs, error, start, stop, cancel }
+  // Tempo trascorso REALE (dal ref, non dallo stato React che è throttlato a 100ms
+  // e soggetto al timing dei render): usato per decidere se un vocale è "troppo
+  // corto" senza scartare per errore messaggi brevi ma validi.
+  const getElapsedMs = useCallback(() => (recRef.current ? performance.now() - startRef.current : 0), [])
+
+  // La registrazione è realmente in corso? (ref → affidabile subito, a differenza
+  // dello stato `recording` che può non essere ancora committato da React.)
+  const isActive = useCallback(() => recRef.current?.state === 'recording', [])
+
+  return { recording, elapsedMs, error, start, stop, cancel, getElapsedMs, isActive }
 }
 
 // mm:ss da millisecondi o secondi.
