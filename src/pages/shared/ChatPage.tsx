@@ -1678,28 +1678,32 @@ function BachecaArea({
   )
 }
 
-// Altezza (px) di cui la tastiera software copre il viewport, via VisualViewport.
-// 0 = tastiera chiusa. Serve a far combaciare la barra di scrittura col bordo
-// della tastiera (il layout `fixed` non si ridimensiona da solo su iOS/Android).
-function useKeyboardInset(): number {
-  const [inset, setInset] = useState(0)
+// Fa combaciare il contenitore della chat con l'AREA REALMENTE VISIBILE
+// (VisualViewport): su iOS/Android il layout `fixed` non si ridimensiona quando
+// si apre la tastiera (e iOS fa auto-scroll), quindi misuriamo top+height del
+// viewport visibile e ci allineiamo → la barra di scrittura resta appena sopra
+// la tastiera. `kbOpen` = tastiera aperta (per togliere il padding safe-area).
+function useVisibleViewport() {
+  const [vp, setVp] = useState<{ top: number; height: number; kbOpen: boolean } | null>(null)
   useEffect(() => {
     const vv = window.visualViewport
     if (!vv) return
     const update = () => {
-      const overlap = window.innerHeight - vv.height - vv.offsetTop
-      // Soglia: ignora le micro-variazioni (barra URL) e considera solo la tastiera.
-      setInset(overlap > 100 ? Math.round(overlap) : 0)
+      // soglia 100px: ignora barra URL/toolbar, considera solo la tastiera
+      const kbOpen = window.innerHeight - vv.height > 100
+      setVp({ top: Math.round(vv.offsetTop), height: Math.round(vv.height), kbOpen })
     }
     update()
     vv.addEventListener('resize', update)
     vv.addEventListener('scroll', update)
+    window.addEventListener('orientationchange', update)
     return () => {
       vv.removeEventListener('resize', update)
       vv.removeEventListener('scroll', update)
+      window.removeEventListener('orientationchange', update)
     }
   }, [])
-  return inset
+  return vp
 }
 
 // ─── main component ───────────────────────────────────────────────────────────
@@ -1707,7 +1711,7 @@ function useKeyboardInset(): number {
 export default function ChatPage() {
   const { user } = useAuth()
   const { setHideBottomNav } = useUI()
-  const keyboardInset = useKeyboardInset()
+  const vp = useVisibleViewport()
   const location = useLocation()
   const navigate = useNavigate()
   const userRole = (user?.role ?? 'student') as MemberRole
@@ -1843,7 +1847,7 @@ export default function ChatPage() {
   const goBack = () => setMobileView('channels')
 
   return (
-    <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)', bottom: keyboardInset || 0, transition: 'bottom 0.18s ease-out' }}>
+    <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)', ...(vp?.kbOpen ? { top: vp.top, height: vp.height, bottom: 'auto' } : null) }}>
       {/* Sidebar */}
       <div
         className={`flex-shrink-0 ${mobileView === 'channels' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[240px] lg:ml-[108px] flex-col overflow-hidden`}
@@ -1887,7 +1891,7 @@ export default function ChatPage() {
             onBack={goBack}
             isMobile={mobileView === 'chat'}
             initialInput={prefill?.channelId === activeChannelId ? prefill.text : undefined}
-            keyboardOpen={keyboardInset > 0}
+            keyboardOpen={vp?.kbOpen ?? false}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
