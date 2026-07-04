@@ -149,12 +149,9 @@
     color: #ffffff;
   }
 
-  ::-webkit-scrollbar { width: 4px; height: 4px; }
-  ::-webkit-scrollbar-track { background: var(--ist-bg); }
-  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(124, 187, 208, 0.32); }
-  .light ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); }
-  .light ::-webkit-scrollbar-thumb:hover { background: rgba(90,154,177,0.32); }
+  /* Nessuna scrollbar visibile ovunque (feel da app) — lo scroll resta attivo */
+  ::-webkit-scrollbar { width: 0; height: 0; display: none; }
+  * { scrollbar-width: none; -ms-overflow-style: none; }
 }
 
 @layer utilities {

@@ -563,6 +563,7 @@ interface ChatAreaProps {
 
 function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack, isMobile, initialInput, keyboardOpen, keyboardInset = 0 }: ChatAreaProps) {
   const [input, setInput] = useState(initialInput ?? '')
+  const [inputTall, setInputTall] = useState(false) // multi-riga → rettangolo stondato invece della pillola
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
   const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null)
@@ -708,6 +709,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
       setUploading(false)
     }
     setInput('')
+    setInputTall(false)
     setImageFile(null)
     setFileAttachment(null)
     stopTyping()
@@ -799,6 +801,8 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
     const el = e.target
     el.style.height = 'auto'
     el.style.height = Math.min(el.scrollHeight, 120) + 'px'
+    // Una riga → pillola; più righe → rettangolo con angoli stondati.
+    setInputTall(el.scrollHeight > 44)
   }
 
   const startEdit = (msg: DbMessage) => {
@@ -1330,7 +1334,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                 placeholder=""
                 rows={1}
                 className="flex-1 resize-none px-4 py-1.5 text-sm focus:outline-none no-scrollbar"
-                style={{ background: 'var(--ist-input-surface)', border: '1px solid var(--ist-input-border)', borderRadius: 9999, color: 'var(--ist-text)', maxHeight: 120, lineHeight: 1.5 }}
+                style={{ background: 'var(--ist-input-surface)', border: '1px solid var(--ist-input-border)', borderRadius: inputTall ? 18 : 9999, transition: 'border-radius 120ms ease', color: 'var(--ist-text)', maxHeight: 120, lineHeight: 1.5 }}
               />
               {showMic ? (
                 <button
