@@ -107,7 +107,10 @@ export function useAudioRecorder() {
 
       recRef.current = rec
       startRef.current = performance.now()
-      rec.start()
+      // timeslice: MediaRecorder emette i dati OGNI secondo invece che solo allo
+      // stop. Fondamentale per i vocali lunghi (iOS/WebView): i chunk si
+      // accumulano man mano → niente perdita del blob e stop più affidabile.
+      rec.start(1000)
       setRecording(true)
       setElapsedMs(0)
       timerRef.current = setInterval(() => {

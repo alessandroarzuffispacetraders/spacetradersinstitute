@@ -751,18 +751,22 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
     if (!holdingRef.current || recLocked || !startPtRef.current) return
     const dx = e.clientX - startPtRef.current.x
     const dy = e.clientY - startPtRef.current.y
-    setRecCancelArmed(dx < -70)
-    if (dy < -70) { setRecLocked(true); holdingRef.current = false }
+    // Solo gesti DELIBERATI: soglie ampie + direzione dominante. Così il naturale
+    // "drift" del dito durante un vocale LUNGO non annulla/blocca per sbaglio
+    // (era la causa dei vocali lunghi che "sparivano": bastavano ~70px = 1cm).
+    setRecCancelArmed(dx < -90 && Math.abs(dx) > Math.abs(dy) * 1.3)
+    if (dy < -110 && Math.abs(dy) > Math.abs(dx) * 1.3) { setRecLocked(true); holdingRef.current = false }
   }
 
-  // Fine del "tieni premuto": rilascio normale (pointerup) o interruzione di
-  // sistema (pointercancel — tipica nel WebView iOS quando il gesto viene rubato).
-  // In entrambi i casi FINALIZZIAMO: senza gestire pointercancel il vocale andava
-  // perso in silenzio e il recorder restava bloccato.
+  // Fine del "tieni premuto": rilascio normale (pointerup), interruzione di sistema
+  // (pointercancel) o perdita del pointer capture (lostpointercapture) — tutti
+  // tipici nel WebView iOS quando il gesto viene "rubato". In ogni caso
+  // FINALIZZIAMO: altrimenti il vocale andava perso in silenzio e il recorder
+  // restava bloccato. holdingRef si azzera SUBITO → niente doppia finalizzazione.
   const endHold = (e: React.PointerEvent, interrupted: boolean) => {
-    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* noop */ }
     if (!holdingRef.current) return // già bloccato (hands-free) o già finalizzato
     holdingRef.current = false
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* noop */ }
     if (!recorder.isActive()) return // start non ancora completato → il guard in pointerDown annulla
     if (recCancelArmed) { cancelAudio(); return }
     if (recorder.getElapsedMs() < 500) { // tap troppo corto (tempo REALE) → annulla e suggerisci
@@ -1218,7 +1222,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
       {canPost ? (
         <div
           className="flex flex-col gap-2 px-3 pt-3 flex-shrink-0"
-          style={{ borderTop: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)', paddingBottom: keyboardOpen ? 12 : 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
+          style={{ borderTop: '1px solid var(--ist-composer-border)', background: 'var(--ist-composer-bg)', paddingBottom: keyboardOpen ? 12 : 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
         >
           {/* Anteprima immagine selezionata */}
           {imagePreview && (
@@ -1262,15 +1266,15 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
               <button
                 onClick={cancelAudio}
                 className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-transform active:scale-95"
-                style={{ background: 'var(--ist-w8)', color: '#FF6B7A' }}
+                style={{ background: 'var(--ist-composer-btn)', color: '#E23B4E' }}
                 title="Annulla"
               >
                 <Trash2 size={16} strokeWidth={2} />
               </button>
               <div className="flex-1 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full animate-pulse flex-shrink-0" style={{ background: '#FF6B7A' }} />
-                <span className="text-sm font-medium tabular-nums" style={{ color: 'var(--ist-text)' }}>{formatDuration(recorder.elapsedMs)}</span>
-                <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>registrazione…</span>
+                <span className="text-sm font-medium tabular-nums" style={{ color: 'var(--ist-composer-text)' }}>{formatDuration(recorder.elapsedMs)}</span>
+                <span className="text-xs" style={{ color: 'var(--ist-composer-text-dim)' }}>registrazione…</span>
               </div>
               <button
                 onClick={finishAndSendAudio}
@@ -1293,7 +1297,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
               <button
                 onClick={() => imageInputRef.current?.click()}
                 className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110"
-                style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+                style={{ background: 'var(--ist-composer-btn)', color: 'var(--ist-composer-btn-icon)' }}
                 title="Allega immagine"
               >
                 <ImagePlus size={17} strokeWidth={2} />
@@ -1302,7 +1306,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110"
-                  style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+                  style={{ background: 'var(--ist-composer-btn)', color: 'var(--ist-composer-btn-icon)' }}
                   title="Allega file"
                 >
                   <Paperclip size={17} strokeWidth={2} />
@@ -1313,10 +1317,10 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                 value={input}
                 onChange={onInputChange}
                 onKeyDown={onKeyDown}
-                placeholder={isDirect && dmPartner ? `Scrivi a ${dmPartner.name}…` : `Scrivi in #${channel.name}…`}
+                placeholder=""
                 rows={1}
-                className="flex-1 resize-none px-3.5 py-2.5 text-sm focus:outline-none no-scrollbar"
-                style={{ background: 'var(--ist-input-surface)', border: '1px solid var(--ist-input-border)', borderRadius: 16, color: 'var(--ist-text)', maxHeight: 120, lineHeight: 1.5 }}
+                className="flex-1 resize-none px-4 py-1.5 text-sm focus:outline-none no-scrollbar"
+                style={{ background: 'var(--ist-composer-input)', border: '1px solid var(--ist-composer-input-border)', borderRadius: 9999, color: 'var(--ist-composer-input-text)', maxHeight: 120, lineHeight: 1.5 }}
               />
               {showMic ? (
                 <button
@@ -1324,9 +1328,10 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                   onPointerMove={onMicPointerMove}
                   onPointerUp={onMicPointerUp}
                   onPointerCancel={onMicPointerCancel}
+                  onLostPointerCapture={onMicPointerCancel}
                   onContextMenu={(e) => e.preventDefault()}
                   className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110 select-none touch-none"
-                  style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+                  style={{ background: 'var(--ist-composer-btn)', color: 'var(--ist-composer-btn-icon)' }}
                   title="Tieni premuto per registrare un vocale"
                 >
                   <Mic size={18} strokeWidth={2} />
@@ -1348,13 +1353,13 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
               {recorder.recording && !recLocked && (
                 <div
                   className="absolute inset-0 flex items-center gap-2 rounded-2xl px-3"
-                  style={{ background: 'var(--ist-nav-bg)', pointerEvents: 'none' }}
+                  style={{ background: 'var(--ist-composer-bg)', pointerEvents: 'none' }}
                 >
                   <span className="w-2.5 h-2.5 rounded-full animate-pulse flex-shrink-0" style={{ background: '#FF6B7A' }} />
-                  <span className="text-sm font-medium tabular-nums" style={{ color: recCancelArmed ? '#FF6B7A' : 'var(--ist-text)' }}>
+                  <span className="text-sm font-medium tabular-nums" style={{ color: recCancelArmed ? '#FF6B7A' : 'var(--ist-composer-text)' }}>
                     {formatDuration(recorder.elapsedMs)}
                   </span>
-                  <span className="flex-1 text-xs flex items-center justify-end gap-1 text-right" style={{ color: recCancelArmed ? '#FF6B7A' : 'var(--ist-text-dim)' }}>
+                  <span className="flex-1 text-xs flex items-center justify-end gap-1 text-right" style={{ color: recCancelArmed ? '#FF6B7A' : 'var(--ist-composer-text-dim)' }}>
                     <Trash2 size={13} strokeWidth={2} />
                     {recCancelArmed ? 'Rilascia per annullare' : '‹ scorri per annullare · ↑ blocca'}
                   </span>
@@ -1365,7 +1370,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
               {micHint && (
                 <div
                   className="absolute right-0 -top-10 px-3 py-1.5 rounded-xl text-[11px] whitespace-nowrap"
-                  style={{ background: 'var(--ist-nav-bg)', border: '1px solid var(--ist-nav-border)', color: 'var(--ist-text-muted)', boxShadow: '0 4px 14px rgba(0,0,0,0.30)' }}
+                  style={{ background: '#1C2734', border: '1px solid var(--ist-composer-border)', color: 'var(--ist-composer-text)', boxShadow: '0 4px 14px rgba(0,0,0,0.40)' }}
                 >
                   Tieni premuto per registrare
                 </div>
@@ -1376,9 +1381,9 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
       ) : (
         <div
           className="flex items-center justify-center gap-2 px-4 pt-3 flex-shrink-0"
-          style={{ borderTop: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)', paddingBottom: keyboardOpen ? 12 : 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
+          style={{ borderTop: '1px solid var(--ist-composer-border)', background: 'var(--ist-composer-bg)', paddingBottom: keyboardOpen ? 12 : 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
         >
-          <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>🔒 Solo lettura — non puoi scrivere in questo canale</span>
+          <span className="text-xs" style={{ color: 'var(--ist-composer-text-dim)' }}>🔒 Solo lettura — non puoi scrivere in questo canale</span>
         </div>
       )}
     </div>
