@@ -14,6 +14,19 @@ const config: CapacitorConfig = {
   android: {
     backgroundColor: '#070812',
   },
+  plugins: {
+    SplashScreen: {
+      // Lo splash resta finché la web app è pronta e chiama SplashScreen.hide()
+      // (in nativeUi.ts) → niente flash di webview grezzo. Sfondo = dark brand.
+      launchAutoHide: false,
+      backgroundColor: '#070812',
+      showSpinner: false,
+      splashFullScreen: true,
+      splashImmersive: true,
+      // Fade dello splash del plugin (Android); su iOS il fade lo passa hide()
+      launchFadeOutDuration: 250,
+    },
+  },
 }
 
 export default config

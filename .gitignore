@@ -21,3 +21,6 @@ android/app/src/main/assets/public/
 *.xcuserstate
 **/xcuserdata/
 DerivedData/
+
+# Supabase CLI — file temporanei locali
+supabase/.temp/

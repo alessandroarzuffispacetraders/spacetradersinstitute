@@ -4,7 +4,11 @@ L'app nativa è un **guscio Capacitor** attorno alla stessa web app React.
 **Backend Supabase invariato**, stesso database, stessi account. Aggiornare la
 web app aggiorna anche l'app (dopo `cap sync` / OTA).
 
-Stato: ✅ fondamenta Capacitor installate (`capacitor.config.ts`, deps, script).
+Stato: ✅ progetto iOS generato (`ios/`, Swift Package Manager — **niente CocoaPods**),
+gira su simulatore. ✅ **microfono nativo** (permesso chiesto una volta sola). ✅ **icona**
+= logo IST. ✅ **splash screen** = logo su sfondo brand. ✅ **banner "scarica l'app"** sul web.
+✅ **push native APNs**: tutto il codice pronto (client + DB + `send-push`), manca solo la
+**chiave APNs** dall'account Apple (vedi §4). ⏳ account Apple Developer in approvazione.
 
 ---
 
@@ -47,27 +51,47 @@ di build sono già in `.gitignore`).
   - `NSMicrophoneUsageDescription` = "Per registrare messaggi vocali nelle chat."
 - **Icona**: usa `public/icon-512.png` (Assets.xcassets → AppIcon).
 
-## 3) Microfono — il motivo del passaggio a nativo
-Prima **prova il guscio così com'è**: nel WebView il permesso micro è quello
-**nativo dell'app** → dovrebbe chiederlo **una volta sola** e restare permanente.
-- Se dopo esci/rientri **non** lo richiede più → 🎉 fatto, niente altro da fare.
-- Se lo richiede ancora → si aggiunge un recorder nativo:
-  ```bash
-  npm i capacitor-voice-recorder
-  ```
-  e in `src/lib/audioRecorder.ts` si usa il plugin quando
-  `Capacitor.isNativePlatform()` (permesso nativo persistente), tenendo
-  MediaRecorder per la versione web. (Lo cabliamo insieme quando l'app builda.)
+## 3) Microfono — ✅ FATTO
+Nel WebView nativo il permesso microfono è quello **nativo dell'app**: viene
+chiesto **una volta sola** e resta permanente (era il motivo del passaggio a
+nativo). Confermato funzionante sul simulatore → **niente recorder nativo**,
+`MediaRecorder` va bene anche dentro l'app.
 
-## 4) Notifiche push (nativo)
-La web push (VAPID/service worker) **non** funziona nel WebView nativo. Da
-migrare a push native quando serve:
-```bash
-npm i @capacitor/push-notifications
-```
-Richiede: capability Push su Xcode, chiave APNs sul portale Apple, e adattare
-`send-push` per inviare via APNs (oltre/al posto di web push). — Step successivo,
-non blocca il primo rilascio (in app le notifiche in-app + realtime funzionano).
+## 4) Notifiche push native (APNs) — codice PRONTO, manca solo la chiave Apple
+La web push (VAPID/service worker) **non** funziona nel WebView nativo, quindi
+l'app usa **APNs** via `@capacitor/push-notifications`. **Tutto il codice è già
+scritto** e no-op finché non lo attivi:
+- Client: `src/lib/nativePush.ts` + `NativePushBridge` in `AppLayout` (chiede il
+  permesso, registra il device token, e al tap sulla notifica naviga al deep-link).
+- DB: migration `phase_native_push.sql` (applicata) — colonne `platform`/`native_token`
+  su `push_subscriptions` + RPC `register_native_push_subscription`.
+- Server: `supabase/functions/send-push/apns.ts` invia via APNs (firma JWT ES256);
+  `index.ts` instrada web→WebPush e native→APNs dalla stessa lista destinatari.
+- iOS: `AppDelegate.swift` inoltra già il device token ai listener Capacitor.
+
+**Per ATTIVARle (quando l'account Apple Developer è approvato):**
+1. **Xcode** → target App → *Signing & Capabilities* → **+ Capability** →
+   **Push Notifications**. (Richiede l'account a pagamento; con l'Apple ID gratuito
+   NON si può → per ora l'app builda ma la registrazione fallisce silenziosamente,
+   è previsto.)
+2. Portale Apple → *Certificates, Identifiers & Profiles* → **Keys** → crea una
+   **APNs Auth Key** (.p8). Segna **Key ID** e **Team ID**. Scarica il `.p8` (una volta sola).
+3. Imposta i secret della edge function e ridistribuiscila:
+   ```bash
+   supabase secrets set APNS_KEY_ID=XXXXXXXXXX
+   supabase secrets set APNS_TEAM_ID=YYYYYYYYYY
+   supabase secrets set APNS_BUNDLE_ID=com.spacetradersinstitute.app
+   supabase secrets set APNS_AUTH_KEY="$(cat ~/Downloads/AuthKey_XXXXXXXXXX.p8)"
+   supabase secrets set APNS_PRODUCTION=false   # false = build da Xcode (sandbox);
+                                                 # true  = TestFlight / App Store
+   supabase functions deploy send-push --use-api
+   ```
+4. Run su iPhone → concedi le notifiche → il device token viene salvato. Test:
+   manda un messaggio da un altro account → arriva la push nativa.
+
+⚠️ `APNS_PRODUCTION`: i token di una build fatta da Xcode valgono solo su **sandbox**
+(`false`); quelli di TestFlight/App Store solo su **produzione** (`true`). Se le push
+non arrivano, quasi sempre è questo il flag sbagliato.
 
 ## 5) Provare su iPhone + TestFlight
 ```bash

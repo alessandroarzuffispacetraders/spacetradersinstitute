@@ -6,6 +6,10 @@ import { useAuth } from '../../context/AuthContext'
 const LS_INSTALL_DISMISSED = 'ist_install_dismissed'
 const LS_NOTIF_DISMISSED = 'ist_notif_dismissed'
 
+// Se esiste l'app nativa (URL App Store configurato), su iOS preferiamo invitare
+// a scaricarla (DownloadAppBanner) invece del "Aggiungi alla home" PWA.
+const HAS_NATIVE_APP = !!(import.meta.env.VITE_IOS_APP_URL as string | undefined)?.trim()
+
 type ActivePrompt = 'install' | 'ios-install' | 'notification' | null
 
 function isIOS() {
@@ -70,7 +74,8 @@ export default function AppPrompts() {
     const t = setTimeout(() => {
       if (localStorage.getItem(LS_INSTALL_DISMISSED)) {
         if (shouldShowNotification()) show('notification')
-      } else if (isIOS()) {
+      } else if (isIOS() && !HAS_NATIVE_APP) {
+        // Con l'app nativa disponibile ci pensa DownloadAppBanner.
         show('ios-install')
       }
     }, 4000)

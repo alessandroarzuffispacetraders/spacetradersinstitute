@@ -1,5 +1,6 @@
 import webPush from 'npm:web-push@3.6.7'
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { sendApns } from './apns.ts'
 
 const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY')!
 const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY')!
@@ -36,27 +37,50 @@ const REST_HEADERS = {
   Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
 }
 
-// Invia un payload già pronto a una lista di subscription; pulisce gli endpoint morti.
-async function sendToSubscriptions(
-  subscriptions: { endpoint: string; keys: Record<string, string> }[],
-  payload: string,
-) {
-  const results = await Promise.allSettled(
-    subscriptions.map((sub) =>
-      webPush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload),
-    ),
+// Una subscription può essere WEB (endpoint + chiavi VAPID) o NATIVA (device token
+// APNs in native_token, platform 'ios'/'android').
+type Sub = { endpoint: string; keys: Record<string, string>; platform?: string; native_token?: string | null }
+type PushPayload = { title: string; body: string; url?: string; channel_id?: string }
+
+// Invia un payload a una lista mista di subscription: le web via Web Push (VAPID),
+// le native via APNs (no-op finché non configurato). Pulisce endpoint e token morti.
+async function dispatch(subscriptions: Sub[], payload: PushPayload) {
+  const web = subscriptions.filter((s) => !s.native_token)
+  const native = subscriptions.filter((s) => !!s.native_token)
+
+  // ── WEB PUSH ──────────────────────────────────────────────────────────────
+  const webJson = JSON.stringify(payload)
+  const webResults = await Promise.allSettled(
+    web.map((s) => webPush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, webJson)),
   )
-  const sent = results.filter((r) => r.status === 'fulfilled').length
-  const dead = results
-    .map((r, i) => (r.status === 'rejected' && [404, 410].includes((r.reason as { statusCode?: number })?.statusCode ?? 0) ? subscriptions[i].endpoint : null))
+  let sent = webResults.filter((r) => r.status === 'fulfilled').length
+  const deadEndpoints = webResults
+    .map((r, i) => (r.status === 'rejected' && [404, 410].includes((r.reason as { statusCode?: number })?.statusCode ?? 0) ? web[i].endpoint : null))
     .filter((e): e is string => e !== null)
-  if (dead.length > 0) {
-    await Promise.all(dead.map((endpoint) =>
+
+  // ── NATIVE PUSH (APNs) — no-op finché non configurato ───────────────────────
+  const { sent: apnsSent, dead: deadTokens } = await sendApns(
+    native.map((s) => s.native_token as string),
+    { title: payload.title, body: payload.body, url: payload.url, channelId: payload.channel_id },
+  )
+  sent += apnsSent
+
+  // ── Pulizia dei destinatari morti ──────────────────────────────────────────
+  if (deadEndpoints.length > 0) {
+    await Promise.all(deadEndpoints.map((endpoint) =>
       fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, {
         method: 'DELETE', headers: REST_HEADERS,
       }).catch(() => {/* ignora */})
     ))
   }
+  if (deadTokens.length > 0) {
+    await Promise.all(deadTokens.map((tok) =>
+      fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?native_token=eq.${encodeURIComponent(tok)}`, {
+        method: 'DELETE', headers: REST_HEADERS,
+      }).catch(() => {/* ignora */})
+    ))
+  }
+
   return { sent, total: subscriptions.length }
 }
 
@@ -74,9 +98,9 @@ function hasRole(p: { role: string; roles: string[] | null } | null, r: string):
   return !!p && (p.role === r || (p.roles ?? []).includes(r))
 }
 
-async function subsForUserIds(ids: string[]): Promise<{ endpoint: string; keys: Record<string, string> }[]> {
+async function subsForUserIds(ids: string[]): Promise<Sub[]> {
   if (ids.length === 0) return []
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?user_id=in.(${ids.join(',')})&select=endpoint,keys`, { headers: REST_HEADERS })
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?user_id=in.(${ids.join(',')})&select=endpoint,keys,platform,native_token`, { headers: REST_HEADERS })
   const rows = await r.json().catch(() => [])
   return Array.isArray(rows) ? rows : []
 }
@@ -108,7 +132,7 @@ async function handleNotify(notify: NotifyBody, req: Request) {
     const student = (notify.studentName ?? '').trim()
     const title = '📩 Nuova segnalazione'
     const body = `${author} ha inviato una segnalazione${student ? ` su ${student}` : ''}.`
-    return jsonRes(await sendToSubscriptions(subs, JSON.stringify({ title, body, url: '/admin/segnalazioni' })))
+    return jsonRes(await dispatch(subs, { title, body, url: '/admin/segnalazioni' }))
   }
 
   // Segnalazione inviata dall'admin → notifica il destinatario (coach/mental).
@@ -124,7 +148,7 @@ async function handleNotify(notify: NotifyBody, req: Request) {
     const student = (notify.studentName ?? '').trim()
     const title = '📩 Nuova segnalazione dall\'admin'
     const body = `Hai ricevuto una segnalazione dall'admin${student ? ` su ${student}` : ''}.`
-    return jsonRes(await sendToSubscriptions(subs, JSON.stringify({ title, body, url })))
+    return jsonRes(await dispatch(subs, { title, body, url }))
   }
 
   // Annuncio broadcast dell'admin → tutti gli studenti (o un segmento per tier).
@@ -144,7 +168,7 @@ async function handleNotify(notify: NotifyBody, req: Request) {
     if (subs.length === 0) return jsonRes({ sent: 0, total: 0 })
     const url = (notify.url ?? '').trim() || '/student'
     const shortBody = body.length > 140 ? body.slice(0, 140) + '…' : body
-    return jsonRes(await sendToSubscriptions(subs, JSON.stringify({ title, body: shortBody, url })))
+    return jsonRes(await dispatch(subs, { title, body: shortBody, url }))
   }
 
   return jsonRes({ error: 'unknown notify type' }, 400)
@@ -182,12 +206,12 @@ Deno.serve(async (req) => {
       if (recipient) userFilter = `user_id=eq.${recipient}`
     }
 
-    // Recupera le subscription di tutti i destinatari
+    // Recupera le subscription (web + native) di tutti i destinatari
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/push_subscriptions?${userFilter}&select=endpoint,keys`,
+      `${SUPABASE_URL}/rest/v1/push_subscriptions?${userFilter}&select=endpoint,keys,platform,native_token`,
       { headers: REST_HEADERS },
     )
-    const subscriptions: { endpoint: string; keys: Record<string, string> }[] = await res.json()
+    const subscriptions: Sub[] = await res.json()
 
     if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
       return new Response(JSON.stringify({ sent: 0 }), { headers: { ...CORS, 'Content-Type': 'application/json' } })
@@ -199,35 +223,9 @@ Deno.serve(async (req) => {
     // click sulla notifica → apre direttamente il canale/DM interessato.
     const url = `/student/chat?c=${encodeURIComponent(message.channel_id)}`
 
-    const results = await Promise.allSettled(
-      subscriptions.map((sub) =>
-        webPush.sendNotification(
-          { endpoint: sub.endpoint, keys: sub.keys },
-          JSON.stringify({ title: senderName, body, url, channel_id: message.channel_id }),
-        )
-      ),
-    )
+    const result = await dispatch(subscriptions, { title: senderName, body, url, channel_id: message.channel_id })
 
-    const sent = results.filter((r) => r.status === 'fulfilled').length
-
-    // Rimuovi gli endpoint morti (410 Gone / 404) così non restano duplicati
-    const dead = results
-      .map((r, i) => (r.status === 'rejected' && [404, 410].includes((r.reason as { statusCode?: number })?.statusCode ?? 0) ? subscriptions[i].endpoint : null))
-      .filter((e): e is string => e !== null)
-
-    if (dead.length > 0) {
-      await Promise.all(dead.map((endpoint) =>
-        fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, {
-          method: 'DELETE',
-          headers: {
-            apikey: SUPABASE_SERVICE_KEY,
-            Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-          },
-        }).catch(() => {/* ignora */})
-      ))
-    }
-
-    return new Response(JSON.stringify({ sent, total: subscriptions.length }), {
+    return new Response(JSON.stringify(result), {
       headers: { ...CORS, 'Content-Type': 'application/json' },
     })
   } catch (err) {

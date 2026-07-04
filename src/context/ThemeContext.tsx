@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { applyStatusBarTheme } from '../lib/nativeUi'
 
 type Theme = 'dark' | 'light'
 interface ThemeContextValue { theme: Theme; toggleTheme: () => void }
@@ -12,6 +13,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.classList.toggle('light', theme === 'light')
     root.classList.toggle('dark', theme === 'dark')
     localStorage.setItem('ist-theme', theme)
+    // App nativa: mantieni la status bar leggibile sul tema attivo (no-op sul web).
+    applyStatusBarTheme(theme)
   }, [theme])
 
   return (

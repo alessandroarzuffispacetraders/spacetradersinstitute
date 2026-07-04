@@ -11,6 +11,8 @@ import { useAuth } from '../../context/AuthContext'
 import { hasManagement, normalizeRoles } from '../../router/navConfig'
 import { supabase } from '../../lib/supabase'
 import { isViewingChannel } from '../../lib/activeChat'
+import { isNativeApp } from '../../lib/nativeUi'
+import { ensureNativePushReady, claimNativePush } from '../../lib/nativePush'
 
 // Ponte tra il service worker e il router: quando si clicca una notifica push
 // mentre l'app è già aperta, il SW invia { type:'ist-navigate', url } e qui
@@ -49,6 +51,26 @@ function PushNavigationBridge() {
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [navigate])
+
+  return null
+}
+
+// Push NATIVE (APNs): registra il device token per l'utente loggato e, al tap su
+// una notifica, naviga al deep-link in-app. No-op sul web (là valgono Web Push +
+// SW gestiti da PushNavigationBridge/NotificationManager).
+function NativePushBridge() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
+
+  useEffect(() => {
+    if (!isNativeApp() || !user) return
+    let cancelled = false
+    ;(async () => {
+      await ensureNativePushReady((url) => navigate(url))
+      if (!cancelled) await claimNativePush()
+    })()
+    return () => { cancelled = true }
+  }, [user?.id, navigate])
 
   return null
 }
@@ -132,6 +154,7 @@ function AppShell() {
         {!Capacitor.isNativePlatform() && <AppPrompts />}
         <NotificationManager />
         <PushNavigationBridge />
+        <NativePushBridge />
       </div>
     </NewsProvider>
   )
