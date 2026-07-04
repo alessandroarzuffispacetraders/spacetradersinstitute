@@ -12,6 +12,8 @@
 	<string>Per allegare immagini dalla galleria nelle chat e nel profilo.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Per salvare immagini dalle chat nella galleria.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
