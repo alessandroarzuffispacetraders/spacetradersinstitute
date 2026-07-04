@@ -940,30 +940,32 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                 )}
 
                 <div className={`flex gap-2.5 mt-3 group/msggroup ${group.own ? 'flex-row-reverse' : ''}`}>
-                  {/* Avatar */}
-                  <button
-                    className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 self-end overflow-hidden transition-opacity hover:opacity-80 active:opacity-60"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (!group.own) onShowUserCard({ userId: group.authorId, name: group.author, role: group.authorRole, avatar: authorAvatars[group.authorId] })
-                    }}
-                  >
-                    {(() => {
-                      const a = authorAvatars[group.authorId]
-                      if (a?.avatarUrl || a?.avatarPreset) {
-                        return <UserAvatar user={{ name: a.name || group.author, avatarUrl: a.avatarUrl, avatarPreset: a.avatarPreset }} size={28} />
-                      }
-                      // Fallback: iniziale su gradiente (proprio = blu, altri = per ruolo)
-                      return (
-                        <span
-                          className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white"
-                          style={{ background: group.own ? 'linear-gradient(135deg, #5A9AB1, #286680)' : (DM_AVATAR_GRADIENT[group.authorRole] ?? 'var(--ist-w12)') }}
-                        >
-                          {group.author.charAt(0)}
-                        </span>
-                      )
-                    })()}
-                  </button>
+                  {/* Avatar — solo per i messaggi ALTRUI; i miei non mostrano la mia foto */}
+                  {!group.own && (
+                    <button
+                      className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 self-end overflow-hidden transition-opacity hover:opacity-80 active:opacity-60"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onShowUserCard({ userId: group.authorId, name: group.author, role: group.authorRole, avatar: authorAvatars[group.authorId] })
+                      }}
+                    >
+                      {(() => {
+                        const a = authorAvatars[group.authorId]
+                        if (a?.avatarUrl || a?.avatarPreset) {
+                          return <UserAvatar user={{ name: a.name || group.author, avatarUrl: a.avatarUrl, avatarPreset: a.avatarPreset }} size={28} />
+                        }
+                        // Fallback: iniziale su gradiente per ruolo
+                        return (
+                          <span
+                            className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white"
+                            style={{ background: DM_AVATAR_GRADIENT[group.authorRole] ?? 'var(--ist-w12)' }}
+                          >
+                            {group.author.charAt(0)}
+                          </span>
+                        )
+                      })()}
+                    </button>
+                  )}
 
                   <div className={`flex flex-col gap-0.5 min-w-0 max-w-[75%] ${group.own ? 'items-end' : 'items-start'}`}>
                     {/* Author + time */}

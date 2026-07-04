@@ -14,6 +14,9 @@ export default function LoginPage() {
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // Mobile: quando un campo è a fuoco (tastiera aperta) ancoriamo il contenuto in
+  // alto, così i campi non finiscono sotto la tastiera. Su desktop resta centrato.
+  const [kbFocus, setKbFocus] = useState(false)
 
   const switchMode = (next: Mode) => {
     setMode(next)
@@ -48,7 +51,7 @@ export default function LoginPage() {
   return (
     <div
       data-inverted="true"
-      className="min-h-screen flex flex-col items-center justify-center px-6"
+      className={`min-h-screen flex flex-col items-center px-6 overflow-y-auto transition-all duration-200 ${kbFocus ? 'justify-start pt-8 pb-8 lg:justify-center lg:pt-0' : 'justify-center'}`}
       style={{
         background: 'radial-gradient(circle at 20% 10%, rgba(90,154,177,0.28) 0%, transparent 34%), radial-gradient(circle at 80% 20%, rgba(40,102,128,0.22) 0%, transparent 32%), linear-gradient(135deg, #070812 0%, #0B1020 52%, #061D2A 100%)',
       }}
@@ -115,7 +118,12 @@ export default function LoginPage() {
               ))}
             </div>
 
-            <form onSubmit={handleSubmit} className="w-full flex flex-col gap-4">
+            <form
+              onSubmit={handleSubmit}
+              onFocus={() => setKbFocus(true)}
+              onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setKbFocus(false) }}
+              className="w-full flex flex-col gap-4"
+            >
               {mode === 'signup' && (
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-medium text-ist-300 uppercase tracking-wider">Nome</label>

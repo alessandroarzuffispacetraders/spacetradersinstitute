@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Play, Pause, Download, FileText } from 'lucide-react'
 import { formatDuration } from '../../lib/audioRecorder'
 
@@ -45,7 +45,12 @@ export function VoiceMessage({
   const [playing, setPlaying] = useState(false)
   const [current, setCurrent] = useState(0)
   const [metaDur, setMetaDur] = useState(0)
+  const [rate, setRate] = useState(1) // 1 → 1.5 → 2 (riproduzione più veloce)
   const bars = useMemo(() => seededBars(id), [id])
+
+  // Applica la velocità scelta all'elemento audio (persiste tra play/pausa).
+  useEffect(() => { if (audioRef.current) audioRef.current.playbackRate = rate }, [rate])
+  const cycleRate = () => setRate((r) => (r === 1 ? 1.5 : r === 1.5 ? 2 : 1))
 
   // Durata affidabile: quella salvata (dal recorder); fallback ai metadati.
   const total = duration > 0 ? duration : metaDur
@@ -72,7 +77,7 @@ export function VoiceMessage({
   }
 
   return (
-    <div className="flex items-center gap-2.5 py-0.5" style={{ minWidth: 210, maxWidth: 280 }}>
+    <div className="flex items-center gap-2 py-0.5" style={{ minWidth: 220, maxWidth: 300 }}>
       <audio
         ref={audioRef}
         src={url}
@@ -128,6 +133,18 @@ export function VoiceMessage({
       >
         {formatDuration(playing || current > 0 ? current : total, true)}
       </span>
+
+      {/* Velocità di riproduzione: tocca per 1× → 1.5× → 2× */}
+      <button
+        onClick={cycleRate}
+        className="text-[10px] font-bold tabular-nums flex-shrink-0 rounded-full px-1.5 h-5 flex items-center justify-center transition-all active:scale-95"
+        style={rate === 1
+          ? { color: fg, opacity: 0.5 }
+          : { background: fg, color: bubbleBg, opacity: 1 }}
+        title="Velocità di riproduzione"
+      >
+        {rate}×
+      </button>
     </div>
   )
 }
