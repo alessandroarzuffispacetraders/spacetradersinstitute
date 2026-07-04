@@ -8,3 +8,15 @@ dist
 .claude/worktrees/
 # Dati importati (liste utenti, ecc.): contengono PII, mai su GitHub
 import/
+
+# Capacitor — i progetti ios/ e android/ si committano, ma NON questi
+# output di build / dipendenze generate
+ios/App/Pods/
+ios/App/build/
+ios/App/App/public/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/public/
+*.xcuserstate
+DerivedData/
