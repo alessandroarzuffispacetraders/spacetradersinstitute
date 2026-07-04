@@ -57,10 +57,12 @@
     --ist-accent-text: #7CBBD0;
     --ist-avatar-other-bg: rgba(255,255,255,0.12);
     --ist-avatar-other-text: #8495A3;
-    /* Composer chat — SEMPRE brand dark (in ENTRAMBI i temi: definiti solo qui,
-       .light non li sovrascrive) con input + tasti "chiari" che spiccano sul scuro */
-    --ist-composer-bg: #070812;
-    --ist-composer-border: rgba(255,255,255,0.08);
+    /* Barre chat (header in alto + composer in basso) — SEMPRE lo stesso teal
+       scuro (in ENTRAMBI i temi: definiti solo qui, .light non li sovrascrive),
+       coerente col brand ma non nero; input + tasti "chiari" spiccano sopra.
+       È il colore delle bolle dei propri messaggi in tema chiaro. */
+    --ist-composer-bg: #123E51;
+    --ist-composer-border: rgba(255,255,255,0.10);
     --ist-composer-btn: rgba(255,255,255,0.92);
     --ist-composer-btn-icon: #2A3948;
     --ist-composer-input: #FFFFFF;

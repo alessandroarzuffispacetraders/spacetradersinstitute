@@ -858,16 +858,16 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
 
   return (
     <div className="flex flex-col h-full relative">
-      {/* Header */}
+      {/* Header — stesso teal scuro del composer, testo/icone chiari */}
       <div
         className="flex items-center gap-3 px-4 py-3 flex-shrink-0"
-        style={{ borderBottom: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)', backdropFilter: 'blur(16px)' }}
+        style={{ borderBottom: '1px solid var(--ist-composer-border)', background: 'var(--ist-composer-bg)' }}
       >
         {isMobile && onBack && (
           <button
             onClick={onBack}
             className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors"
-            style={{ background: 'var(--ist-w8)', color: 'var(--ist-text)' }}
+            style={{ background: 'rgba(255,255,255,0.14)', color: 'var(--ist-composer-text)' }}
           >
             <ArrowLeft size={16} strokeWidth={2} />
           </button>
@@ -878,14 +878,14 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             <UserAvatar user={{ name: dmPartner.name, avatarUrl: dmPartner.avatarUrl, avatarPreset: dmPartner.avatarPreset }} size={36} />
           </div>
         ) : (
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--ist-w8)', color: 'var(--ist-accent-text)' }}>
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255,255,255,0.14)', color: 'var(--ist-composer-text)' }}>
             <ChannelIcon type={channel.type} size={15} />
           </div>
         )}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold truncate" style={{ color: 'var(--ist-text)' }}>{channel.name}</span>
+            <span className="text-sm font-semibold truncate" style={{ color: 'var(--ist-composer-text)' }}>{channel.name}</span>
             {isDirect && dmPartner && (
               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: ROLE_COLOR[dmPartner.role], color: ROLE_TEXT[dmPartner.role] }}>
                 {ROLE_LABEL[dmPartner.role]}
@@ -893,7 +893,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             )}
           </div>
           {!isDirect && channel.description ? (
-            <p className="text-[11px] truncate" style={{ color: 'var(--ist-text-muted)' }}>{channel.description}</p>
+            <p className="text-[11px] truncate" style={{ color: 'var(--ist-composer-text-dim)' }}>{channel.description}</p>
           ) : null}
         </div>
       </div>
