@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { acquireMic, scheduleMicRelease } from './micStream'
 
 // ─── Registrazione vocali (stile WhatsApp) ────────────────────────────────────
 // Hook attorno a MediaRecorder: gestisce permessi mic, scelta del formato più
@@ -51,15 +52,24 @@ export function useAudioRecorder() {
   const resolveRef = useRef<((r: RecordedAudio | null) => void) | null>(null)
   const cancelledRef = useRef(false)
 
+  // NB: non fermiamo lo stream qui — è condiviso (micStream) e va riusato per le
+  // registrazioni successive; disattiviamo solo la cattura e ne programmiamo il
+  // rilascio dopo inattività.
   const cleanup = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-    streamRef.current?.getTracks().forEach(t => t.stop())
-    streamRef.current = null
+    streamRef.current?.getAudioTracks().forEach(t => { t.enabled = false })
+    scheduleMicRelease()
     recRef.current = null
   }, [])
 
-  // Se il componente si smonta mentre registra: rilascia il microfono.
-  useEffect(() => cleanup, [cleanup])
+  // Allo smontaggio (es. si esce dalla chat): ferma un'eventuale registrazione e
+  // programma il rilascio del microfono (non lo stoppiamo subito, così sopravvive
+  // al cambio di chat e non richiede di nuovo il permesso).
+  useEffect(() => () => {
+    const rec = recRef.current
+    if (rec && rec.state !== 'inactive') { cancelledRef.current = true; try { rec.stop() } catch { /* noop */ } }
+    cleanup()
+  }, [cleanup])
 
   const start = useCallback(async (): Promise<boolean> => {
     setError(null)
@@ -71,8 +81,10 @@ export function useAudioRecorder() {
     const picked = pickMime()
     mimeRef.current = picked
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // Riusa il microfono già autorizzato (un solo prompt per sessione).
+      const stream = await acquireMic()
       streamRef.current = stream
+      stream.getAudioTracks().forEach(t => { t.enabled = true })
       const rec = new MediaRecorder(stream, picked.mime ? { mimeType: picked.mime } : undefined)
       chunksRef.current = []
       cancelledRef.current = false
@@ -80,12 +92,11 @@ export function useAudioRecorder() {
       rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data) }
       rec.onstop = () => {
         const durationSec = Math.max(1, Math.round((performance.now() - startRef.current) / 1000))
-        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
         const type = mimeRef.current.mime || rec.mimeType || 'audio/webm'
         const blob = new Blob(chunksRef.current, { type })
         const cancelled = cancelledRef.current
         chunksRef.current = []
-        cleanup()
+        cleanup() // disattiva la cattura + programma rilascio; NON stoppa lo stream
         setRecording(false)
         setElapsedMs(0)
         const resolve = resolveRef.current

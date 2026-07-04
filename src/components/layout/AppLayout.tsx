@@ -30,7 +30,23 @@ function PushNavigationBridge() {
       }
     }
     navigator.serviceWorker.addEventListener('message', handler)
-    return () => navigator.serviceWorker.removeEventListener('message', handler)
+
+    // Chiede al SW un'eventuale destinazione in sospeso dopo il click su una
+    // notifica (necessario su iOS/PWA, dove il postMessage/openWindow può
+    // perdersi): al mount e ogni volta che l'app torna in primo piano.
+    const askPending = () => {
+      navigator.serviceWorker.ready
+        .then(reg => (reg.active ?? navigator.serviceWorker.controller)?.postMessage({ type: 'ist-get-pending' }))
+        .catch(() => {/* noop */})
+    }
+    askPending()
+    const onVisible = () => { if (document.visibilityState === 'visible') askPending() }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handler)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [navigate])
 
   return null
