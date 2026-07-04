@@ -1301,7 +1301,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
               >
                 {uploading
                   ? <Loader2 size={15} strokeWidth={2} className="text-white animate-spin" />
-                  : <Send size={15} strokeWidth={2} className="text-white" />}
+                  : <Send size={15} strokeWidth={2} className="text-white translate-x-[1px]" />}
               </button>
             </div>
           ) : (
@@ -1356,12 +1356,12 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                 <button
                   onClick={sendMessage}
                   disabled={!showSend || uploading}
-                  className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                  style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)', boxShadow: showSend ? '0 4px 16px rgba(40,102,128,0.36)' : 'none' }}
+                  className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed"
+                  style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)', boxShadow: '0 4px 16px rgba(40,102,128,0.36)' }}
                 >
                   {uploading
                     ? <Loader2 size={15} strokeWidth={2} className="text-white animate-spin" />
-                    : <Send size={15} strokeWidth={2} className="text-white" />}
+                    : <Send size={15} strokeWidth={2} className="text-white translate-x-[1px]" />}
                 </button>
               )}
 
