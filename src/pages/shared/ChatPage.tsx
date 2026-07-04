@@ -1301,7 +1301,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
               >
                 {uploading
                   ? <Loader2 size={15} strokeWidth={2} data-inverted className="text-white animate-spin" />
-                  : <Send size={15} strokeWidth={2} data-inverted className="text-white -translate-x-[2px]" />}
+                  : <Send size={15} strokeWidth={2} data-inverted className="text-white -translate-x-[1px]" />}
               </button>
             </div>
           ) : (
@@ -1361,7 +1361,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                 >
                   {uploading
                     ? <Loader2 size={15} strokeWidth={2} data-inverted className="text-white animate-spin" />
-                    : <Send size={15} strokeWidth={2} data-inverted className="text-white -translate-x-[2px]" />}
+                    : <Send size={15} strokeWidth={2} data-inverted className="text-white -translate-x-[1px]" />}
                 </button>
               )}
 
