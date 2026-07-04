@@ -1678,29 +1678,49 @@ function BachecaArea({
   )
 }
 
-// Fa combaciare il contenitore della chat con l'AREA REALMENTE VISIBILE
-// (VisualViewport): su iOS/Android il layout `fixed` non si ridimensiona quando
-// si apre la tastiera (e iOS fa auto-scroll), quindi misuriamo top+height del
-// viewport visibile e ci allineiamo → la barra di scrittura resta appena sopra
-// la tastiera. `kbOpen` = tastiera aperta (per togliere il padding safe-area).
+// Fa combaciare il contenitore della chat con l'AREA REALMENTE VISIBILE quando
+// la tastiera è aperta, così la barra di scrittura resta appena sopra la tastiera.
+// `kbOpen` è rilevato dal FOCUS su un campo di testo: nella PWA standalone iOS il
+// webview si ridimensiona insieme alla tastiera (innerHeight cala con lei), quindi
+// confrontare le altezze non basta — un input a fuoco = tastiera su. Le misure
+// top/height arrivano da VisualViewport (aggiornate mentre la tastiera anima).
 function useVisibleViewport() {
   const [vp, setVp] = useState<{ top: number; height: number; kbOpen: boolean } | null>(null)
   useEffect(() => {
     const vv = window.visualViewport
-    if (!vv) return
-    const update = () => {
-      // soglia 100px: ignora barra URL/toolbar, considera solo la tastiera
-      const kbOpen = window.innerHeight - vv.height > 100
-      setVp({ top: Math.round(vv.offsetTop), height: Math.round(vv.height), kbOpen })
+    let focused = false
+    const isEditable = (el: EventTarget | null): boolean => {
+      const n = el as HTMLElement | null
+      return !!n && (n.tagName === 'INPUT' || n.tagName === 'TEXTAREA' || n.isContentEditable)
     }
-    update()
-    vv.addEventListener('resize', update)
-    vv.addEventListener('scroll', update)
-    window.addEventListener('orientationchange', update)
+    const measure = () => setVp({
+      top: vv ? Math.round(vv.offsetTop) : 0,
+      height: vv ? Math.round(vv.height) : window.innerHeight,
+      kbOpen: focused,
+    })
+    const onFocusIn = (e: FocusEvent) => {
+      if (!isEditable(e.target)) return
+      focused = true
+      measure()
+      // ri-misura mentre la tastiera anima (VisualViewport aggiorna con ritardo)
+      setTimeout(measure, 120)
+      setTimeout(measure, 320)
+    }
+    const onFocusOut = () => { focused = false; measure() }
+    measure()
+    vv?.addEventListener('resize', measure)
+    vv?.addEventListener('scroll', measure)
+    window.addEventListener('resize', measure)
+    window.addEventListener('orientationchange', measure)
+    document.addEventListener('focusin', onFocusIn)
+    document.addEventListener('focusout', onFocusOut)
     return () => {
-      vv.removeEventListener('resize', update)
-      vv.removeEventListener('scroll', update)
-      window.removeEventListener('orientationchange', update)
+      vv?.removeEventListener('resize', measure)
+      vv?.removeEventListener('scroll', measure)
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('orientationchange', measure)
+      document.removeEventListener('focusin', onFocusIn)
+      document.removeEventListener('focusout', onFocusOut)
     }
   }, [])
   return vp
