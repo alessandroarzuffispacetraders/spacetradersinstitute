@@ -204,9 +204,10 @@ export default function LoginPage() {
         )}
       </div>
 
-      <p className="absolute bottom-8 text-center text-xs" style={{ color: '#56636F' }}>
-        © 2024 IST — Space Traders Institute
-      </p>
+      <div className="absolute bottom-8 text-center text-xs flex flex-col items-center gap-1.5" style={{ color: '#56636F' }}>
+        <a href="/privacy" style={{ color: '#7CBBD0' }}>Privacy Policy</a>
+        <span>© 2024 IST — Space Traders Institute</span>
+      </div>
     </div>
   )
 }

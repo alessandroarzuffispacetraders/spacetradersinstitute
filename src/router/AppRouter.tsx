@@ -5,6 +5,7 @@ import RequireRole from '../components/auth/RequireRole'
 import RequireFullAccess from '../components/auth/RequireFullAccess'
 import AccessGate from '../components/auth/AccessGate'
 import LoginPage from '../pages/auth/LoginPage'
+import PrivacyPolicy from '../pages/legal/PrivacyPolicy'
 
 // Student pages
 import StudentDashboard from '../pages/student/StudentDashboard'
@@ -137,6 +138,8 @@ export default function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Pagina pubblica (accessibile senza login) — richiesta da App Store */}
+        <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route
           path="/login"
           element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
