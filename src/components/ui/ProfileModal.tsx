@@ -9,6 +9,8 @@ import { useAuth } from '../../context/AuthContext'
 import UserAvatar, { PRESET_AVATARS } from './UserAvatar'
 import { subscribeToPush, unsubscribeFromPush } from '../../lib/push'
 import { uploadAvatar, deleteAvatar } from '../../lib/storage'
+import { isNativeApp } from '../../lib/nativeUi'
+import { PushNotifications } from '@capacitor/push-notifications'
 
 const ROLE_LABELS: Record<string, string> = {
   student: 'Studente',
@@ -611,6 +613,11 @@ function PasswordField({
 }
 
 function NotificationsSection({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  // App nativa (iOS/Android): le notifiche NON usano l'API web `Notification`
+  // (assente nel WebView) ma APNs/FCM via @capacitor/push-notifications → mostra
+  // lo stato del permesso NATIVO, non il fuorviante "Non supportate" del web.
+  if (isNativeApp()) return <NativeNotificationsSection onBack={onBack} onClose={onClose} />
+
   const { user } = useAuth()
   const [permission, setPermission] = useState<NotificationPermission>(
     'Notification' in window ? Notification.permission : 'denied'
@@ -736,6 +743,103 @@ function NotificationsSection({ onBack, onClose }: { onBack: () => void; onClose
             Hai bloccato le notifiche. Per riattivarle vai su{' '}
             <span style={{ color: '#7CBBD0' }}>Impostazioni → Sito → Notifiche</span>{' '}
             nel tuo browser.
+          </p>
+        )}
+      </div>
+    </>
+  )
+}
+
+// Stato notifiche per l'app NATIVA (APNs/FCM). Il permesso e il device token sono
+// gestiti automaticamente all'avvio (NativePushBridge in AppLayout): qui mostriamo
+// solo lo stato e, se serve, un CTA per abilitarle o le istruzioni per riattivarle.
+function NativeNotificationsSection({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  const [perm, setPerm] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown')
+  const [busy, setBusy] = useState(false)
+
+  const refresh = async () => {
+    try {
+      const res = await PushNotifications.checkPermissions()
+      const r = res.receive
+      setPerm(r === 'granted' ? 'granted' : r === 'denied' ? 'denied' : 'prompt')
+    } catch {
+      setPerm('unknown')
+    }
+  }
+
+  useEffect(() => { refresh() }, [])
+
+  const handleEnable = async () => {
+    setBusy(true)
+    try {
+      const res = await PushNotifications.requestPermissions()
+      if (res.receive === 'granted') await PushNotifications.register()
+    } catch { /* ignora */ }
+    await refresh()
+    setBusy(false)
+  }
+
+  const granted = perm === 'granted'
+
+  return (
+    <>
+      <ModalHeader title="Notifiche" onBack={onBack} onClose={onClose} />
+      <div className="px-5 pb-6 pt-3 flex flex-col gap-4">
+
+        {/* Stato corrente */}
+        <div
+          className="rounded-2xl px-4 py-3 flex items-center gap-3"
+          style={{
+            background: granted ? 'rgba(70,211,154,0.08)' : 'var(--ist-w6)',
+            border: `1px solid ${granted ? 'rgba(70,211,154,0.20)' : 'var(--ist-w9)'}`,
+          }}
+        >
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{
+              background: granted ? 'rgba(70,211,154,0.15)' : 'rgba(255,107,122,0.10)',
+              color: granted ? '#46D39A' : '#FF6B7A',
+            }}
+          >
+            {granted ? <Bell size={17} strokeWidth={2} /> : <BellOff size={17} strokeWidth={2} />}
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>
+              {granted ? 'Notifiche attive' : perm === 'denied' ? 'Notifiche bloccate' : 'Notifiche disabilitate'}
+            </p>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--ist-text-muted)' }}>
+              {granted
+                ? 'Ricevi aggiornamenti su messaggi e live'
+                : perm === 'denied'
+                ? 'Riattivale dalle impostazioni del telefono'
+                : 'Tocca "Abilita" per ricevere notifiche'}
+            </p>
+          </div>
+        </div>
+
+        {/* CTA se non ancora concesse */}
+        {!granted && perm !== 'denied' && (
+          <button
+            onClick={handleEnable}
+            disabled={busy}
+            className="w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-60"
+            style={{
+              background: 'linear-gradient(135deg, #5A9AB1, #286680)',
+              color: 'white',
+              boxShadow: '0 4px 16px rgba(40,102,128,0.30)',
+            }}
+          >
+            {busy ? <Loader2 size={15} className="animate-spin" /> : <Bell size={15} strokeWidth={2} />}
+            Abilita notifiche
+          </button>
+        )}
+
+        {/* Istruzioni se bloccate a livello di sistema */}
+        {perm === 'denied' && (
+          <p className="text-xs px-1 leading-relaxed" style={{ color: 'var(--ist-text-dim)' }}>
+            Hai bloccato le notifiche. Per riattivarle vai su{' '}
+            <span style={{ color: '#7CBBD0' }}>Impostazioni → Space Traders Institute → Notifiche</span>{' '}
+            sul tuo telefono.
           </p>
         )}
       </div>
