@@ -1300,8 +1300,8 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                 title="Invia vocale"
               >
                 {uploading
-                  ? <Loader2 size={15} strokeWidth={2} className="text-white animate-spin" />
-                  : <Send size={15} strokeWidth={2} className="text-white translate-x-[1px]" />}
+                  ? <Loader2 size={15} strokeWidth={2} data-inverted className="text-white animate-spin" />
+                  : <Send size={15} strokeWidth={2} data-inverted className="text-white -translate-x-[2px]" />}
               </button>
             </div>
           ) : (
@@ -1350,7 +1350,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                   style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)', color: 'white', boxShadow: '0 4px 16px rgba(40,102,128,0.36)' }}
                   title="Tieni premuto per registrare un vocale"
                 >
-                  <Mic size={18} strokeWidth={2} className="text-white" />
+                  <Mic size={18} strokeWidth={2} data-inverted className="text-white" />
                 </button>
               ) : (
                 <button
@@ -1360,8 +1360,8 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                   style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)', boxShadow: '0 4px 16px rgba(40,102,128,0.36)' }}
                 >
                   {uploading
-                    ? <Loader2 size={15} strokeWidth={2} className="text-white animate-spin" />
-                    : <Send size={15} strokeWidth={2} className="text-white translate-x-[1px]" />}
+                    ? <Loader2 size={15} strokeWidth={2} data-inverted className="text-white animate-spin" />
+                    : <Send size={15} strokeWidth={2} data-inverted className="text-white -translate-x-[2px]" />}
                 </button>
               )}
 
