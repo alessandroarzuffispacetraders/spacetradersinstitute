@@ -487,7 +487,7 @@ function UserRow({ user, summary, onEdit, onUpdatePerms, onActivate, onPromote }
   return (
     <div className="rounded-3xl overflow-hidden" style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: 'var(--ist-card-shadow)' }}>
       <div
-        className="flex items-center gap-3 px-4 py-4 cursor-pointer"
+        className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-4 cursor-pointer"
         onClick={toggle}
       >
         <div
@@ -497,65 +497,69 @@ function UserRow({ user, summary, onEdit, onUpdatePerms, onActivate, onPromote }
           {user.name.charAt(0).toUpperCase()}
         </div>
 
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0" style={{ minWidth: 150 }}>
           <p className="text-sm font-semibold truncate" style={{ color: 'var(--ist-text)' }}>{user.name}</p>
           <p className="text-[11px] truncate" style={{ color: 'var(--ist-text-dim)' }}>{user.email}</p>
         </div>
 
-        <span className="text-xs hidden sm:block flex-shrink-0" style={{ color: 'var(--ist-text-muted)' }}>
-          {ROLE_LABELS[user.role]}
-          {user.roles && user.roles.length > 1 && (
-            <span style={{ color: 'var(--ist-text-dim)' }}> +{user.roles.length - 1}</span>
-          )}
-        </span>
-
-        {user.phase && (
-          <span className="text-xs hidden md:block flex-shrink-0 capitalize" style={{ color: 'var(--ist-text-dim)' }}>
-            {user.phase}
+        {/* Badge + azioni: su schermi stretti vanno a capo (wrap) restando
+            allineati a destra → niente viene tagliato; su desktop restano in linea. */}
+        <div className="flex items-center flex-wrap justify-end gap-2 ml-auto">
+          <span className="text-xs hidden sm:block flex-shrink-0" style={{ color: 'var(--ist-text-muted)' }}>
+            {ROLE_LABELS[user.role]}
+            {user.roles && user.roles.length > 1 && (
+              <span style={{ color: 'var(--ist-text-dim)' }}> +{user.roles.length - 1}</span>
+            )}
           </span>
-        )}
 
-        <AccessBadge summary={summary} />
+          {user.phase && (
+            <span className="text-xs hidden md:block flex-shrink-0 capitalize" style={{ color: 'var(--ist-text-dim)' }}>
+              {user.phase}
+            </span>
+          )}
 
-        <TierBadge tier={user.tier} />
+          <AccessBadge summary={summary} />
 
-        <StatusBadge status={user.status} />
+          <TierBadge tier={user.tier} />
 
-        {user.role === 'student' && user.status !== 'active' && (
+          <StatusBadge status={user.status} />
+
+          {user.role === 'student' && user.status !== 'active' && (
+            <button
+              className="text-xs font-bold flex-shrink-0 px-3 py-1.5 rounded-xl text-white transition-all hover:-translate-y-0.5"
+              style={{ background: 'linear-gradient(135deg, #46D39A, #2a8060)' }}
+              onClick={e => { e.stopPropagation(); onActivate(user.id) }}
+              title="Attiva l'accesso (lifetime)"
+            >
+              Attiva
+            </button>
+          )}
+
+          {user.role === 'student' && user.tier === 'free' && (
+            <button
+              className="text-xs font-bold flex-shrink-0 px-3 py-1.5 rounded-xl text-white transition-all hover:-translate-y-0.5"
+              style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)' }}
+              onClick={e => { e.stopPropagation(); onPromote(user.id) }}
+              title="Passa l'utente al piano completo"
+            >
+              Promuovi
+            </button>
+          )}
+
           <button
-            className="text-xs font-bold flex-shrink-0 px-3 py-1.5 rounded-xl text-white transition-all hover:-translate-y-0.5"
-            style={{ background: 'linear-gradient(135deg, #46D39A, #2a8060)' }}
-            onClick={e => { e.stopPropagation(); onActivate(user.id) }}
-            title="Attiva l'accesso (lifetime)"
+            className="text-xs font-medium flex-shrink-0 px-3 py-1.5 rounded-xl transition-colors hover:bg-white/[0.04]"
+            style={{ color: 'var(--ist-accent-text)' }}
+            onClick={e => { e.stopPropagation(); onEdit(user) }}
           >
-            Attiva
+            Modifica
           </button>
-        )}
 
-        {user.role === 'student' && user.tier === 'free' && (
-          <button
-            className="text-xs font-bold flex-shrink-0 px-3 py-1.5 rounded-xl text-white transition-all hover:-translate-y-0.5"
-            style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)' }}
-            onClick={e => { e.stopPropagation(); onPromote(user.id) }}
-            title="Passa l'utente al piano completo"
-          >
-            Promuovi
-          </button>
-        )}
-
-        <button
-          className="text-xs font-medium flex-shrink-0 px-3 py-1.5 rounded-xl transition-colors hover:bg-white/[0.04]"
-          style={{ color: 'var(--ist-accent-text)' }}
-          onClick={e => { e.stopPropagation(); onEdit(user) }}
-        >
-          Modifica
-        </button>
-
-        <ChevronDown
-          size={14}
-          strokeWidth={2}
-          style={{ color: 'var(--ist-text-dim)', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}
-        />
+          <ChevronDown
+            size={14}
+            strokeWidth={2}
+            style={{ color: 'var(--ist-text-dim)', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}
+          />
+        </div>
       </div>
 
       {expanded && (

@@ -1920,6 +1920,26 @@ export default function ChatPage() {
 
   const goBack = () => setMobileView('channels')
 
+  // Edge-swipe (mobile): tocco che parte dal bordo SINISTRO (~28px) e scorre
+  // verso destra → torna alla lista chat. Si arma solo sul bordo per non
+  // interferire con scroll/interazioni interne; soglia dx>70 e prevalenza
+  // orizzontale per evitare falsi positivi.
+  const edgeSwipe = useRef<{ x: number; y: number; armed: boolean } | null>(null)
+  const onAreaTouchStart = (e: React.TouchEvent) => {
+    if (mobileView !== 'chat') { edgeSwipe.current = null; return }
+    const t = e.touches[0]
+    edgeSwipe.current = { x: t.clientX, y: t.clientY, armed: t.clientX <= 28 }
+  }
+  const onAreaTouchEnd = (e: React.TouchEvent) => {
+    const s = edgeSwipe.current
+    edgeSwipe.current = null
+    if (!s || !s.armed) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - s.x
+    const dy = t.clientY - s.y
+    if (dx > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) goBack()
+  }
+
   // App nativa (Keyboard resize:'none' → il webview NON si ridimensiona e
   // VisualViewport non vede la tastiera): l'altezza arriva dagli eventi del plugin.
   // Il contenitore resta a schermo pieno e la barra si "alza" con un padding pari
@@ -1952,6 +1972,8 @@ export default function ChatPage() {
       <div
         className={`flex-1 min-w-0 flex flex-col overflow-hidden ${mobileView === 'chat' ? 'flex' : 'hidden'} lg:flex`}
         style={{ height: '100%' }}
+        onTouchStart={onAreaTouchStart}
+        onTouchEnd={onAreaTouchEnd}
       >
         {activeChannel?.type === 'bacheca' && activeGroupChannel ? (
           <BachecaArea
