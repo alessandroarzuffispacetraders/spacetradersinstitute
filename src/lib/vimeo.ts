@@ -30,6 +30,26 @@ export function parseVimeo(input: string | null | undefined): VimeoRef | null {
   return { id, hash }
 }
 
+// Legge la DURATA del video (in secondi) dall'oEmbed pubblico di Vimeo, così
+// l'admin non deve inserirla a mano. Funziona anche per gli unlisted a patto che
+// l'input contenga l'hash di privacy (lo passiamo nell'URL: /<id>/<hash>).
+// Ritorna null se il video non è raggiungibile (privato/rimosso/hash mancante) o
+// se la rete fallisce → in quel caso resta l'inserimento manuale.
+export async function fetchVimeoDuration(input: string): Promise<number | null> {
+  const ref = parseVimeo(input)
+  if (!ref) return null
+  const videoUrl = ref.hash ? `https://vimeo.com/${ref.id}/${ref.hash}` : `https://vimeo.com/${ref.id}`
+  try {
+    const res = await fetch(`https://vimeo.com/api/oembed.json?url=${encodeURIComponent(videoUrl)}`)
+    if (!res.ok) return null
+    const data = await res.json()
+    const secs = Number((data as { duration?: unknown }).duration)
+    return Number.isFinite(secs) && secs > 0 ? Math.round(secs) : null
+  } catch {
+    return null
+  }
+}
+
 export function vimeoEmbedSrc(input: string, opts?: { autoplay?: boolean }): string | null {
   const ref = parseVimeo(input)
   if (!ref) return null
