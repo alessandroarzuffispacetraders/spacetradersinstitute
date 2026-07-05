@@ -1,5 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
+import { useIsPreview } from './previewMode'
+
+// Sezione del catalogo: 'trading' (videocorsi principali) o 'mental' (Area Mental
+// Coach). Riusa la stessa struttura categorie→corsi→lezioni; è solo un filtro.
+export type ContentSection = 'trading' | 'mental'
 
 // ─── Public types (mirror the old coursesData shape so pages change minimally) ──
 // `phase` is exposed capitalized ('Build', 'Test', …) to match PHASE_STYLE maps
@@ -46,6 +51,7 @@ export interface Category {
   isFree: boolean           // categoria in vetrina: tutto il suo contenuto è
                             // accessibile all'utente gratuito (gating a cascata)
   coverUrl: string | null   // copertina reale caricata dall'admin (null = procedurale)
+  section: string           // 'trading' | 'mental'
   courses: Course[]
 }
 
@@ -110,11 +116,11 @@ interface RawCourse {
 }
 interface RawCategory {
   id: string; title: string; description: string; accent: string
-  phase: string; published: boolean; is_free: boolean; cover_url: string | null; position: number; courses: RawCourse[] | null
+  phase: string; published: boolean; is_free: boolean; cover_url: string | null; position: number; section: string; courses: RawCourse[] | null
 }
 
 const SELECT = `
-  id, title, description, accent, phase, published, is_free, cover_url, position,
+  id, title, description, accent, phase, published, is_free, cover_url, position, section,
   courses (
     id, category_id, title, description, phase, published, position,
     lessons (
@@ -146,6 +152,7 @@ function buildTree(
       published: cat.published,
       isFree: cat.is_free ?? false,
       coverUrl: cat.cover_url ?? null,
+      section: cat.section ?? 'trading',
       courses: (cat.courses ?? [])
         .slice()
         .sort(byPosition)
@@ -191,15 +198,22 @@ function buildTree(
 // Fetches the published catalog (RLS gives an admin the full tree, incl. drafts)
 // and merges per-student lesson_progress into a coursesData-shaped tree.
 
-export function useStudentCatalog(userId: string) {
+// section = 'all' → nessun filtro (usato dal player lezione, che deve trovare la
+// lezione a prescindere dalla sezione, dato che la rotta è condivisa).
+export function useStudentCatalog(userId: string, section: ContentSection | 'all' = 'trading') {
+  const preview = useIsPreview()
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
+    // In anteprima (utente free su una sezione bloccata) non tocchiamo il DB.
+    if (preview) { setCategories([]); setLoading(false); return }
     setLoading(true)
 
+    let catQuery = supabase.from('categories').select(SELECT)
+    if (section !== 'all') catQuery = catQuery.eq('section', section)
     const [{ data: rawCats }, progressRes] = await Promise.all([
-      supabase.from('categories').select(SELECT),
+      catQuery,
       userId
         ? supabase.from('lesson_progress')
             .select('lesson_id, completed, last_position_seconds')
@@ -214,7 +228,7 @@ export function useStudentCatalog(userId: string) {
 
     setCategories(buildTree(rawCats as RawCategory[] | null, progress))
     setLoading(false)
-  }, [userId])
+  }, [userId, section, preview])
 
   useEffect(() => { load() }, [load])
 
@@ -279,17 +293,17 @@ export interface LessonInput   { title: string; description: string; durationMin
 
 type ContentTable = 'categories' | 'courses' | 'lessons'
 
-export function useContentAdmin() {
+export function useContentAdmin(section: ContentSection = 'trading') {
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
 
   // silent=true skips the full-page spinner (used after mutations).
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
-    const { data } = await supabase.from('categories').select(SELECT)
+    const { data } = await supabase.from('categories').select(SELECT).eq('section', section)
     setCategories(buildTree(data as RawCategory[] | null, new Map()))
     if (!silent) setLoading(false)
-  }, [])
+  }, [section])
 
   useEffect(() => { load() }, [load])
 
@@ -298,11 +312,11 @@ export function useContentAdmin() {
     const { error } = await supabase.from('categories').insert({
       title: input.title.trim(), description: input.description.trim(),
       accent: input.accent, phase: phaseToDb(input.phase),
-      position: categories.length, published: false,
+      position: categories.length, published: false, section,
     })
     if (!error) await load(true)
     return !error
-  }, [categories.length, load])
+  }, [categories.length, load, section])
 
   const updateCategory = useCallback(async (id: string, input: CategoryInput): Promise<boolean> => {
     const { error } = await supabase.from('categories').update({

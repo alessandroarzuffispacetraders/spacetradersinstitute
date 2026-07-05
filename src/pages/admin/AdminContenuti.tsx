@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import {
   useContentAdmin, Category, Course, Lesson,
-  CategoryInput, CourseInput, LessonInput,
+  CategoryInput, CourseInput, LessonInput, ContentSection,
 } from '../../lib/content'
 import { parseVimeo, fetchVimeoDuration } from '../../lib/vimeo'
 import { uploadAttachment, deleteAttachment, uploadCategoryCover, deleteCategoryCover } from '../../lib/storage'
@@ -656,7 +656,8 @@ function CoursesTab({ admin, openModal }: { admin: AdminApi; openModal: (s: Moda
 
 export default function AdminContenuti() {
   const { user } = useAuth()
-  const admin = useContentAdmin()
+  const [section, setSection] = useState<ContentSection>('trading')
+  const admin = useContentAdmin(section)
   const liveAdmin = useLiveAdmin({ ownerId: user?.id })
   const [tab, setTab] = useState<Tab>('corsi')
   const [modal, setModal] = useState<ModalState | null>(null)
@@ -724,6 +725,28 @@ export default function AdminContenuti() {
           </button>
         ))}
       </div>
+
+      {/* Sezione catalogo: Trading (videocorsi principali) o Mental Coach.
+          Le nuove categorie create ereditano la sezione selezionata. */}
+      {tab === 'corsi' && (
+        <div className="flex items-center gap-2 mb-5">
+          <span className="text-xs font-medium" style={{ color: 'var(--ist-text-muted)' }}>Sezione:</span>
+          <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-border)' }}>
+            {([['trading', 'Trading'], ['mental', 'Mental Coach']] as [ContentSection, string][]).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setSection(id)}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                style={section === id
+                  ? { background: 'var(--ist-card-bg)', color: 'var(--ist-text)', boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }
+                  : { color: 'var(--ist-text-muted)' }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {tab === 'corsi' && (
         admin.loading
