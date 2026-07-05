@@ -1,9 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Radio, Edit2, Trash2, X, Plus, Loader2, Play, Square, Save, ChevronUp, ChevronDown } from 'lucide-react'
 import {
   useLiveAdmin, LiveEvent, LiveInput, LiveStatus, LiveRole,
   liveDateLabel, liveDurationLabel,
 } from '../../lib/live'
+import { parseVimeo, fetchVimeoDuration } from '../../lib/vimeo'
+
+// Chiave del video (id+hash) per non ri-rilevare la durata sullo stesso replay.
+const vimeoKeyOf = (v: string) => { const r = parseVimeo(v); return r ? `${r.id}:${r.hash ?? ''}` : '' }
 
 const LIVE_STATUS: Record<string, { bg: string; text: string; border: string; label: string }> = {
   live:     { bg: 'rgba(255,80,80,0.10)',  text: '#FF5050', border: 'rgba(255,80,80,0.22)',  label: 'In diretta'  },
@@ -71,6 +75,29 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
 
   const set = (patch: Partial<LiveInput>) => setForm(f => ({ ...f, ...patch }))
   const isReplay = form.status === 'replay'
+
+  // Auto-rilevamento durata dal link Vimeo del replay (come per le lezioni).
+  const [durDetecting, setDurDetecting] = useState(false)
+  const detectedKey = useRef(vimeoKeyOf(form.replayVimeoId ?? ''))
+  useEffect(() => {
+    if (form.status !== 'replay') return
+    const raw = form.replayVimeoId ?? ''
+    const key = vimeoKeyOf(raw)
+    if (!key || key === detectedKey.current) return
+    let cancelled = false
+    const t = setTimeout(async () => {
+      setDurDetecting(true)
+      const secs = await fetchVimeoDuration(raw)
+      if (cancelled) return
+      setDurDetecting(false)
+      if (secs != null) {
+        detectedKey.current = key
+        setForm(f => ({ ...f, durationMinutes: Math.max(1, Math.round(secs / 60)) }))
+      }
+    }, 500)
+    return () => { cancelled = true; clearTimeout(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.replayVimeoId, form.status])
 
   const handleSave = async () => {
     if (!form.title.trim()) { setError('Il titolo è obbligatorio.'); return }
@@ -153,8 +180,11 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
                 <input value={form.replayVimeoId ?? ''} onChange={e => set({ replayVimeoId: e.target.value })} placeholder="vimeo.com/..." className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
               </div>
               <div>
-                {label('Durata (min)')}
-                <input type="number" min="0" value={form.durationMinutes ?? ''} onChange={e => set({ durationMinutes: e.target.value ? parseInt(e.target.value) : null })} placeholder="60" className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
+                <div className="flex items-center gap-1.5">
+                  {label('Durata (min)')}
+                  {durDetecting && <span className="text-[10px] mb-1.5" style={{ color: 'var(--ist-text-dim)' }}>rilevamento…</span>}
+                </div>
+                <input type="number" min="0" value={form.durationMinutes ?? ''} onChange={e => set({ durationMinutes: e.target.value ? parseInt(e.target.value) : null })} placeholder="dal link Vimeo" className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
               </div>
             </div>
           ) : (

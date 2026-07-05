@@ -76,7 +76,12 @@ export default function VimeoPlayer({
     })
     // L'iframe iniettato dall'SDK deve riempire il container 16:9.
     const ifr = container.querySelector('iframe')
-    if (ifr) Object.assign(ifr.style, { position: 'absolute', top: '0', left: '0', width: '100%', height: '100%', border: '0' })
+    if (ifr) {
+      Object.assign(ifr.style, { position: 'absolute', top: '0', left: '0', width: '100%', height: '100%', border: '0' })
+      // Abilita il pulsante schermo intero dei controlli Vimeo.
+      ifr.setAttribute('allowfullscreen', '')
+      ifr.setAttribute('allow', 'autoplay; fullscreen; picture-in-picture; encrypted-media')
+    }
 
     let cancelled = false
     let lastSaved = 0   // ultimo secondo salvato (throttle)

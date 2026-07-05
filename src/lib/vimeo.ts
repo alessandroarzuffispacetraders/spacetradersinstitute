@@ -30,17 +30,15 @@ export function parseVimeo(input: string | null | undefined): VimeoRef | null {
   return { id, hash }
 }
 
-// Legge la DURATA del video (in secondi) dall'oEmbed pubblico di Vimeo, così
-// l'admin non deve inserirla a mano. Funziona anche per gli unlisted a patto che
-// l'input contenga l'hash di privacy (lo passiamo nell'URL: /<id>/<hash>).
-// Ritorna null se il video non è raggiungibile (privato/rimosso/hash mancante) o
-// se la rete fallisce → in quel caso resta l'inserimento manuale.
-export async function fetchVimeoDuration(input: string): Promise<number | null> {
-  const ref = parseVimeo(input)
-  if (!ref) return null
-  const videoUrl = ref.hash ? `https://vimeo.com/${ref.id}/${ref.hash}` : `https://vimeo.com/${ref.id}`
+function videoUrlOf(ref: VimeoRef): string {
+  return ref.hash ? `https://vimeo.com/${ref.id}/${ref.hash}` : `https://vimeo.com/${ref.id}`
+}
+
+// Durata via oEmbed pubblico: veloce, ma FALLISCE per i video con privacy
+// ristretta (unlisted "hide from Vimeo", embed per dominio, ecc.).
+async function durationViaOembed(url: string): Promise<number | null> {
   try {
-    const res = await fetch(`https://vimeo.com/api/oembed.json?url=${encodeURIComponent(videoUrl)}`)
+    const res = await fetch(`https://vimeo.com/api/oembed.json?url=${encodeURIComponent(url)}`)
     if (!res.ok) return null
     const data = await res.json()
     const secs = Number((data as { duration?: unknown }).duration)
@@ -48,6 +46,48 @@ export async function fetchVimeoDuration(input: string): Promise<number | null> 
   } catch {
     return null
   }
+}
+
+// Durata via SDK @vimeo/player: carica un player NASCOSTO e legge getDuration().
+// Funziona per QUALSIASI video embeddabile (cioè esattamente quelli che l'app
+// riproduce), anche quando l'oEmbed è bloccato dalla privacy. Import dinamico
+// così l'SDK si carica solo quando serve il rilevamento.
+async function durationViaSDK(url: string): Promise<number | null> {
+  try {
+    const { default: Player } = await import('@vimeo/player')
+    return await new Promise<number | null>(resolve => {
+      const holder = document.createElement('div')
+      holder.style.cssText = 'position:fixed;left:-9999px;top:0;width:320px;height:180px;opacity:0;pointer-events:none'
+      document.body.appendChild(holder)
+      const player = new Player(holder, { url: url as `https://vimeo.com/${string}` })
+      let done = false
+      const finish = (v: number | null) => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        player.destroy().catch(() => {})
+        holder.remove()
+        resolve(v)
+      }
+      const timer = setTimeout(() => finish(null), 9000)
+      player.getDuration()
+        .then(d => finish(Number.isFinite(d) && d > 0 ? Math.round(d) : null))
+        .catch(() => finish(null))
+    })
+  } catch {
+    return null
+  }
+}
+
+// Legge la DURATA del video (in secondi) così l'admin non deve inserirla a mano.
+// Prima prova l'oEmbed (veloce); se fallisce (video a privacy ristretta) ripiega
+// sull'SDK, che funziona per ogni video embeddabile. Ritorna null solo se davvero
+// non recuperabile → in quel caso resta l'inserimento manuale.
+export async function fetchVimeoDuration(input: string): Promise<number | null> {
+  const ref = parseVimeo(input)
+  if (!ref) return null
+  const url = videoUrlOf(ref)
+  return (await durationViaOembed(url)) ?? (await durationViaSDK(url))
 }
 
 export function vimeoEmbedSrc(input: string, opts?: { autoplay?: boolean }): string | null {
