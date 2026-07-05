@@ -99,7 +99,9 @@ export default function StudentDashboard() {
 
   const { phase, phases } = usePath(userId)
   const { stats } = useStudentBadges(userId)
-  const { events } = useLiveEvents()
+  const { events: allEvents } = useLiveEvents()
+  // Le live del mental coach vivono SOLO nell'Area Mental Coach.
+  const events = allEvents.filter(e => e.hostRole !== 'mental_coach')
   const { sessions: mySessions } = useStudentSessions(userId)
 
   // Messaggi privati non letti

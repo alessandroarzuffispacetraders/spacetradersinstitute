@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Radio, Edit2, Trash2, X, Plus, Loader2, Play, Square, Save } from 'lucide-react'
+import { Radio, Edit2, Trash2, X, Plus, Loader2, Play, Square, Save, ChevronUp, ChevronDown } from 'lucide-react'
 import {
   useLiveAdmin, LiveEvent, LiveInput, LiveStatus, LiveRole,
   liveDateLabel, liveDurationLabel,
@@ -32,17 +32,18 @@ function localToIso(local: string): string | null {
   return local ? new Date(local).toISOString() : null
 }
 
-function ActionBtn({ icon, label, danger, accent, onClick }: {
-  icon: React.ReactNode; label: string; danger?: boolean; accent?: boolean; onClick?: () => void
+function ActionBtn({ icon, label, danger, accent, onClick, disabled }: {
+  icon: React.ReactNode; label: string; danger?: boolean; accent?: boolean; onClick?: () => void; disabled?: boolean
 }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors hover:bg-white/[0.05]"
+      disabled={disabled}
+      className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none"
       style={{ color: danger ? '#FF6B7A' : accent ? 'var(--ist-accent-text)' : 'var(--ist-text-dim)' }}
     >
       {icon}
-      <span className="hidden sm:inline">{label}</span>
+      {label && <span className="hidden sm:inline">{label}</span>}
     </button>
   )
 }
@@ -230,8 +231,10 @@ export default function LiveManager({ api, defaultHost }: {
         <p className="text-[11px] text-center py-6" style={{ color: 'var(--ist-text-dim)' }}>Nessuna live. Creane una con il pulsante qui sopra.</p>
       )}
 
-      {api.events.map(event => {
+      {api.events.map((event, i) => {
         const s = LIVE_STATUS[event.status]
+        const isFirst = i === 0
+        const isLast = i === api.events.length - 1
         return (
           <div key={event.id} className="p-4 lg:p-5 rounded-3xl" style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: 'var(--ist-card-shadow)' }}>
             <div className="flex items-center gap-4">
@@ -257,6 +260,8 @@ export default function LiveManager({ api, defaultHost }: {
                   </>
                 ) : (
                   <>
+                    <ActionBtn icon={<ChevronUp size={13} strokeWidth={2.4} />} label="" onClick={() => api.moveLive(event.id, 'up')} disabled={isFirst} />
+                    <ActionBtn icon={<ChevronDown size={13} strokeWidth={2.4} />} label="" onClick={() => api.moveLive(event.id, 'down')} disabled={isLast} />
                     {event.status === 'upcoming' && (
                       <ActionBtn icon={<Play size={11} strokeWidth={2} />} label="Vai in onda" accent onClick={() => api.setLiveStatus(event.id, 'live')} />
                     )}

@@ -13,7 +13,9 @@ const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> 
 
 export default function StudentCalendario() {
   const navigate = useNavigate()
-  const { events, loading } = useLiveEvents()
+  const { events: allEvents, loading } = useLiveEvents()
+  // Le live del mental coach vivono SOLO nell'Area Mental Coach, non nel calendario.
+  const events = allEvents.filter(e => e.hostRole !== 'mental_coach')
 
   const startOfToday = new Date()
   startOfToday.setHours(0, 0, 0, 0)
