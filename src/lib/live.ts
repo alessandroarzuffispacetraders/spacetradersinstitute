@@ -21,6 +21,7 @@ export interface LiveEvent {
   durationMinutes: number | null
   accent: string
   accentEnd: string
+  position: number
   ownerId: string | null
 }
 
@@ -60,6 +61,7 @@ function toLive(r: RawLive): LiveEvent {
     durationMinutes: r.duration_minutes,
     accent: r.accent,
     accentEnd: r.accent_end,
+    position: r.position,
     ownerId: r.owner_id,
   }
 }
@@ -97,7 +99,7 @@ function previewIso(offsetDays: number, h: number, m: number): string {
 }
 function previewEvents(): LiveEvent[] {
   const mk = (id: string, title: string, host: string, hostRole: LiveRole, status: LiveStatus, startsAt: string | null, accent: string, accentEnd: string, durationMinutes: number | null, description = ''): LiveEvent =>
-    ({ id, title, description, host, hostRole, status, startsAt, zoomUrl: null, liveEmbedUrl: null, replayVimeoId: null, durationMinutes, accent, accentEnd, ownerId: null })
+    ({ id, title, description, host, hostRole, status, startsAt, zoomUrl: null, liveEmbedUrl: null, replayVimeoId: null, durationMinutes, accent, accentEnd, position: 0, ownerId: null })
   return [
     mk('pv-live', 'Sessione operativa in diretta', 'Coach Marco', 'coach', 'live', null, '#7CBBD0', '#286680', null, 'Analizziamo il mercato in tempo reale e rispondiamo alle domande in chat.'),
     mk('pv-up1', 'Live analisi di mercato', 'Coach Marco', 'coach', 'upcoming', previewIso(2, 18, 0), '#7CBBD0', '#286680', 60),
@@ -119,7 +121,7 @@ export function useLiveEvents() {
   const load = useCallback(async () => {
     if (preview) return
     setLoading(true)
-    const { data } = await supabase.from('live_events').select(COLS).order('position')
+    const { data } = await supabase.from('live_events').select(COLS).order('position', { ascending: false })
     setEvents(((data as RawLive[] | null) ?? []).map(toLive))
     setLoading(false)
   }, [preview])
@@ -193,7 +195,7 @@ export function useLiveAdmin(opts?: { ownerId?: string; onlyOwn?: boolean }) {
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
-    let query = supabase.from('live_events').select(COLS).order('position')
+    let query = supabase.from('live_events').select(COLS).order('position', { ascending: false })
     if (onlyOwn && ownerId) query = query.eq('owner_id', ownerId)
     const { data } = await query
     setEvents(((data as RawLive[] | null) ?? []).map(toLive))
@@ -203,12 +205,16 @@ export function useLiveAdmin(opts?: { ownerId?: string; onlyOwn?: boolean }) {
   useEffect(() => { load() }, [load])
 
   const createLive = useCallback(async (input: LiveInput): Promise<boolean> => {
+    // Nuova live IN CIMA: l'ordine di visualizzazione è per position DESC, quindi
+    // le diamo (max position esistente) + 1. Il +1 sul massimo (non events.length)
+    // evita collisioni quando ci sono buchi lasciati da cancellazioni.
+    const nextPos = events.reduce((m, e) => Math.max(m, e.position), -1) + 1
     const { error } = await supabase.from('live_events').insert({
-      ...toRow(input), position: events.length, owner_id: ownerId ?? null,
+      ...toRow(input), position: nextPos, owner_id: ownerId ?? null,
     })
     if (!error) await load(true)
     return !error
-  }, [events.length, load, ownerId])
+  }, [events, load, ownerId])
 
   const updateLive = useCallback(async (id: string, input: LiveInput): Promise<boolean> => {
     const { error } = await supabase.from('live_events').update(toRow(input)).eq('id', id)
@@ -236,5 +242,23 @@ export function useLiveAdmin(opts?: { ownerId?: string; onlyOwn?: boolean }) {
     return !error
   }, [load])
 
-  return { events, loading, reload: () => load(true), createLive, updateLive, deleteLive, setLiveStatus, setReplay }
+  // Riordino su/giù: `events` è già in ordine di visualizzazione (position DESC).
+  // "Su" = verso la cima; scambiamo la position con la live adiacente. Lo scambio
+  // di due valori è sicuro anche nelle viste filtrate (es. mental coach = solo le
+  // proprie): tocca solo quelle due righe, l'ordine di tutte le altre resta.
+  const moveLive = useCallback(async (id: string, dir: 'up' | 'down'): Promise<boolean> => {
+    const idx = events.findIndex(e => e.id === id)
+    const j = dir === 'up' ? idx - 1 : idx + 1
+    if (idx < 0 || j < 0 || j >= events.length) return false
+    const a = events[idx], b = events[j]
+    const [r1, r2] = await Promise.all([
+      supabase.from('live_events').update({ position: b.position }).eq('id', a.id),
+      supabase.from('live_events').update({ position: a.position }).eq('id', b.id),
+    ])
+    if (r1.error || r2.error) return false
+    await load(true)
+    return true
+  }, [events, load])
+
+  return { events, loading, reload: () => load(true), createLive, updateLive, deleteLive, setLiveStatus, setReplay, moveLive }
 }

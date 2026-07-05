@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { User } from '../types'
 import { recordAccess } from '../lib/accessLog'
@@ -22,11 +23,16 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null)
 
 async function fetchProfile(userId: string): Promise<User | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single()
+  // Timeout di sicurezza: se la query si impianta (rete instabile) non lasciamo
+  // mai il caricamento appeso — meglio null (→ verrà ritentato) che spinner eterno.
+  const result = await Promise.race([
+    supabase.from('profiles').select('*').eq('id', userId).single(),
+    new Promise<{ data: null; error: unknown }>(resolve =>
+      setTimeout(() => resolve({ data: null, error: 'timeout' }), 6000),
+    ),
+  ])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = result as { data: any; error: unknown }
 
   if (error || !data) return null
 
@@ -63,22 +69,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const safety = setTimeout(() => { if (mounted) setLoading(false) }, 7000)
     const finish = () => { if (mounted) { clearTimeout(safety); setLoading(false) } }
 
-    supabase.auth.getSession()
-      .then(async ({ data: { session } }) => {
-        // Authorize the realtime socket with the user's JWT so RLS-protected
-        // postgres_changes (chat messages/reactions) are delivered live.
-        supabase.realtime.setAuth(session?.access_token ?? null)
-        if (session?.user) {
-          const profile = await fetchProfile(session.user.id)
-          if (mounted) setUser(profile)
-        }
-      })
-      // getSession può fallire/rifiutare su mobile: procedi come non loggato,
-      // ma NON lasciare mai il loading appeso.
-      .catch(() => { /* sessione non recuperabile */ })
-      .finally(finish)
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    // Applica sessione + profilo. Il fetch del profilo (query DB) va tenuto FUORI
+    // dal callback di onAuthStateChange: il client GoTrue tiene un lock durante il
+    // callback e chiamare supabase.from() lì dentro provoca un DEADLOCK (query mai
+    // risolta → lock mai rilasciato → tutta l'auth si blocca → "caricamento
+    // infinito", pure il login successivo si impianta). Perciò lì deferiamo.
+    const applySession = async (session: Session | null) => {
+      // Authorize the realtime socket with the user's JWT so RLS-protected
+      // postgres_changes (chat messages/reactions) are delivered live.
       supabase.realtime.setAuth(session?.access_token ?? null)
       if (session?.user) {
         const profile = await fetchProfile(session.user.id)
@@ -86,9 +84,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else if (mounted) {
         setUser(null)
       }
-      // Anche l'evento auth (incl. INITIAL_SESSION) sblocca il loading: copre
-      // il caso in cui getSession resti appeso ma l'evento arrivi.
       finish()
+    }
+
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => applySession(session))
+      // getSession può fallire/rifiutare su mobile: procedi come non loggato,
+      // ma NON lasciare mai il loading appeso.
+      .catch(() => finish())
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      // setTimeout(0): esce dal callback (rilascia il lock del client) PRIMA di
+      // toccare il DB → evita il deadlock del caricamento infinito.
+      setTimeout(() => { if (mounted) applySession(session) }, 0)
     })
 
     return () => { mounted = false; clearTimeout(safety); subscription.unsubscribe() }

@@ -1,9 +1,13 @@
-import { useState } from 'react'
-import { Radio, Edit2, Trash2, X, Plus, Loader2, Play, Square, Save } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Radio, Edit2, Trash2, X, Plus, Loader2, Play, Square, Save, ChevronUp, ChevronDown } from 'lucide-react'
 import {
   useLiveAdmin, LiveEvent, LiveInput, LiveStatus, LiveRole,
   liveDateLabel, liveDurationLabel,
 } from '../../lib/live'
+import { parseVimeo, fetchVimeoDuration } from '../../lib/vimeo'
+
+// Chiave del video (id+hash) per non ri-rilevare la durata sullo stesso replay.
+const vimeoKeyOf = (v: string) => { const r = parseVimeo(v); return r ? `${r.id}:${r.hash ?? ''}` : '' }
 
 const LIVE_STATUS: Record<string, { bg: string; text: string; border: string; label: string }> = {
   live:     { bg: 'rgba(255,80,80,0.10)',  text: '#FF5050', border: 'rgba(255,80,80,0.22)',  label: 'In diretta'  },
@@ -32,17 +36,18 @@ function localToIso(local: string): string | null {
   return local ? new Date(local).toISOString() : null
 }
 
-function ActionBtn({ icon, label, danger, accent, onClick }: {
-  icon: React.ReactNode; label: string; danger?: boolean; accent?: boolean; onClick?: () => void
+function ActionBtn({ icon, label, danger, accent, onClick, disabled }: {
+  icon: React.ReactNode; label: string; danger?: boolean; accent?: boolean; onClick?: () => void; disabled?: boolean
 }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors hover:bg-white/[0.05]"
+      disabled={disabled}
+      className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none"
       style={{ color: danger ? '#FF6B7A' : accent ? 'var(--ist-accent-text)' : 'var(--ist-text-dim)' }}
     >
       {icon}
-      <span className="hidden sm:inline">{label}</span>
+      {label && <span className="hidden sm:inline">{label}</span>}
     </button>
   )
 }
@@ -70,6 +75,29 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
 
   const set = (patch: Partial<LiveInput>) => setForm(f => ({ ...f, ...patch }))
   const isReplay = form.status === 'replay'
+
+  // Auto-rilevamento durata dal link Vimeo del replay (come per le lezioni).
+  const [durDetecting, setDurDetecting] = useState(false)
+  const detectedKey = useRef(vimeoKeyOf(form.replayVimeoId ?? ''))
+  useEffect(() => {
+    if (form.status !== 'replay') return
+    const raw = form.replayVimeoId ?? ''
+    const key = vimeoKeyOf(raw)
+    if (!key || key === detectedKey.current) return
+    let cancelled = false
+    const t = setTimeout(async () => {
+      setDurDetecting(true)
+      const secs = await fetchVimeoDuration(raw)
+      if (cancelled) return
+      setDurDetecting(false)
+      if (secs != null) {
+        detectedKey.current = key
+        setForm(f => ({ ...f, durationMinutes: Math.max(1, Math.round(secs / 60)) }))
+      }
+    }, 500)
+    return () => { cancelled = true; clearTimeout(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.replayVimeoId, form.status])
 
   const handleSave = async () => {
     if (!form.title.trim()) { setError('Il titolo è obbligatorio.'); return }
@@ -152,8 +180,11 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
                 <input value={form.replayVimeoId ?? ''} onChange={e => set({ replayVimeoId: e.target.value })} placeholder="vimeo.com/..." className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
               </div>
               <div>
-                {label('Durata (min)')}
-                <input type="number" min="0" value={form.durationMinutes ?? ''} onChange={e => set({ durationMinutes: e.target.value ? parseInt(e.target.value) : null })} placeholder="60" className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
+                <div className="flex items-center gap-1.5">
+                  {label('Durata (min)')}
+                  {durDetecting && <span className="text-[10px] mb-1.5" style={{ color: 'var(--ist-text-dim)' }}>rilevamento…</span>}
+                </div>
+                <input type="number" min="0" value={form.durationMinutes ?? ''} onChange={e => set({ durationMinutes: e.target.value ? parseInt(e.target.value) : null })} placeholder="dal link Vimeo" className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
               </div>
             </div>
           ) : (
@@ -230,8 +261,10 @@ export default function LiveManager({ api, defaultHost }: {
         <p className="text-[11px] text-center py-6" style={{ color: 'var(--ist-text-dim)' }}>Nessuna live. Creane una con il pulsante qui sopra.</p>
       )}
 
-      {api.events.map(event => {
+      {api.events.map((event, i) => {
         const s = LIVE_STATUS[event.status]
+        const isFirst = i === 0
+        const isLast = i === api.events.length - 1
         return (
           <div key={event.id} className="p-4 lg:p-5 rounded-3xl" style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: 'var(--ist-card-shadow)' }}>
             <div className="flex items-center gap-4">
@@ -257,6 +290,8 @@ export default function LiveManager({ api, defaultHost }: {
                   </>
                 ) : (
                   <>
+                    <ActionBtn icon={<ChevronUp size={13} strokeWidth={2.4} />} label="" onClick={() => api.moveLive(event.id, 'up')} disabled={isFirst} />
+                    <ActionBtn icon={<ChevronDown size={13} strokeWidth={2.4} />} label="" onClick={() => api.moveLive(event.id, 'down')} disabled={isLast} />
                     {event.status === 'upcoming' && (
                       <ActionBtn icon={<Play size={11} strokeWidth={2} />} label="Vai in onda" accent onClick={() => api.setLiveStatus(event.id, 'live')} />
                     )}

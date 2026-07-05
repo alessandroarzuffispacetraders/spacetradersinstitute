@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import PageHeader from '../../components/ui/PageHeader'
 import {
   ChevronDown, Plus, Edit2, Trash2,
@@ -7,9 +7,9 @@ import {
 } from 'lucide-react'
 import {
   useContentAdmin, Category, Course, Lesson,
-  CategoryInput, CourseInput, LessonInput,
+  CategoryInput, CourseInput, LessonInput, ContentSection,
 } from '../../lib/content'
-import { parseVimeo } from '../../lib/vimeo'
+import { parseVimeo, fetchVimeoDuration } from '../../lib/vimeo'
 import { uploadAttachment, deleteAttachment, uploadCategoryCover, deleteCategoryCover } from '../../lib/storage'
 import { useLiveAdmin } from '../../lib/live'
 import LiveManager from '../../components/live/LiveManager'
@@ -216,6 +216,34 @@ function EditorModal({ state, admin, onClose }: {
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  // Auto-rilevamento durata dal video Vimeo (niente più inserimento a mano).
+  const [durationDetecting, setDurationDetecting] = useState(false)
+  const [durationAuto, setDurationAuto] = useState(false)
+  const vimeoKeyOf = (v: string) => { const r = parseVimeo(v); return r ? `${r.id}:${r.hash ?? ''}` : '' }
+  // Chiave del video già "risolto": inizializzata a quello salvato, così aprire una
+  // lezione esistente NON sovrascrive la durata già impostata; cambiando video sì.
+  const detectedVideoKey = useRef<string>(vimeoKeyOf(vimeoUrl))
+
+  useEffect(() => {
+    if (!isLesson) return
+    const key = vimeoKeyOf(vimeoUrl)
+    if (!key || key === detectedVideoKey.current) return // link vuoto/non valido o già risolto
+    let cancelled = false
+    const t = setTimeout(async () => {
+      setDurationDetecting(true)
+      const secs = await fetchVimeoDuration(vimeoUrl)
+      if (cancelled) return
+      setDurationDetecting(false)
+      if (secs != null) {
+        detectedVideoKey.current = key
+        setMinutes(String(Math.max(1, Math.round(secs / 60))))
+        setDurationAuto(true)
+      }
+    }, 500)
+    return () => { cancelled = true; clearTimeout(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vimeoUrl, isLesson])
+
   // Live lesson from the tree, so the attachments list reflects uploads/deletes.
   const liveLesson = isLesson && state.mode === 'edit'
     ? findAdminLesson(admin.categories, state.id)
@@ -301,10 +329,24 @@ function EditorModal({ state, admin, onClose }: {
 
           {isLesson && (
             <div>
-              <label className="text-xs block mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>Durata (minuti)</label>
+              <label className="text-xs mb-1.5 flex items-center gap-1.5" style={{ color: 'var(--ist-text-muted)' }}>
+                Durata (minuti)
+                {durationDetecting && (
+                  <span className="inline-flex items-center gap-1 text-[10px]" style={{ color: 'var(--ist-text-dim)' }}>
+                    <Loader2 size={11} className="animate-spin" /> rilevamento…
+                  </span>
+                )}
+                {!durationDetecting && durationAuto && (
+                  <span className="inline-flex items-center gap-1 text-[10px]" style={{ color: '#46D39A' }}>
+                    <Clock size={11} strokeWidth={2.4} /> rilevata da Vimeo
+                  </span>
+                )}
+              </label>
               <input
-                value={minutes} onChange={e => setMinutes(e.target.value)} type="number" min="0"
-                placeholder="es. 18" className="px-3 py-2.5 text-sm" style={inputStyle}
+                value={minutes}
+                onChange={e => { setMinutes(e.target.value); setDurationAuto(false) }}
+                type="number" min="0"
+                placeholder="es. 18 — o incolla il link Vimeo qui sotto" className="px-3 py-2.5 text-sm" style={inputStyle}
               />
             </div>
           )}
@@ -319,7 +361,7 @@ function EditorModal({ state, admin, onClose }: {
               />
               {vimeoInvalid
                 ? <p className="text-[11px] mt-1" style={{ color: '#FF6B7A' }}>Link Vimeo non riconosciuto.</p>
-                : <p className="text-[11px] mt-1" style={{ color: 'var(--ist-text-dim)' }}>Incolla l'URL del video Vimeo (o solo l'ID). Vuoto = nessun video.</p>}
+                : <p className="text-[11px] mt-1" style={{ color: 'var(--ist-text-dim)' }}>Incolla l'URL del video Vimeo (o solo l'ID) — la durata si compila da sola. Vuoto = nessun video.</p>}
             </div>
           )}
 
@@ -614,7 +656,8 @@ function CoursesTab({ admin, openModal }: { admin: AdminApi; openModal: (s: Moda
 
 export default function AdminContenuti() {
   const { user } = useAuth()
-  const admin = useContentAdmin()
+  const [section, setSection] = useState<ContentSection>('trading')
+  const admin = useContentAdmin(section)
   const liveAdmin = useLiveAdmin({ ownerId: user?.id })
   const [tab, setTab] = useState<Tab>('corsi')
   const [modal, setModal] = useState<ModalState | null>(null)
@@ -682,6 +725,28 @@ export default function AdminContenuti() {
           </button>
         ))}
       </div>
+
+      {/* Sezione catalogo: Trading (videocorsi principali) o Mental Coach.
+          Le nuove categorie create ereditano la sezione selezionata. */}
+      {tab === 'corsi' && (
+        <div className="flex items-center gap-2 mb-5">
+          <span className="text-xs font-medium" style={{ color: 'var(--ist-text-muted)' }}>Sezione:</span>
+          <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-border)' }}>
+            {([['trading', 'Trading'], ['mental', 'Mental Coach']] as [ContentSection, string][]).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setSection(id)}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                style={section === id
+                  ? { background: 'var(--ist-card-bg)', color: 'var(--ist-text)', boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }
+                  : { color: 'var(--ist-text-muted)' }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {tab === 'corsi' && (
         admin.loading

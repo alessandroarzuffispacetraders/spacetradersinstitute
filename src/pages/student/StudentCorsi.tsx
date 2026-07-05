@@ -28,7 +28,7 @@ export default function StudentCorsi() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { contactAdmin, ready: contactReady } = useContactAdmin()
-  const { categories, loading } = useStudentCatalog(user?.id ?? '')
+  const { categories, loading } = useStudentCatalog(user?.id ?? '', 'trading')
 
   const allLessons   = categories.flatMap(c => c.courses.flatMap(cr => cr.lessons))
   const totalDone    = allLessons.filter(l => l.done).length

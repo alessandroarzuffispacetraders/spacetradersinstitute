@@ -1,10 +1,12 @@
 import { useNavigate } from 'react-router-dom'
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
-import { CheckSquare, Square, ExternalLink, MessageCircle, Loader2 } from 'lucide-react'
+import { CheckSquare, Square, ExternalLink, MessageCircle, Loader2, Play, CheckCircle2, Radio, ChevronRight } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useStudentSessions } from '../../lib/coaching'
 import { useMentalMaterials, useMentalChecklist, MentalMaterialType } from '../../lib/mental'
+import { useStudentCatalog, getCourseStats } from '../../lib/content'
+import { useLiveEvents, liveDateLabel, liveDurationLabel } from '../../lib/live'
 
 const SESSION_SUBLABELS: Record<number, string> = {
   1: 'Valutazione iniziale',
@@ -29,6 +31,10 @@ export default function StudentMentalCoach() {
   const { sessions } = useStudentSessions(userId)
   const { materials, loading: matLoading } = useMentalMaterials()
   const { items, doneIds, loading: chkLoading, toggle } = useMentalChecklist(userId)
+  // Videocorsi mental (in cima) e live del mental coach (in fondo).
+  const { categories: mentalCats, loading: coursesLoading } = useStudentCatalog(userId, 'mental')
+  const { events: allLives } = useLiveEvents()
+  const mentalLives = allLives.filter(e => e.hostRole === 'mental_coach')
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -47,6 +53,60 @@ export default function StudentMentalCoach() {
           Scrivi
         </button>
       </div>
+
+      {/* ── Videocorsi del mental coach (in cima) ── */}
+      {!coursesLoading && mentalCats.some(c => c.published) && (
+        <div className="mb-6">
+          <h2 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+            <Play size={15} strokeWidth={2.2} style={{ color: '#7CBBD0' }} /> Videocorsi
+          </h2>
+          <div className="space-y-4">
+            {mentalCats.filter(c => c.published).map(cat => (
+              <Card key={cat.id} className="p-5">
+                <p className="font-semibold text-white">{cat.title}</p>
+                {cat.description && (
+                  <p className="text-xs mt-0.5 mb-3" style={{ color: 'var(--ist-text-dim)' }}>{cat.description}</p>
+                )}
+                <div className="space-y-4">
+                  {cat.courses.filter(cr => cr.published).map(course => {
+                    const cs = getCourseStats(course)
+                    return (
+                      <div key={course.id}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <p className="text-sm font-medium" style={{ color: 'var(--ist-text)' }}>{course.title}</p>
+                          {cs.total > 0 && (
+                            <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--ist-text-dim)' }}>{cs.done}/{cs.total}</span>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          {course.lessons.map(lesson => (
+                            <button
+                              key={lesson.id}
+                              onClick={() => navigate(`/student/corsi/lezione/${lesson.id}`)}
+                              className="w-full flex items-center gap-3 py-2 px-2 text-left rounded-xl transition-colors hover:bg-white/[0.03]"
+                            >
+                              <span style={{ color: lesson.done ? '#46D39A' : 'var(--ist-text-muted)', flexShrink: 0 }}>
+                                {lesson.done ? <CheckCircle2 size={17} strokeWidth={2} /> : <Play size={17} strokeWidth={2} />}
+                              </span>
+                              <span className="flex-1 min-w-0 text-sm truncate" style={{ color: 'var(--ist-text)' }}>{lesson.title}</span>
+                              {lesson.duration && (
+                                <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--ist-text-dim)' }}>{lesson.duration}</span>
+                              )}
+                            </button>
+                          ))}
+                          {course.lessons.length === 0 && (
+                            <p className="text-xs px-2 py-1" style={{ color: 'var(--ist-text-dim)' }}>Nessuna lezione.</p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         {[1, 2].map((num) => {
@@ -156,6 +216,40 @@ export default function StudentMentalCoach() {
           </div>
         )}
       </Card>
+
+      {/* ── Live del mental coach (in fondo) ── */}
+      {mentalLives.length > 0 && (
+        <Card className="p-5 mt-6">
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <Radio size={15} strokeWidth={2.2} style={{ color: '#7CBBD0' }} /> Live e replay
+          </h3>
+          <div className="space-y-2">
+            {mentalLives.map(ev => {
+              const isLive = ev.status === 'live'
+              return (
+                <button
+                  key={ev.id}
+                  onClick={() => navigate(`/student/live/${ev.id}`)}
+                  className="w-full flex items-center gap-3 py-2.5 px-2 text-left rounded-xl transition-colors hover:bg-white/[0.03]"
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full flex-shrink-0 ${isLive ? 'animate-pulse' : ''}`}
+                    style={{ background: isLive ? '#FF5A6E' : ev.status === 'upcoming' ? '#7CBBD0' : 'var(--ist-text-dim)' }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate" style={{ color: 'var(--ist-text)' }}>{ev.title}</p>
+                    <p className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>
+                      {isLive ? 'Ora in diretta' : liveDateLabel(ev)}
+                      {liveDurationLabel(ev) && <> · {liveDurationLabel(ev)}</>}
+                    </p>
+                  </div>
+                  <ChevronRight size={16} strokeWidth={2} style={{ color: 'var(--ist-text-dim)', flexShrink: 0 }} />
+                </button>
+              )
+            })}
+          </div>
+        </Card>
+      )}
     </div>
   )
 }

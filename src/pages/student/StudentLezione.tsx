@@ -158,7 +158,8 @@ export default function StudentLezione() {
   const navigate     = useNavigate()
   const { setHideBottomNav } = useUI()
   const { user } = useAuth()
-  const { findLesson, markDone, saveLastPosition, loading } = useStudentCatalog(user?.id ?? '')
+  // 'all': il player deve trovare la lezione sia nei corsi trading che mental.
+  const { findLesson, markDone, saveLastPosition, loading } = useStudentCatalog(user?.id ?? '', 'all')
   const [mobileTab, setMobileTab] = useState<MobileTab>('playlist')
   const [marking, setMarking] = useState(false)
 
