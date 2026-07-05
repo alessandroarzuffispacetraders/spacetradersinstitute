@@ -2,27 +2,31 @@ import { useState } from 'react'
 import { Hash, Megaphone, Edit2, Trash2, X, Plus, Loader2 } from 'lucide-react'
 import Card from '../../components/ui/Card'
 import PageHeader from '../../components/ui/PageHeader'
-import { Channel, ChannelType, MemberRole } from '../../data/chatData'
+import { Channel, ChannelType, ChannelAudience } from '../../data/chatData'
 import { useChannelsAdmin, ChannelInput } from '../../lib/channels'
 import BroadcastModal from '../../components/admin/BroadcastModal'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-const ALL_ROLES: MemberRole[] = ['student', 'coach', 'mental_coach', 'admin']
+// 'free' = studenti gratuiti come pubblico a sé, così si possono fare canali
+// riservati SOLO ai free. 'student' = studenti paganti.
+const ALL_AUDIENCES: ChannelAudience[] = ['student', 'free', 'coach', 'mental_coach', 'admin']
 const ALL_CATEGORIES = ['Annunci', 'Community', 'Coaching', 'Mental Coach']
 
-const ROLE_LABEL: Record<MemberRole, string> = {
+const ROLE_LABEL: Record<ChannelAudience, string> = {
   admin: 'Admin',
   coach: 'Coach',
   mental_coach: 'Mental Coach',
-  student: 'Studente',
+  student: 'Studenti (paganti)',
+  free: 'Studenti free',
 }
 
-const ROLE_COLOR: Record<MemberRole, { bg: string; text: string }> = {
+const ROLE_COLOR: Record<ChannelAudience, { bg: string; text: string }> = {
   admin: { bg: 'rgba(124,187,208,0.15)', text: '#7CBBD0' },
   coach: { bg: 'rgba(40,102,128,0.22)', text: '#7CBBD0' },
   mental_coach: { bg: 'rgba(139,92,246,0.15)', text: '#a78bfa' },
   student: { bg: 'rgba(255,255,255,0.08)', text: 'var(--ist-text-muted)' },
+  free: { bg: 'rgba(70,211,154,0.16)', text: '#46D39A' },
 }
 
 const CATEGORY_ICON: Record<string, string> = {
@@ -40,9 +44,8 @@ const EMPTY_FORM = {
   type: 'chat' as ChannelType,
   category: 'Community',
   categoryIcon: '💬',
-  roles: ['student', 'coach', 'mental_coach', 'admin'] as MemberRole[],
-  canPost: ['student', 'coach', 'mental_coach', 'admin'] as MemberRole[],
-  free: false,
+  roles: ['student', 'coach', 'mental_coach', 'admin'] as ChannelAudience[],
+  canPost: ['student', 'coach', 'mental_coach', 'admin'] as ChannelAudience[],
 }
 
 type ChannelForm = typeof EMPTY_FORM
@@ -70,12 +73,12 @@ function ChannelModal({
   const [newCat, setNewCat] = useState(false)
   const iconFor = (cat: string) => CATEGORY_ICON[cat] ?? categoryIcons[cat] ?? '📁'
 
-  const toggleRole = (field: 'roles' | 'canPost', role: MemberRole) => {
+  const toggleRole = (field: 'roles' | 'canPost', aud: ChannelAudience) => {
     setForm(prev => ({
       ...prev,
-      [field]: prev[field].includes(role)
-        ? prev[field].filter(r => r !== role)
-        : [...prev[field], role],
+      [field]: prev[field].includes(aud)
+        ? prev[field].filter(r => r !== aud)
+        : [...prev[field], aud],
     }))
   }
 
@@ -273,7 +276,7 @@ function ChannelModal({
               Chi può vedere
             </label>
             <div className="space-y-1.5">
-              {ALL_ROLES.map(role => (
+              {ALL_AUDIENCES.map(role => (
                 <label
                   key={role}
                   className="flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-colors"
@@ -302,7 +305,7 @@ function ChannelModal({
               Chi può scrivere / postare
             </label>
             <div className="space-y-1.5">
-              {ALL_ROLES.map(role => (
+              {ALL_AUDIENCES.map(role => (
                 <label
                   key={role}
                   className="flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-colors"
@@ -325,26 +328,10 @@ function ChannelModal({
             </div>
           </div>
 
-          {/* Accessibile agli utenti gratuiti */}
-          <div>
-            <label className="block text-xs font-semibold mb-2" style={{ color: 'var(--ist-text-muted)' }}>
-              Versione gratuita
-            </label>
-            <label
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors"
-              style={{ background: form.free ? 'rgba(124,187,208,0.08)' : 'var(--ist-w5)' }}
-            >
-              <input
-                type="checkbox"
-                checked={form.free}
-                onChange={() => setForm(p => ({ ...p, free: !p.free }))}
-                className="accent-ist-400 w-4 h-4 rounded"
-              />
-              <span className="text-xs" style={{ color: 'var(--ist-text)' }}>
-                Accessibile agli <strong>utenti gratuiti</strong> (canale "assaggio")
-              </span>
-            </label>
-          </div>
+          <p className="text-[11px] leading-snug" style={{ color: 'var(--ist-text-dim)' }}>
+            Spunta <strong>solo "Studenti free"</strong> per un canale riservato ai gratuiti;
+            solo "Studenti (paganti)" per uno riservato ai paganti; entrambi per tutti gli studenti.
+          </p>
 
           {error && (
             <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-3 py-2">
@@ -429,6 +416,7 @@ export default function AdminChat() {
       ...form,
       category: form.category.trim(),
       categoryIcon: form.categoryIcon.trim() || '📁',
+      free: form.roles.includes('free'), // derivato dall'audience 'free'
     }
     const res = modal.editing
       ? await updateChannel(modal.editing.id, input)
@@ -536,14 +524,6 @@ export default function AdminChat() {
                       >
                         {ch.type === 'bacheca' ? 'Bacheca' : 'Chat'}
                       </span>
-                      {ch.free && (
-                        <span
-                          className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
-                          style={{ background: 'rgba(70,211,154,0.14)', color: '#46D39A' }}
-                        >
-                          Free
-                        </span>
-                      )}
                     </div>
 
                     {ch.description && (
@@ -638,7 +618,6 @@ export default function AdminChat() {
               categoryIcon: modal.editing.categoryIcon ?? '📁',
               roles: [...modal.editing.roles],
               canPost: [...modal.editing.canPost],
-              free: modal.editing.free ?? false,
             }
             : undefined
           }

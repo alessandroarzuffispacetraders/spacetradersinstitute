@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
-import { Channel, ChannelType, MemberRole } from '../data/chatData'
+import { Channel, ChannelType, ChannelAudience } from '../data/chatData'
 
 // ─── Raw DB row → Channel (stessa forma del vecchio mock chatData.CHANNELS) ─────
 // Le live-chat (type 'live') NON entrano nella lista canali della chat: si
@@ -34,8 +34,8 @@ function toChannel(r: RawChannel): Channel {
     channelKind: 'group',
     category: r.category,
     categoryIcon: r.category_icon,
-    roles: (r.roles ?? []) as MemberRole[],
-    canPost: (r.can_post ?? []) as MemberRole[],
+    roles: (r.roles ?? []) as ChannelAudience[],
+    canPost: (r.can_post ?? []) as ChannelAudience[],
     free: r.free ?? false,
     pinned: r.pinned,
   }
@@ -75,8 +75,8 @@ export interface ChannelInput {
   type: ChannelType
   category: string
   categoryIcon: string
-  roles: MemberRole[]
-  canPost: MemberRole[]
+  roles: ChannelAudience[]
+  canPost: ChannelAudience[]
   free: boolean
 }
 
@@ -111,7 +111,7 @@ export function useChannelsAdmin() {
       category_icon: input.categoryIcon,
       roles: input.roles,
       can_post: input.canPost,
-      free: input.free,
+      free: input.roles.includes('free'), // derivato dall'audience 'free' nei roles
       position: channels.length,
     })
     if (error) {
@@ -131,7 +131,7 @@ export function useChannelsAdmin() {
       category_icon: input.categoryIcon,
       roles: input.roles,
       can_post: input.canPost,
-      free: input.free,
+      free: input.roles.includes('free'), // derivato dall'audience 'free' nei roles
     }).eq('id', id)
     if (error) return { ok: false, error: error.message }
     await load(true)
