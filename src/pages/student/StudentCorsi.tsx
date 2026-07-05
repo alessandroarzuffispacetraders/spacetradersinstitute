@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import PageHeader from '../../components/ui/PageHeader'
 import { useStudentCatalog, getCategoryStats, getCourseStats, Category } from '../../lib/content'
 import { useAuth } from '../../context/AuthContext'
-import { isFreeUser } from '../../lib/freeTier'
+import { isFreeUser, upsellSuppressed } from '../../lib/freeTier'
 import { useContactAdmin } from '../../lib/upgradeContact'
 import {
   BookOpen, ChevronRight, Play, CheckCircle2, Layers, Loader2,
@@ -110,8 +110,9 @@ export default function StudentCorsi() {
         </div>
       </div>
 
-      {/* ── Upsell per l'utente gratuito: vede solo i corsi in vetrina ── */}
-      {isFreeUser(user) && (
+      {/* ── Upsell per l'utente gratuito: vede solo i corsi in vetrina ──
+          Nascosto su iOS: nessun invito all'acquisto esterno (Guideline 3.1.1). */}
+      {isFreeUser(user) && !upsellSuppressed() && (
         <div
           className="rounded-3xl p-5 mb-7 flex items-center gap-4"
           style={{

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Sparkles, ArrowRight, X } from 'lucide-react'
 import { useContactAdmin } from '../../lib/upgradeContact'
+import { upsellSuppressed } from '../../lib/freeTier'
 
 // Banner slim di conversione per l'utente gratuito. Chiudibile per la sessione.
 export default function UpgradeBanner() {
@@ -8,6 +9,8 @@ export default function UpgradeBanner() {
   const [dismissed, setDismissed] = useState(
     () => sessionStorage.getItem('ist_upgrade_banner_dismissed') === '1',
   )
+  // Su iOS niente inviti all'acquisto (Guideline 3.1.1).
+  if (upsellSuppressed()) return null
   if (dismissed) return null
 
   const dismiss = () => {
