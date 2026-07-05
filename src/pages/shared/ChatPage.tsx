@@ -1799,7 +1799,11 @@ export default function ChatPage() {
   const { channels } = useChannels()
   const [searchParams] = useSearchParams()
 
-  const visibleChannels = channels.filter(ch => ch.roles.includes(userRole))
+  // Lo studente gratuito è un pubblico a sé ('free'); il pagante conta come
+  // 'student'; lo staff come il proprio ruolo. Mostriamo i canali che includono
+  // la MIA audience — allineato alla RLS server-side (my_audiences()).
+  const myAudience = isFree ? 'free' : userRole
+  const visibleChannels = channels.filter(ch => ch.roles.includes(myAudience))
   // Deep-link da notifica push: /student/chat?c=<channelId> apre quel canale/DM.
   const [activeChannelId, setActiveChannelId] = useState(
     () => new URLSearchParams(location.search).get('c') || (isFree ? 'free-community' : 'generale')
@@ -1839,6 +1843,18 @@ export default function ChatPage() {
   useEffect(() => {
     if (userId && activeChannelId) markRead(activeChannelId)
   }, [userId])
+
+  // Se il canale attivo di gruppo non è tra quelli visibili (es. default storico
+  // 'free-community' inesistente, o canale non accessibile alla mia audience),
+  // ripiega sul primo canale disponibile una volta caricati i canali.
+  useEffect(() => {
+    if (channels.length === 0) return
+    if (activeChannelId.startsWith('dm_')) return
+    if (visibleChannels.length > 0 && !visibleChannels.some(ch => ch.id === activeChannelId)) {
+      setActiveChannelId(visibleChannels[0].id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channels])
 
   // Gestisce apertura DM da navigazione esterna: navigate('/student/chat', { state: { openDm: userId } }).
   // Supporta anche `prefill` (testo iniziale) e `knownUser` (per risolvere il partner

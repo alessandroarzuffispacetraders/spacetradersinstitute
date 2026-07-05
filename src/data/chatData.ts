@@ -2,6 +2,11 @@ export type ChannelType = 'chat' | 'bacheca'
 export type MemberRole = 'student' | 'coach' | 'mental_coach' | 'admin'
 export type ChannelKind = 'group' | 'direct'
 
+// Pubblico di un canale = i ruoli reali + 'free' (studenti gratuiti come audience
+// a sé). Un canale con roles=['free'] è visibile SOLO ai gratuiti. Lato server la
+// stessa logica è in my_audiences() (RLS channels/bacheca + may_post).
+export type ChannelAudience = MemberRole | 'free'
+
 export interface Channel {
   id: string
   name: string
@@ -10,9 +15,9 @@ export interface Channel {
   channelKind: ChannelKind
   category: string
   categoryIcon: string
-  roles: MemberRole[]
-  canPost: MemberRole[]
-  free?: boolean          // canale accessibile all'utente gratuito
+  roles: ChannelAudience[]
+  canPost: ChannelAudience[]
+  free?: boolean          // derivato: true se 'free' ∈ roles (retrocompat)
   unread?: number
   pinned?: boolean
   dmWith?: { name: string; role: MemberRole; online?: boolean; avatarUrl?: string; avatarPreset?: string }
