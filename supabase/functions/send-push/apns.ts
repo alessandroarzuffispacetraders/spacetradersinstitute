@@ -9,7 +9,9 @@
 //   supabase secrets set APNS_TEAM_ID=YYYYYYYYYY
 //   supabase secrets set APNS_BUNDLE_ID=com.spacetradersinstitute.app
 //   supabase secrets set APNS_AUTH_KEY="$(cat AuthKey_XXXXXXXXXX.p8)"
-//   supabase secrets set APNS_PRODUCTION=false   # true per build TestFlight/App Store
+//   supabase secrets set APNS_PRODUCTION=true    # solo "primo tentativo": sendApns
+//     ripiega comunque sull'altro ambiente su BadDeviceToken, quindi dev (sandbox) e
+//     TestFlight/App Store (production) funzionano entrambi a prescindere dal valore.
 
 const KEY_ID = Deno.env.get('APNS_KEY_ID') ?? ''
 const TEAM_ID = Deno.env.get('APNS_TEAM_ID') ?? ''
@@ -77,7 +79,14 @@ export async function sendApns(tokens: string[], payload: ApnsPayload): Promise<
 
   const nowSec = Math.floor(Date.now() / 1000)
   const jwt = await providerToken(nowSec)
-  const host = PRODUCTION ? 'api.push.apple.com' : 'api.sandbox.push.apple.com'
+
+  // Un device token è "production" (TestFlight/App Store) oppure "sandbox" (build
+  // di sviluppo) a seconda dell'entitlement aps-environment con cui è stato firmato
+  // il build. Con un solo endpoint globale metà dei token fallisce (BadDeviceToken).
+  // Proviamo l'ambiente indicato da APNS_PRODUCTION e, in caso di BadDeviceToken,
+  // ripieghiamo sull'altro → coprono entrambi senza doverlo sapere per ogni token.
+  const PRIMARY = PRODUCTION ? 'api.push.apple.com' : 'api.sandbox.push.apple.com'
+  const SECONDARY = PRODUCTION ? 'api.sandbox.push.apple.com' : 'api.push.apple.com'
 
   const apsBody = JSON.stringify({
     aps: { alert: { title: payload.title, body: payload.body }, sound: 'default', 'thread-id': payload.channelId },
@@ -86,7 +95,7 @@ export async function sendApns(tokens: string[], payload: ApnsPayload): Promise<
     channel_id: payload.channelId,
   })
 
-  const results = await Promise.allSettled(tokens.map(async (token) => {
+  const postTo = async (host: string, token: string) => {
     const res = await fetch(`https://${host}/3/device/${token}`, {
       method: 'POST',
       headers: {
@@ -97,18 +106,30 @@ export async function sendApns(tokens: string[], payload: ApnsPayload): Promise<
       },
       body: apsBody,
     })
-    if (res.status === 200) return { token, ok: true as const }
-    const reason = await res.text().catch(() => '')
-    return { token, ok: false as const, status: res.status, reason }
+    if (res.status === 200) return { ok: true as const, status: 200, reason: '' }
+    return { ok: false as const, status: res.status, reason: await res.text().catch(() => '') }
+  }
+
+  const results = await Promise.allSettled(tokens.map(async (token) => {
+    let r = await postTo(PRIMARY, token)
+    // BadDeviceToken = ambiente sbagliato per QUESTO token → ritenta sull'altro.
+    if (!r.ok && /BadDeviceToken/i.test(r.reason)) r = await postTo(SECONDARY, token)
+    return { token, ...r }
   }))
 
   let sent = 0
   const dead: string[] = []
-  for (const r of results) {
-    if (r.status !== 'fulfilled') continue
-    if (r.value.ok) { sent++; continue }
-    if (r.value.status === 410 || /BadDeviceToken|Unregistered/i.test(r.value.reason ?? '')) {
-      dead.push(r.value.token)
+  for (const res of results) {
+    if (res.status !== 'fulfilled') continue
+    const r = res.value
+    if (r.ok) { sent++; continue }
+    // Morto solo se non valido in ENTRAMBI gli ambienti (BadDeviceToken dopo il
+    // fallback) o app disinstallata (410/Unregistered). Auth/transienti (403/429/5xx)
+    // NON cancellano il token.
+    if (r.status === 410 || /BadDeviceToken|Unregistered/i.test(r.reason)) {
+      dead.push(r.token)
+    } else {
+      console.warn('APNs send failed:', r.status, (r.reason ?? '').slice(0, 200))
     }
   }
   return { sent, dead }
