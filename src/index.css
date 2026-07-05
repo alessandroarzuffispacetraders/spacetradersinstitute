@@ -216,6 +216,18 @@
   .text-balance { text-wrap: balance; }
 }
 
+/* ===== Android WebView: niente backdrop-filter (glitch di compositing) ===== */
+/* Il blur sotto modali/sheet/nav corrompe il rendering della WebView Android
+   (bande/fantasmi/card accavallate). Lo azzeriamo ovunque, inclusi gli stili
+   inline (via !important). Le superfici restano leggibili grazie ai loro
+   background (in chiaro 92-98% opachi). iOS e web NON sono toccati. */
+html.is-android *,
+html.is-android *::before,
+html.is-android *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 /* ===== Login transition — colori sfocati in movimento che rivelano il logo ===== */
 /* Logo bianco su bianco: appare solo dove i blob colorati passano dietro.
    Ingrandimento lentissimo e quasi impercettibile. */
