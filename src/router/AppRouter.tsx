@@ -7,6 +7,7 @@ import AccessGate from '../components/auth/AccessGate'
 import LoginPage from '../pages/auth/LoginPage'
 import PrivacyPolicy from '../pages/legal/PrivacyPolicy'
 import SupportPage from '../pages/legal/SupportPage'
+import AccountDeletion from '../pages/legal/AccountDeletion'
 
 // Student pages
 import StudentDashboard from '../pages/student/StudentDashboard'
@@ -142,6 +143,7 @@ export default function AppRouter() {
         {/* Pagine pubbliche (accessibili senza login) — richieste da App Store */}
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/support" element={<SupportPage />} />
+        <Route path="/account-deletion" element={<AccountDeletion />} />
         <Route
           path="/login"
           element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
