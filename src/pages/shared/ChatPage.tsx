@@ -5,6 +5,7 @@ import {
   Hash, Megaphone, ChevronDown, ChevronRight,
   Send, ArrowLeft, Search, Pin, MessageCircle, UsersRound, Loader2, X,
   Edit2, Trash2, SmilePlus, ImagePlus, Plus, Mic, Paperclip, FileText,
+  VolumeX, Volume2,
 } from 'lucide-react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
@@ -26,6 +27,9 @@ import {
 import { useAudioRecorder, isAudioRecordingSupported, formatDuration } from '../../lib/audioRecorder'
 import { VoiceMessage, FileAttachment } from '../../components/chat/ChatMedia'
 import { isFreeUser } from '../../lib/freeTier'
+import {
+  useMyMute, muteUser, unmuteUser, fetchActiveMute, formatMutedUntil, MUTE_DURATIONS,
+} from '../../lib/moderation'
 import UserAvatar from '../../components/ui/UserAvatar'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -47,6 +51,15 @@ function formatDate(ts: string): string {
 
 function sameDay(a: string, b: string) {
   return new Date(a).toDateString() === new Date(b).toDateString()
+}
+
+// Rende cliccabili gli URL dentro un testo (usato nei post bacheca: link Zoom ecc.).
+function linkify(text: string) {
+  return text.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
+    /^https?:\/\//.test(part)
+      ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--ist-accent-text)', textDecoration: 'underline', wordBreak: 'break-all' }}>{part}</a>
+      : part,
+  )
 }
 
 const ROLE_LABEL: Record<MemberRole, string> = {
@@ -111,9 +124,16 @@ interface UserCardProps {
   canDm: boolean
   onStartDm: () => void
   onClose: () => void
+  // Moderazione (mute): mostrata solo se canModerate=true (regole calcolate dal chiamante).
+  canModerate?: boolean
+  mutedUntil?: string | null
+  onMute?: (minutes: number) => void
+  onUnmute?: () => void
+  moderating?: boolean
 }
 
-function UserCard({ name, role, avatar, canDm, onStartDm, onClose }: UserCardProps) {
+function UserCard({ name, role, avatar, canDm, onStartDm, onClose, canModerate, mutedUntil, onMute, onUnmute, moderating }: UserCardProps) {
+  const [pickDuration, setPickDuration] = useState(false)
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center p-4"
@@ -177,6 +197,56 @@ function UserCard({ name, role, avatar, canDm, onStartDm, onClose }: UserCardPro
               <MessageCircle size={15} strokeWidth={2} />
               Messaggio privato
             </button>
+          </div>
+        )}
+
+        {/* Moderazione: silenzia nelle chat di gruppo (solo admin/coach, target consentito) */}
+        {canModerate && (
+          <div className="px-4 pb-4 flex flex-col gap-2">
+            {mutedUntil ? (
+              <>
+                <div className="flex items-center justify-center gap-1.5 text-[11px] font-medium" style={{ color: '#E9B949' }}>
+                  <VolumeX size={13} strokeWidth={2} /> Silenziato {formatMutedUntil(mutedUntil)}
+                </div>
+                <button
+                  onClick={onUnmute}
+                  disabled={moderating}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+                  style={{ background: 'var(--ist-w8)', color: 'var(--ist-text)' }}
+                >
+                  <Volume2 size={15} strokeWidth={2} /> Rimuovi silenzio
+                </button>
+              </>
+            ) : pickDuration ? (
+              <>
+                <p className="text-[11px] text-center" style={{ color: 'var(--ist-text-muted)' }}>Silenzia nelle chat di gruppo per…</p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {MUTE_DURATIONS.map(d => (
+                    <button
+                      key={d.minutes}
+                      onClick={() => onMute?.(d.minutes)}
+                      disabled={moderating}
+                      className="py-2 rounded-lg text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
+                      style={{ background: 'rgba(233,185,73,0.14)', border: '1px solid rgba(233,185,73,0.30)', color: '#E9B949' }}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => setPickDuration(false)} className="text-[11px] py-1" style={{ color: 'var(--ist-text-dim)' }}>
+                  Annulla
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setPickDuration(true)}
+                disabled={moderating}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+                style={{ background: 'rgba(233,185,73,0.12)', border: '1px solid rgba(233,185,73,0.28)', color: '#E9B949' }}
+              >
+                <VolumeX size={15} strokeWidth={2} /> Silenzia
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -559,9 +629,10 @@ interface ChatAreaProps {
   initialInput?: string
   keyboardOpen?: boolean
   keyboardInset?: number
+  mutedUntil?: string | null
 }
 
-function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack, isMobile, initialInput, keyboardOpen, keyboardInset = 0 }: ChatAreaProps) {
+function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack, isMobile, initialInput, keyboardOpen, keyboardInset = 0, mutedUntil }: ChatAreaProps) {
   const [input, setInput] = useState(initialInput ?? '')
   const [inputTall, setInputTall] = useState(false) // multi-riga → rettangolo stondato invece della pillola
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -662,6 +733,9 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
   }
 
   const canPost = channel.canPost.includes(userRole)
+  // Mute: un utente silenziato non può scrivere nei canali di GRUPPO. I DM restano
+  // aperti (così può comunque contattare coach/admin), quindi qui escludiamo i DM.
+  const mutedHere = !!mutedUntil && channel.channelKind !== 'direct'
   // Ha già scritto in questo canale? (nel 'benvenuto' = ha già risposto al
   // messaggio automatico → nasconde il tastino di risposta preimpostata.)
   const hasRepliedWelcome = messages.some(m => m.user_id === userId)
@@ -691,7 +765,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
 
   const sendMessage = async () => {
     const text = input.trim()
-    if ((!text && !imageFile && !fileAttachment) || !canPost || uploading) return
+    if ((!text && !imageFile && !fileAttachment) || !canPost || mutedHere || uploading) return
     const media: MessageMedia = {}
     setUploading(true)
     try {
@@ -1166,7 +1240,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                           )}
 
                           {/* Tastino di risposta preimpostata al benvenuto (solo al destinatario) */}
-                          {msg.fullMsg.kind === 'welcome' && msg.fullMsg.target_user_id === userId && canPost && !hasRepliedWelcome && (
+                          {msg.fullMsg.kind === 'welcome' && msg.fullMsg.target_user_id === userId && canPost && !mutedHere && !hasRepliedWelcome && (
                             <div className={`flex mt-2 ${group.own ? 'justify-end' : 'justify-start'}`}>
                               <button
                                 onClick={() => sendToDb(WELCOME_REPLY, userName, userRole)}
@@ -1228,7 +1302,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
       )}
 
       {/* Input bar */}
-      {canPost ? (
+      {canPost && !mutedHere ? (
         <div
           className="flex flex-col gap-2 px-3 pt-3 flex-shrink-0 border-t z-20 lg:border lg:border-t lg:rounded-[26px] lg:absolute lg:bottom-4 lg:left-1/2 lg:-translate-x-1/2 lg:w-[min(680px,calc(100%-2.5rem))] lg:shadow-[0_14px_44px_rgba(0,0,0,0.28)]"
           style={{
@@ -1404,7 +1478,13 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             paddingBottom: keyboardOpen ? 12 : 'calc(12px + env(safe-area-inset-bottom, 0px))',
           }}
         >
-          <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>🔒 Solo lettura — non puoi scrivere in questo canale</span>
+          {mutedHere ? (
+            <span className="text-xs text-center" style={{ color: 'var(--ist-text-dim)' }}>
+              🔇 Sei stato silenziato — non puoi scrivere nelle chat di gruppo {mutedUntil ? formatMutedUntil(mutedUntil) : ''}
+            </span>
+          ) : (
+            <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>🔒 Solo lettura — non puoi scrivere in questo canale</span>
+          )}
         </div>
       )}
     </div>
@@ -1484,7 +1564,7 @@ function BachecaPostCard({
       )}
 
       <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: 'var(--ist-text-muted)' }}>
-        {post.content}
+        {linkify(post.content)}
       </p>
 
       {canManage && (
@@ -1826,6 +1906,45 @@ export default function ChatPage() {
     setUserCard(card)
   }, [])
 
+  // ── Mute (silenzia nelle chat di gruppo) ──────────────────────────────────
+  // Il MIO stato (blocca la mia compose + banner) e la gestione dei mute altrui.
+  const myMutedUntil = useMyMute(userId)
+  const canModerate = userRole === 'admin' || userRole === 'coach'
+  const [cardMuteUntil, setCardMuteUntil] = useState<string | null>(null)
+  const [moderating, setModerating] = useState(false)
+
+  // All'apertura della card, se sono staff, leggo lo stato mute del target.
+  useEffect(() => {
+    if (!userCard || !canModerate) { setCardMuteUntil(null); return }
+    let active = true
+    fetchActiveMute(userCard.userId).then(u => { if (active) setCardMuteUntil(u) })
+    return () => { active = false }
+  }, [userCard?.userId, canModerate])
+
+  // Chi posso silenziare: solo nei canali di gruppo, mai me stesso né un admin;
+  // il coach solo studenti, l'admin chiunque (tranne admin). Il server ri-verifica.
+  const canModerateCard = !!userCard && canModerate && !userCard.userId.startsWith('dm_')
+    && !activeChannelId.startsWith('dm_')
+    && userCard.userId !== userId && userCard.role !== 'admin'
+    && (userRole === 'admin' || userCard.role === 'student')
+
+  const handleMute = async (minutes: number) => {
+    if (!userCard) return
+    setModerating(true)
+    const { until, error } = await muteUser(userCard.userId, minutes)
+    setModerating(false)
+    if (error) { alert(error); return }
+    setCardMuteUntil(until)
+  }
+  const handleUnmute = async () => {
+    if (!userCard) return
+    setModerating(true)
+    const { error } = await unmuteUser(userCard.userId)
+    setModerating(false)
+    if (error) { alert(error); return }
+    setCardMuteUntil(null)
+  }
+
   // Lista di tutti i channel ID noti (gruppi + DM)
   const allChannelIds = useMemo(() => [
     ...visibleChannels.map(ch => ch.id),
@@ -2013,6 +2132,7 @@ export default function ChatPage() {
             keyboardInset={keyboardInset}
             initialInput={prefill?.channelId === activeChannelId ? prefill.text : undefined}
             keyboardOpen={(vp?.kbOpen ?? false) || nativeKb}
+            mutedUntil={myMutedUntil}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
@@ -2037,6 +2157,11 @@ export default function ChatPage() {
           canDm={userCard.userId !== userId && (!isFree || userCard.role === 'admin')}
           onStartDm={() => { const ch = dmChannelId(userId, userCard.userId); selectChannel(ch) }}
           onClose={() => setUserCard(null)}
+          canModerate={canModerateCard}
+          mutedUntil={cardMuteUntil}
+          onMute={handleMute}
+          onUnmute={handleUnmute}
+          moderating={moderating}
         />
       )}
     </div>

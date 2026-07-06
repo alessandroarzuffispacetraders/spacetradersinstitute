@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { Radio, Edit2, Trash2, X, Plus, Loader2, Play, Square, Save, ChevronUp, ChevronDown } from 'lucide-react'
+import { Radio, Edit2, Trash2, X, Plus, Loader2, Play, Square, Save, ChevronUp, ChevronDown, Video, Bell, ExternalLink } from 'lucide-react'
 import {
-  useLiveAdmin, LiveEvent, LiveInput, LiveStatus, LiveRole,
+  useLiveAdmin, LiveEvent, LiveInput, LiveStatus, LiveRole, LiveAudience,
   liveDateLabel, liveDurationLabel,
 } from '../../lib/live'
 import { parseVimeo, fetchVimeoDuration } from '../../lib/vimeo'
@@ -20,6 +20,11 @@ const LIVE_ROLES: { id: LiveRole; label: string }[] = [
   { id: 'admin', label: 'Admin' },
 ]
 const ACCENTS = ['#7CBBD0', '#46D39A', '#F6C85F', '#A078FF', '#FF6B7A', '#5A9AB1']
+const AUDIENCE_OPTS: { id: LiveAudience; label: string }[] = [
+  { id: 'all', label: 'Tutti' },
+  { id: 'full', label: 'Paganti' },
+  { id: 'free', label: 'Gratuiti' },
+]
 
 const inputStyle: React.CSSProperties = {
   background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)',
@@ -62,19 +67,24 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
 }) {
   const [form, setForm] = useState<LiveInput>(initial ? {
     title: initial.title, description: initial.description, host: initial.host,
-    hostRole: initial.hostRole, status: initial.status, startsAt: initial.startsAt,
+    hostRole: initial.hostRole, status: initial.status,
+    eventType: initial.eventType, isExternal: initial.isExternal, audience: initial.audience,
+    notify: initial.notify,
+    startsAt: initial.startsAt,
     zoomUrl: initial.zoomUrl ?? '', liveEmbedUrl: initial.liveEmbedUrl ?? '', replayVimeoId: initial.replayVimeoId ?? '',
     durationMinutes: initial.durationMinutes, accent: initial.accent, accentEnd: initial.accentEnd,
   } : {
     title: '', description: '', host: defaultHost ?? '', hostRole: 'coach',
-    status: 'upcoming', startsAt: null, zoomUrl: '', liveEmbedUrl: '', replayVimeoId: '',
+    status: 'upcoming', eventType: 'live', isExternal: false, audience: 'all', notify: true,
+    startsAt: null, zoomUrl: '', liveEmbedUrl: '', replayVimeoId: '',
     durationMinutes: null, accent: '#7CBBD0', accentEnd: '#286680',
   })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
   const set = (patch: Partial<LiveInput>) => setForm(f => ({ ...f, ...patch }))
-  const isReplay = form.status === 'replay'
+  const isReminder = form.eventType === 'reminder'
+  const isReplay = !isReminder && form.status === 'replay'
 
   // Auto-rilevamento durata dal link Vimeo del replay (come per le lezioni).
   const [durDetecting, setDurDetecting] = useState(false)
@@ -101,6 +111,10 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
 
   const handleSave = async () => {
     if (!form.title.trim()) { setError('Il titolo è obbligatorio.'); return }
+    if (isReminder && !form.startsAt) { setError('Imposta data e ora del promemoria.'); return }
+    if (!isReminder && form.isExternal && form.status !== 'replay' && !form.zoomUrl?.trim()) {
+      setError('Per una live Zoom esterna serve il link di accesso.'); return
+    }
     setSaving(true)
     const ok = await onSave(form)
     setSaving(false)
@@ -120,13 +134,43 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
         style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: '0 24px 80px rgba(0,0,0,0.50)', backdropFilter: 'blur(24px)' }}
       >
         <div className="flex items-center justify-between px-6 py-5 flex-shrink-0" style={{ borderBottom: '1px solid var(--ist-w8)' }}>
-          <h2 className="text-base font-bold" style={{ color: 'var(--ist-text)' }}>{initial ? 'Modifica live' : 'Nuova live'}</h2>
+          <h2 className="text-base font-bold" style={{ color: 'var(--ist-text)' }}>
+            {isReminder ? (initial ? 'Modifica promemoria' : 'Nuovo promemoria') : (initial ? 'Modifica live' : 'Nuova live')}
+          </h2>
           <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}>
             <X size={15} strokeWidth={2.5} />
           </button>
         </div>
 
         <div className="flex-1 px-6 py-5 space-y-4 overflow-y-auto no-scrollbar">
+          {/* Tipo: live vera oppure semplice promemoria di calendario */}
+          <div>
+            {label('Tipo')}
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { t: 'live' as const, icon: <Video size={13} strokeWidth={2} />, txt: 'Live' },
+                { t: 'reminder' as const, icon: <Bell size={13} strokeWidth={2} />, txt: 'Promemoria' },
+              ]).map(o => (
+                <button
+                  key={o.t}
+                  onClick={() => set({ eventType: o.t })}
+                  className="py-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
+                  style={form.eventType === o.t
+                    ? { background: 'rgba(90,154,177,0.14)', color: '#7CBBD0', border: '1px solid rgba(90,154,177,0.28)' }
+                    : { background: 'var(--ist-w6)', color: 'var(--ist-text-muted)', border: '1px solid var(--ist-w9)' }}
+                >
+                  {o.icon}{o.txt}
+                </button>
+              ))}
+            </div>
+            {isReminder && (
+              <p className="text-[11px] mt-1.5 leading-snug" style={{ color: 'var(--ist-text-dim)' }}>
+                Solo un promemoria in calendario: niente video, chat o notifiche.
+              </p>
+            )}
+          </div>
+
+          {!isReminder && (
           <div>
             {label('Stato')}
             <div className="grid grid-cols-3 gap-2">
@@ -144,6 +188,7 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
               ))}
             </div>
           </div>
+          )}
 
           <div>
             {label('Titolo *')}
@@ -173,7 +218,26 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
             <input type="datetime-local" value={isoToLocal(form.startsAt)} onChange={e => set({ startsAt: localToIso(e.target.value) })} className="px-3.5 py-2.5 text-sm" style={inputStyle} />
           </div>
 
-          {isReplay ? (
+          {/* Promemoria: notifica singola all'orario (opzionale) */}
+          {isReminder && (
+            <div className="flex items-center justify-between gap-3 rounded-xl px-3.5 py-3" style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w9)' }}>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold" style={{ color: 'var(--ist-text)' }}>Invia notifica all'orario</p>
+                <p className="text-[11px] mt-0.5 leading-snug" style={{ color: 'var(--ist-text-dim)' }}>Una push a tutti gli studenti all'ora del promemoria. Spegni per lasciarlo solo in calendario.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => set({ notify: !form.notify })}
+                className="relative w-11 h-6 rounded-full flex-shrink-0 transition-colors"
+                style={{ background: form.notify ? '#5A9AB1' : 'var(--ist-w10)' }}
+                aria-pressed={form.notify}
+              >
+                <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: form.notify ? 22 : 2 }} />
+              </button>
+            </div>
+          )}
+
+          {!isReminder && (isReplay ? (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 {label('Link/ID Vimeo replay')}
@@ -189,19 +253,65 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
             </div>
           ) : (
             <>
+              {/* Modalità: in-app (embed) oppure Zoom esterna */}
               <div>
-                {label('Link Zoom')}
+                {label('Modalità')}
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { ext: false, icon: <Video size={13} strokeWidth={2} />, txt: 'In-app' },
+                    { ext: true, icon: <ExternalLink size={13} strokeWidth={2} />, txt: 'Zoom esterna' },
+                  ]).map(o => (
+                    <button
+                      key={String(o.ext)}
+                      onClick={() => set({ isExternal: o.ext })}
+                      className="py-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
+                      style={form.isExternal === o.ext
+                        ? { background: 'rgba(90,154,177,0.14)', color: '#7CBBD0', border: '1px solid rgba(90,154,177,0.28)' }
+                        : { background: 'var(--ist-w6)', color: 'var(--ist-text-muted)', border: '1px solid var(--ist-w9)' }}
+                    >
+                      {o.icon}{o.txt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                {label(form.isExternal ? 'Link di accesso Zoom *' : 'Link Zoom')}
                 <input value={form.zoomUrl ?? ''} onChange={e => set({ zoomUrl: e.target.value })} placeholder="https://zoom.us/j/..." className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
               </div>
-              <div>
-                {label('Link live in-app (YouTube/Vimeo) — opzionale')}
-                <input value={form.liveEmbedUrl ?? ''} onChange={e => set({ liveEmbedUrl: e.target.value })} placeholder="https://youtube.com/live/... o vimeo.com/event/..." className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
-                <p className="text-[11px] mt-1.5 leading-snug" style={{ color: 'var(--ist-text-dim)' }}>
-                  Se compilato, durante la diretta lo studente guarda la live <strong>dentro l'app</strong> accanto alla chat. Altrimenti resta il pulsante Zoom.
-                </p>
-              </div>
+
+              {form.isExternal ? (
+                <div>
+                  {label('Chi può partecipare (e riceve la notifica)')}
+                  <div className="grid grid-cols-3 gap-2">
+                    {AUDIENCE_OPTS.map(a => (
+                      <button
+                        key={a.id}
+                        onClick={() => set({ audience: a.id })}
+                        className="py-2 rounded-xl text-xs font-semibold transition-all"
+                        style={form.audience === a.id
+                          ? { background: 'rgba(90,154,177,0.14)', color: '#7CBBD0', border: '1px solid rgba(90,154,177,0.28)' }
+                          : { background: 'var(--ist-w6)', color: 'var(--ist-text-muted)', border: '1px solid var(--ist-w9)' }}
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] mt-1.5 leading-snug" style={{ color: 'var(--ist-text-dim)' }}>
+                    Poco prima dell'inizio, il link viene postato nella bacheca <strong>Link Zoom</strong> e una notifica arriva a questa audience — così partecipano senza passare dalla sezione Live.
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  {label('Link live in-app (YouTube/Vimeo) — opzionale')}
+                  <input value={form.liveEmbedUrl ?? ''} onChange={e => set({ liveEmbedUrl: e.target.value })} placeholder="https://youtube.com/live/... o vimeo.com/event/..." className="px-3.5 py-2.5 text-sm placeholder:text-[#56636F]" style={inputStyle} />
+                  <p className="text-[11px] mt-1.5 leading-snug" style={{ color: 'var(--ist-text-dim)' }}>
+                    Se compilato, durante la diretta lo studente guarda la live <strong>dentro l'app</strong> accanto alla chat. Altrimenti resta il pulsante Zoom.
+                  </p>
+                </div>
+              )}
             </>
-          )}
+          ))}
 
           <div>
             {label('Colore')}
@@ -224,7 +334,7 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
             style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)', boxShadow: '0 4px 14px rgba(40,102,128,0.30)' }}
           >
             {saving && <Loader2 size={15} strokeWidth={2.5} className="animate-spin" />}
-            {initial ? 'Salva modifiche' : 'Crea live'}
+            {initial ? 'Salva modifiche' : (isReminder ? 'Crea promemoria' : 'Crea live')}
           </button>
         </div>
       </div>
@@ -263,18 +373,30 @@ export default function LiveManager({ api, defaultHost }: {
 
       {api.events.map((event, i) => {
         const s = LIVE_STATUS[event.status]
+        const isRem = event.eventType === 'reminder'
         const isFirst = i === 0
         const isLast = i === api.events.length - 1
         return (
           <div key={event.id} className="p-4 lg:p-5 rounded-3xl" style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: 'var(--ist-card-shadow)' }}>
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: `${event.accent}12`, border: `1px solid ${event.accent}22` }}>
-                <Radio size={16} strokeWidth={2} style={{ color: event.accent }} />
+                {isRem
+                  ? <Bell size={16} strokeWidth={2} style={{ color: event.accent }} />
+                  : <Radio size={16} strokeWidth={2} style={{ color: event.accent }} />}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                   <p className="font-semibold text-sm truncate" style={{ color: 'var(--ist-text)' }}>{event.title}</p>
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: s.bg, color: s.text, border: `1px solid ${s.border}` }}>{s.label}</span>
+                  {isRem ? (
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: 'rgba(246,200,95,0.12)', color: '#F6C85F', border: '1px solid rgba(246,200,95,0.24)' }}>Promemoria</span>
+                  ) : (
+                    <>
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: s.bg, color: s.text, border: `1px solid ${s.border}` }}>{s.label}</span>
+                      {event.isExternal && (
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: 'rgba(90,154,177,0.12)', color: '#7CBBD0', border: '1px solid rgba(90,154,177,0.24)' }}>Zoom</span>
+                      )}
+                    </>
+                  )}
                 </div>
                 <p className="text-xs" style={{ color: 'var(--ist-text-muted)' }}>
                   {event.host || '—'} · {liveDateLabel(event)}
@@ -292,10 +414,10 @@ export default function LiveManager({ api, defaultHost }: {
                   <>
                     <ActionBtn icon={<ChevronUp size={13} strokeWidth={2.4} />} label="" onClick={() => api.moveLive(event.id, 'up')} disabled={isFirst} />
                     <ActionBtn icon={<ChevronDown size={13} strokeWidth={2.4} />} label="" onClick={() => api.moveLive(event.id, 'down')} disabled={isLast} />
-                    {event.status === 'upcoming' && (
+                    {!isRem && event.status === 'upcoming' && (
                       <ActionBtn icon={<Play size={11} strokeWidth={2} />} label="Vai in onda" accent onClick={() => api.setLiveStatus(event.id, 'live')} />
                     )}
-                    {event.status === 'live' && (
+                    {!isRem && event.status === 'live' && (
                       <ActionBtn icon={<Square size={11} strokeWidth={2} />} label="Termina" danger onClick={() => api.setLiveStatus(event.id, 'replay')} />
                     )}
                     <ActionBtn icon={<Edit2 size={11} strokeWidth={2} />} label="Modifica" onClick={() => setModal({ open: true, editing: event })} />

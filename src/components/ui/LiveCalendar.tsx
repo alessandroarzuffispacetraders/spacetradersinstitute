@@ -77,7 +77,9 @@ export default function LiveCalendar({ events, compact = false, onPickDay }: {
           const dayEvents = byDay.get(dayKey(view.y, view.m, d)) ?? []
           const has = dayEvents.length > 0
           const hasLive = dayEvents.some(e => e.status === 'live')
-          const dotColor = hasLive ? '#FF5050' : '#7CBBD0'
+          const hasRealLive = dayEvents.some(e => e.eventType !== 'reminder')
+          // rosso = diretta ora · blu = live in programma · ambra = solo promemoria
+          const dotColor = hasLive ? '#FF5050' : hasRealLive ? '#7CBBD0' : '#F6C85F'
           const todayCell = isToday(d)
           return (
             <button

@@ -100,8 +100,9 @@ export default function StudentDashboard() {
   const { phase, phases } = usePath(userId)
   const { stats } = useStudentBadges(userId)
   const { events: allEvents } = useLiveEvents()
-  // Le live del mental coach vivono SOLO nell'Area Mental Coach.
-  const events = allEvents.filter(e => e.hostRole !== 'mental_coach')
+  // Le live del mental coach vivono SOLO nell'Area Mental Coach; i promemoria
+  // compaiono comunque nel calendario (qualunque ruolo li abbia creati).
+  const events = allEvents.filter(e => e.hostRole !== 'mental_coach' || e.eventType === 'reminder')
   const { sessions: mySessions } = useStudentSessions(userId)
 
   // Messaggi privati non letti
@@ -150,7 +151,9 @@ export default function StudentDashboard() {
     ? Math.max(1, Math.floor((Date.now() - new Date(meta.createdAt).getTime()) / 86_400_000) + 1)
     : null
 
-  const nextLive = events.find(e => e.status === 'live') ?? events.find(e => e.status === 'upcoming') ?? null
+  // "Prossima live" ignora i promemoria (non sono live).
+  const nextLive = events.find(e => e.status === 'live' && e.eventType !== 'reminder')
+    ?? events.find(e => e.status === 'upcoming' && e.eventType !== 'reminder') ?? null
   const completedSessions = mySessions.filter(s => s.status === 'completed').length
 
   // Apre direttamente la chat privata (DM) col coach / mental coach assegnato;
@@ -341,7 +344,7 @@ export default function StudentDashboard() {
               <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--ist-text-muted)' }}>Calendario</p>
               <button onClick={() => navigate('/student/calendario')} className="text-xs font-semibold" style={{ color: 'var(--ist-accent-text)' }}>Apri →</button>
             </div>
-            <LiveCalendar events={events} compact onPickDay={(de) => de[0] && navigate(`/student/live/${de[0].id}`)} />
+            <LiveCalendar events={events} compact onPickDay={(de) => { const l = de.find(e => e.eventType !== 'reminder'); navigate(l ? `/student/live/${l.id}` : '/student/calendario') }} />
           </Card>
 
         </div>

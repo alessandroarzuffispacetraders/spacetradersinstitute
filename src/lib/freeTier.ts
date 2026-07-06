@@ -36,6 +36,9 @@ export function isPathLockedForFree(
   user: Pick<User, 'role' | 'tier'> | null | undefined,
 ): boolean {
   if (!isFreeUser(user)) return false
+  // Su iOS niente lucchetti nelle voci di navigazione (companion, App Review 3.1.1):
+  // non segnaliamo l'esistenza di contenuti "a pagamento" da sbloccare.
+  if (upsellSuppressed()) return false
   return FREE_LOCKED_PREFIXES.some(p => path === p || path.startsWith(p + '/'))
 }
 

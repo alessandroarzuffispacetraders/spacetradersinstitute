@@ -14,8 +14,9 @@ const HOST_ROLE_LABEL: Record<string, string> = {
 export default function StudentLive() {
   const navigate = useNavigate()
   const { events: allEvents, loading } = useLiveEvents()
-  // Le live del mental coach vivono SOLO nell'Area Mental Coach, non qui.
-  const events = allEvents.filter(e => e.hostRole !== 'mental_coach')
+  // Le live del mental coach vivono SOLO nell'Area Mental Coach; i promemoria di
+  // calendario (eventType='reminder') non sono live → esclusi da questa sezione.
+  const events = allEvents.filter(e => e.hostRole !== 'mental_coach' && e.eventType !== 'reminder')
 
   const live     = events.filter(e => e.status === 'live')
   const upcoming = events.filter(e => e.status === 'upcoming')

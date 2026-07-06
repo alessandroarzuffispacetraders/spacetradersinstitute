@@ -6,6 +6,8 @@ import { useIsPreview } from './previewMode'
 
 export type LiveStatus = 'live' | 'upcoming' | 'replay'
 export type LiveRole = 'student' | 'coach' | 'mental_coach' | 'admin'
+export type EventType = 'live' | 'reminder'   // 'reminder' = solo promemoria in calendario
+export type LiveAudience = 'all' | 'full' | 'free' // chi partecipa/riceve l'annuncio Zoom
 
 export interface LiveEvent {
   id: string
@@ -14,6 +16,10 @@ export interface LiveEvent {
   host: string
   hostRole: LiveRole
   status: LiveStatus
+  eventType: EventType
+  isExternal: boolean            // live su Zoom esterno (nessun embed in-app)
+  audience: LiveAudience
+  notify: boolean                // promemoria: manda 1 push all'orario (default true)
   startsAt: string | null        // ISO
   zoomUrl: string | null
   liveEmbedUrl: string | null    // YouTube/Vimeo live → guarda in-app (opt-in)
@@ -32,6 +38,10 @@ interface RawLive {
   host: string
   host_role: LiveRole
   status: LiveStatus
+  event_type: EventType
+  is_external: boolean
+  audience: LiveAudience
+  notify: boolean
   starts_at: string | null
   zoom_url: string | null
   live_embed_url: string | null
@@ -44,7 +54,7 @@ interface RawLive {
 }
 
 const COLS =
-  'id,title,description,host,host_role,status,starts_at,zoom_url,live_embed_url,replay_vimeo_id,duration_minutes,accent,accent_end,position,owner_id'
+  'id,title,description,host,host_role,status,event_type,is_external,audience,notify,starts_at,zoom_url,live_embed_url,replay_vimeo_id,duration_minutes,accent,accent_end,position,owner_id'
 
 function toLive(r: RawLive): LiveEvent {
   return {
@@ -54,6 +64,10 @@ function toLive(r: RawLive): LiveEvent {
     host: r.host,
     hostRole: r.host_role,
     status: r.status,
+    eventType: r.event_type ?? 'live',
+    isExternal: r.is_external ?? false,
+    audience: r.audience ?? 'all',
+    notify: r.notify ?? true,
     startsAt: r.starts_at,
     zoomUrl: r.zoom_url,
     liveEmbedUrl: r.live_embed_url,
@@ -99,7 +113,7 @@ function previewIso(offsetDays: number, h: number, m: number): string {
 }
 function previewEvents(): LiveEvent[] {
   const mk = (id: string, title: string, host: string, hostRole: LiveRole, status: LiveStatus, startsAt: string | null, accent: string, accentEnd: string, durationMinutes: number | null, description = ''): LiveEvent =>
-    ({ id, title, description, host, hostRole, status, startsAt, zoomUrl: null, liveEmbedUrl: null, replayVimeoId: null, durationMinutes, accent, accentEnd, position: 0, ownerId: null })
+    ({ id, title, description, host, hostRole, status, eventType: 'live', isExternal: false, audience: 'all', notify: true, startsAt, zoomUrl: null, liveEmbedUrl: null, replayVimeoId: null, durationMinutes, accent, accentEnd, position: 0, ownerId: null })
   return [
     mk('pv-live', 'Sessione operativa in diretta', 'Coach Marco', 'coach', 'live', null, '#7CBBD0', '#286680', null, 'Analizziamo il mercato in tempo reale e rispondiamo alle domande in chat.'),
     mk('pv-up1', 'Live analisi di mercato', 'Coach Marco', 'coach', 'upcoming', previewIso(2, 18, 0), '#7CBBD0', '#286680', 60),
@@ -158,6 +172,10 @@ export interface LiveInput {
   host: string
   hostRole: LiveRole
   status: LiveStatus
+  eventType: EventType
+  isExternal: boolean
+  audience: LiveAudience
+  notify: boolean
   startsAt: string | null
   zoomUrl: string | null
   liveEmbedUrl: string | null
@@ -168,17 +186,26 @@ export interface LiveInput {
 }
 
 function toRow(input: LiveInput) {
+  const isReminder = input.eventType === 'reminder'
   return {
     title: input.title.trim(),
     description: input.description.trim(),
     host: input.host.trim(),
     host_role: input.hostRole,
-    status: input.status,
+    // Un reminder è sempre "in programma" (niente ciclo live/replay).
+    status: isReminder ? 'upcoming' : input.status,
+    event_type: input.eventType,
+    // I campi Zoom/embed/replay/audience/external hanno senso solo per le live.
+    is_external: isReminder ? false : input.isExternal,
+    audience: isReminder ? 'all' : input.audience,
+    // notify: interruttore usato dai promemoria; le live restano sempre notificate.
+    notify: input.notify,
     starts_at: input.startsAt,
-    zoom_url: input.zoomUrl?.trim() || null,
-    live_embed_url: input.liveEmbedUrl?.trim() || null,
-    replay_vimeo_id: input.replayVimeoId?.trim() || null,
-    duration_minutes: input.durationMinutes,
+    zoom_url: isReminder ? null : (input.zoomUrl?.trim() || null),
+    // In modalità esterna forziamo l'embed vuoto: si apre solo su Zoom.
+    live_embed_url: isReminder || input.isExternal ? null : (input.liveEmbedUrl?.trim() || null),
+    replay_vimeo_id: isReminder ? null : (input.replayVimeoId?.trim() || null),
+    duration_minutes: isReminder ? null : input.durationMinutes,
     accent: input.accent,
     accent_end: input.accentEnd,
   }

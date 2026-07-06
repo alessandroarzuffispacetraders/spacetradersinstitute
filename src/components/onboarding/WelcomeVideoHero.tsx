@@ -1,5 +1,6 @@
 import { useWelcomeVideo, WELCOME_WINDOW_DAYS } from '../../lib/onboarding'
 import VimeoPlayer from '../ui/VimeoPlayer'
+import { upsellSuppressed } from '../../lib/freeTier'
 
 // Video di benvenuto in home, mostrato solo per i primi WELCOME_WINDOW_DAYS
 // giorni dalla registrazione. Gli utenti gratuiti vedono il video dedicato
@@ -17,6 +18,9 @@ export default function WelcomeVideoHero({
   const { fullUrl, freeUrl, loading } = useWelcomeVideo()
   const url = isFree ? freeUrl : fullUrl
 
+  // Su iOS l'utente gratuito non vede il video-esca "scopri il percorso completo"
+  // (companion, App Review 3.1.1). Gli utenti completi vedono il loro benvenuto.
+  if (isFree && upsellSuppressed()) return null
   if (loading || !url || !registeredAt) return null
   const days = (Date.now() - new Date(registeredAt).getTime()) / 86_400_000
   if (!Number.isFinite(days) || days >= WELCOME_WINDOW_DAYS) return null

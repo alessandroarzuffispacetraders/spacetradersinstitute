@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { getFreshAccessToken } from './authToken'
 
 const FUNCTIONS_URL = (import.meta.env.VITE_SUPABASE_URL as string).trim() + '/functions/v1'
 
@@ -7,9 +7,13 @@ export async function updateUserAuth(
   userId: string,
   changes: { email?: string; password?: string },
 ): Promise<{ error: string | null }> {
-  const { data } = await supabase.auth.getSession()
-  const token = data.session?.access_token
-  if (!token) return { error: 'Sessione scaduta. Rifai il login.' }
+  // Token FRESCO: evita "Token non valido" con una sessione firmata dalla vecchia chiave.
+  let token: string
+  try {
+    token = await getFreshAccessToken()
+  } catch {
+    return { error: 'Sessione scaduta. Rifai il login.' }
+  }
 
   try {
     const res = await fetch(`${FUNCTIONS_URL}/admin-update-user`, {
@@ -27,9 +31,13 @@ export async function updateUserAuth(
 
 // Elimina definitivamente un utente (account + dati collegati) via edge function.
 export async function deleteUserAccount(userId: string): Promise<{ error: string | null }> {
-  const { data } = await supabase.auth.getSession()
-  const token = data.session?.access_token
-  if (!token) return { error: 'Sessione scaduta. Rifai il login.' }
+  // Token FRESCO: evita "Token non valido" con una sessione firmata dalla vecchia chiave.
+  let token: string
+  try {
+    token = await getFreshAccessToken()
+  } catch {
+    return { error: 'Sessione scaduta. Rifai il login.' }
+  }
 
   try {
     const res = await fetch(`${FUNCTIONS_URL}/admin-delete-user`, {

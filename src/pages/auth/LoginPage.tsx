@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import ISTLogo from '../../components/ui/ISTLogo'
+import { upsellSuppressed } from '../../lib/freeTier'
 
 type Mode = 'login' | 'signup' | 'signup-done'
 
@@ -17,6 +18,9 @@ export default function LoginPage() {
   // Mobile: quando un campo è a fuoco (tastiera aperta) ancoriamo il contenuto in
   // alto, così i campi non finiscono sotto la tastiera. Su desktop resta centrato.
   const [kbFocus, setKbFocus] = useState(false)
+  // iOS = app "companion" per gli iscritti al coaching 1:1 (App Review 3.1.1):
+  // niente registrazione/prova gratuita in-app, solo login. Web e Android invariati.
+  const allowSignup = !upsellSuppressed()
 
   const switchMode = (next: Mode) => {
     setMode(next)
@@ -96,27 +100,34 @@ export default function LoginPage() {
           </div>
         ) : (
           <>
-            {/* Toggle login / registrazione — colori fissi (login sempre su sfondo scuro) */}
-            <div
-              className="mt-8 mb-8 flex rounded-2xl p-1 w-full"
-              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)' }}
-            >
-              {(['login', 'signup'] as const).map(m => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => switchMode(m)}
-                  className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
-                  style={
-                    mode === m
-                      ? { background: 'rgba(255,255,255,0.16)', color: '#FFFFFF', boxShadow: '0 2px 10px rgba(0,0,0,0.28)' }
-                      : { color: 'rgba(247,250,252,0.58)' }
-                  }
-                >
-                  {m === 'login' ? 'Accedi' : 'Registrati'}
-                </button>
-              ))}
-            </div>
+            {/* Toggle login / registrazione — colori fissi (login sempre su sfondo scuro).
+                Su iOS la registrazione non è disponibile (companion, solo login). */}
+            {allowSignup ? (
+              <div
+                className="mt-8 mb-8 flex rounded-2xl p-1 w-full"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)' }}
+              >
+                {(['login', 'signup'] as const).map(m => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => switchMode(m)}
+                    className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
+                    style={
+                      mode === m
+                        ? { background: 'rgba(255,255,255,0.16)', color: '#FFFFFF', boxShadow: '0 2px 10px rgba(0,0,0,0.28)' }
+                        : { color: 'rgba(247,250,252,0.58)' }
+                    }
+                  >
+                    {m === 'login' ? 'Accedi' : 'Registrati'}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-8 mb-8 text-center text-sm" style={{ color: 'rgba(247,250,252,0.6)' }}>
+                Accedi con le credenziali del tuo account IST.
+              </p>
+            )}
 
             <form
               onSubmit={handleSubmit}
