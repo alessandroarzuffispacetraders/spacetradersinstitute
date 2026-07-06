@@ -1,7 +1,7 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import { User } from '../types'
+import { User, UserRole } from '../types'
 import { recordAccess } from '../lib/accessLog'
 
 type ProfileUpdate = Partial<Pick<User, 'name' | 'avatarPreset' | 'avatarUrl'>>
@@ -53,20 +53,48 @@ async function fetchProfile(userId: string): Promise<User | null> {
   }
 }
 
+// Profilo MINIMO ricavato dalla sessione. Usato SOLO come rete di sicurezza quando
+// la sessione è valida ma il profilo non è raggiungibile (query lenta/timeout al
+// risveglio): così l'app resta accessibile e non rimbalza al login. Viene sostituito
+// dal profilo reale appena la query va a buon fine.
+function minimalUserFromSession(session: Session): User {
+  const m = (session.user.user_metadata ?? {}) as { name?: string; full_name?: string; role?: string }
+  return {
+    id: session.user.id,
+    email: session.user.email ?? '',
+    name: m.name || m.full_name || session.user.email?.split('@')[0] || 'Utente',
+    role: (m.role as UserRole) || 'student',
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  // Copia sincrona di `user` per le decisioni dentro l'init auth (safety timeout,
+  // "sono già dentro?") senza dipendere dal ciclo di render.
+  const userRef = useRef<User | null>(null)
+  useEffect(() => { userRef.current = user }, [user])
   // true solo subito dopo un login esplicito → innesca l'animazione di ingresso.
   // NON viene settato su refresh/ripristino sessione.
   const [justLoggedIn, setJustLoggedIn] = useState(false)
 
   useEffect(() => {
     let mounted = true
+    let latestSession: Session | null = null
 
     // Rete di sicurezza: se l'init auth si impianta (rete mobile instabile,
     // refresh token bloccato, storage inaccessibile in webview/incognito),
     // sblocca comunque la UI invece di restare sullo spinner all'infinito.
-    const safety = setTimeout(() => { if (mounted) setLoading(false) }, 7000)
+    // MA: se esiste una sessione valida senza profilo caricato, NON mostrare il
+    // login — entra con un profilo minimo (il vero bug del "rifai login": una
+    // query profilo fallita non deve MAI sloggare chi ha una sessione valida).
+    const safety = setTimeout(() => {
+      if (!mounted) return
+      if (latestSession?.user && userRef.current === null) {
+        setUser(minimalUserFromSession(latestSession))
+      }
+      setLoading(false)
+    }, 7000)
     const finish = () => { if (mounted) { clearTimeout(safety); setLoading(false) } }
 
     // Applica sessione + profilo. Il fetch del profilo (query DB) va tenuto FUORI
@@ -75,16 +103,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // risolta → lock mai rilasciato → tutta l'auth si blocca → "caricamento
     // infinito", pure il login successivo si impianta). Perciò lì deferiamo.
     const applySession = async (session: Session | null) => {
+      latestSession = session
       // Authorize the realtime socket with the user's JWT so RLS-protected
       // postgres_changes (chat messages/reactions) are delivered live.
       supabase.realtime.setAuth(session?.access_token ?? null)
-      if (session?.user) {
-        const profile = await fetchProfile(session.user.id)
-        if (mounted) setUser(profile)
-      } else if (mounted) {
-        setUser(null)
+
+      if (!session?.user) {
+        // Sessione REALMENTE assente (logout / storage vuoto) → login legittimo.
+        if (mounted) setUser(null)
+        finish()
+        return
       }
-      finish()
+
+      // Se siamo già dentro (es. refresh token in background durante l'uso),
+      // sblocca subito la UI: nessuno spinner e nessun rischio di logout su un
+      // semplice refresh.
+      if (userRef.current) finish()
+
+      // Ritenta il profilo con backoff: al risveglio/rete lenta la prima query può
+      // fallire o andare in timeout. Con una sessione valida NON si slogga MAI.
+      for (let attempt = 0; mounted && attempt < 6; attempt++) {
+        const profile = await fetchProfile(session.user.id)
+        // Se nel frattempo la sessione è cambiata (nuovo refresh) o è arrivato un
+        // logout, abbandona: un loop "vecchio" non deve riscrivere lo stato.
+        if (!mounted || latestSession !== session) return
+        if (profile) { setUser(profile); finish(); return }
+        // Dopo un paio di tentativi a vuoto entra comunque con un profilo minimo,
+        // così l'app è subito utilizzabile; i tentativi proseguono e lo rimpiazzano
+        // col profilo reale appena la rete risponde.
+        if (attempt >= 1) { setUser(prev => prev ?? minimalUserFromSession(session)); finish() }
+        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
+        if (!mounted || latestSession !== session) return
+      }
     }
 
     supabase.auth.getSession()
