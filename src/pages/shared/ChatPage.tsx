@@ -53,6 +53,15 @@ function sameDay(a: string, b: string) {
   return new Date(a).toDateString() === new Date(b).toDateString()
 }
 
+// Rende cliccabili gli URL dentro un testo (usato nei post bacheca: link Zoom ecc.).
+function linkify(text: string) {
+  return text.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
+    /^https?:\/\//.test(part)
+      ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--ist-accent-text)', textDecoration: 'underline', wordBreak: 'break-all' }}>{part}</a>
+      : part,
+  )
+}
+
 const ROLE_LABEL: Record<MemberRole, string> = {
   admin: 'Admin',
   coach: 'Coach',
@@ -1555,7 +1564,7 @@ function BachecaPostCard({
       )}
 
       <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: 'var(--ist-text-muted)' }}>
-        {post.content}
+        {linkify(post.content)}
       </p>
 
       {canManage && (

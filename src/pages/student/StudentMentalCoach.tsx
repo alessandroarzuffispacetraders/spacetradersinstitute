@@ -34,7 +34,7 @@ export default function StudentMentalCoach() {
   // Videocorsi mental (in cima) e live del mental coach (in fondo).
   const { categories: mentalCats, loading: coursesLoading } = useStudentCatalog(userId, 'mental')
   const { events: allLives } = useLiveEvents()
-  const mentalLives = allLives.filter(e => e.hostRole === 'mental_coach')
+  const mentalLives = allLives.filter(e => e.hostRole === 'mental_coach' && e.eventType !== 'reminder')
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
