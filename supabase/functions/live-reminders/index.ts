@@ -30,6 +30,7 @@ const WINDOW = HOUR // un trigger può partire fino a 1h dopo (copre il gap tra 
 interface LiveRow {
   id: string; title: string; starts_at: string; status: string
   is_external: boolean; audience: string; zoom_url: string | null
+  event_type: string; notify: boolean
 }
 interface Sub {
   endpoint: string; keys: Record<string, string>; user_id: string
@@ -137,9 +138,9 @@ Deno.serve(async (req) => {
   try {
     const now = Date.now()
 
-    // Solo le LIVE vere (i reminder di calendario, event_type='reminder', non notificano).
+    // Live vere (scaletta completa) + promemoria con notify=true (1 push all'orario).
     const lives = await getJson<LiveRow[]>(
-      `${REST}/live_events?select=id,title,starts_at,status,is_external,audience,zoom_url&status=in.(upcoming,live)&starts_at=not.is.null&event_type=eq.live`,
+      `${REST}/live_events?select=id,title,starts_at,status,is_external,audience,zoom_url,event_type,notify&status=in.(upcoming,live)&starts_at=not.is.null&notify=eq.true`,
     )
     if (!Array.isArray(lives) || lives.length === 0) {
       return new Response(JSON.stringify({ ok: true, due: 0 }), { status: 200 })
@@ -150,6 +151,11 @@ Deno.serve(async (req) => {
     for (const live of lives) {
       const startMs = Date.parse(live.starts_at)
       if (Number.isNaN(startMs)) continue
+      // Promemoria: UNA sola notifica, all'orario (non la scaletta delle live).
+      if (live.event_type === 'reminder') {
+        if (now >= startMs && now < startMs + WINDOW) dueNormal.push({ live, kind: 'start', label: '' })
+        continue
+      }
       for (const o of OFFSETS) {
         const trigger = startMs - o.ms
         if (now >= trigger && now < trigger + WINDOW) dueNormal.push({ live, kind: o.kind, label: o.label })
@@ -170,11 +176,15 @@ Deno.serve(async (req) => {
     // ── Reminder normali: a TUTTI gli studenti (web + native) ──
     for (const item of dueNormal) {
       if (!(await claim(item.live.id, item.kind))) continue
-      const title = item.kind === 'start' ? '🔴 La live è iniziata!' : '📅 Live in arrivo'
-      const body = item.kind === 'start'
-        ? `«${item.live.title}» è in diretta ora. Entra!`
-        : `«${item.live.title}» ${item.label}`
-      const r = await dispatchAll(await subsFor('all'), { title, body, url: `/student/live/${item.live.id}` })
+      const isRem = item.live.event_type === 'reminder'
+      const title = isRem
+        ? '🔔 Promemoria'
+        : (item.kind === 'start' ? '🔴 La live è iniziata!' : '📅 Live in arrivo')
+      const body = isRem
+        ? `«${item.live.title}»`
+        : (item.kind === 'start' ? `«${item.live.title}» è in diretta ora. Entra!` : `«${item.live.title}» ${item.label}`)
+      const url = isRem ? '/student/calendario' : `/student/live/${item.live.id}`
+      const r = await dispatchAll(await subsFor('all'), { title, body, url })
       totalSent += r.sent; deadEndpoints.push(...r.deadEndpoints); deadTokens.push(...r.deadTokens)
     }
 

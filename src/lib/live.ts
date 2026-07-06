@@ -19,6 +19,7 @@ export interface LiveEvent {
   eventType: EventType
   isExternal: boolean            // live su Zoom esterno (nessun embed in-app)
   audience: LiveAudience
+  notify: boolean                // promemoria: manda 1 push all'orario (default true)
   startsAt: string | null        // ISO
   zoomUrl: string | null
   liveEmbedUrl: string | null    // YouTube/Vimeo live → guarda in-app (opt-in)
@@ -40,6 +41,7 @@ interface RawLive {
   event_type: EventType
   is_external: boolean
   audience: LiveAudience
+  notify: boolean
   starts_at: string | null
   zoom_url: string | null
   live_embed_url: string | null
@@ -52,7 +54,7 @@ interface RawLive {
 }
 
 const COLS =
-  'id,title,description,host,host_role,status,event_type,is_external,audience,starts_at,zoom_url,live_embed_url,replay_vimeo_id,duration_minutes,accent,accent_end,position,owner_id'
+  'id,title,description,host,host_role,status,event_type,is_external,audience,notify,starts_at,zoom_url,live_embed_url,replay_vimeo_id,duration_minutes,accent,accent_end,position,owner_id'
 
 function toLive(r: RawLive): LiveEvent {
   return {
@@ -65,6 +67,7 @@ function toLive(r: RawLive): LiveEvent {
     eventType: r.event_type ?? 'live',
     isExternal: r.is_external ?? false,
     audience: r.audience ?? 'all',
+    notify: r.notify ?? true,
     startsAt: r.starts_at,
     zoomUrl: r.zoom_url,
     liveEmbedUrl: r.live_embed_url,
@@ -110,7 +113,7 @@ function previewIso(offsetDays: number, h: number, m: number): string {
 }
 function previewEvents(): LiveEvent[] {
   const mk = (id: string, title: string, host: string, hostRole: LiveRole, status: LiveStatus, startsAt: string | null, accent: string, accentEnd: string, durationMinutes: number | null, description = ''): LiveEvent =>
-    ({ id, title, description, host, hostRole, status, eventType: 'live', isExternal: false, audience: 'all', startsAt, zoomUrl: null, liveEmbedUrl: null, replayVimeoId: null, durationMinutes, accent, accentEnd, position: 0, ownerId: null })
+    ({ id, title, description, host, hostRole, status, eventType: 'live', isExternal: false, audience: 'all', notify: true, startsAt, zoomUrl: null, liveEmbedUrl: null, replayVimeoId: null, durationMinutes, accent, accentEnd, position: 0, ownerId: null })
   return [
     mk('pv-live', 'Sessione operativa in diretta', 'Coach Marco', 'coach', 'live', null, '#7CBBD0', '#286680', null, 'Analizziamo il mercato in tempo reale e rispondiamo alle domande in chat.'),
     mk('pv-up1', 'Live analisi di mercato', 'Coach Marco', 'coach', 'upcoming', previewIso(2, 18, 0), '#7CBBD0', '#286680', 60),
@@ -172,6 +175,7 @@ export interface LiveInput {
   eventType: EventType
   isExternal: boolean
   audience: LiveAudience
+  notify: boolean
   startsAt: string | null
   zoomUrl: string | null
   liveEmbedUrl: string | null
@@ -194,6 +198,8 @@ function toRow(input: LiveInput) {
     // I campi Zoom/embed/replay/audience/external hanno senso solo per le live.
     is_external: isReminder ? false : input.isExternal,
     audience: isReminder ? 'all' : input.audience,
+    // notify: interruttore usato dai promemoria; le live restano sempre notificate.
+    notify: input.notify,
     starts_at: input.startsAt,
     zoom_url: isReminder ? null : (input.zoomUrl?.trim() || null),
     // In modalità esterna forziamo l'embed vuoto: si apre solo su Zoom.

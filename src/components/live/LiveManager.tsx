@@ -69,12 +69,13 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
     title: initial.title, description: initial.description, host: initial.host,
     hostRole: initial.hostRole, status: initial.status,
     eventType: initial.eventType, isExternal: initial.isExternal, audience: initial.audience,
+    notify: initial.notify,
     startsAt: initial.startsAt,
     zoomUrl: initial.zoomUrl ?? '', liveEmbedUrl: initial.liveEmbedUrl ?? '', replayVimeoId: initial.replayVimeoId ?? '',
     durationMinutes: initial.durationMinutes, accent: initial.accent, accentEnd: initial.accentEnd,
   } : {
     title: '', description: '', host: defaultHost ?? '', hostRole: 'coach',
-    status: 'upcoming', eventType: 'live', isExternal: false, audience: 'all',
+    status: 'upcoming', eventType: 'live', isExternal: false, audience: 'all', notify: true,
     startsAt: null, zoomUrl: '', liveEmbedUrl: '', replayVimeoId: '',
     durationMinutes: null, accent: '#7CBBD0', accentEnd: '#286680',
   })
@@ -216,6 +217,25 @@ function LiveModal({ initial, defaultHost, onSave, onClose }: {
             {label(isReplay ? 'Data registrazione' : 'Data e ora')}
             <input type="datetime-local" value={isoToLocal(form.startsAt)} onChange={e => set({ startsAt: localToIso(e.target.value) })} className="px-3.5 py-2.5 text-sm" style={inputStyle} />
           </div>
+
+          {/* Promemoria: notifica singola all'orario (opzionale) */}
+          {isReminder && (
+            <div className="flex items-center justify-between gap-3 rounded-xl px-3.5 py-3" style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w9)' }}>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold" style={{ color: 'var(--ist-text)' }}>Invia notifica all'orario</p>
+                <p className="text-[11px] mt-0.5 leading-snug" style={{ color: 'var(--ist-text-dim)' }}>Una push a tutti gli studenti all'ora del promemoria. Spegni per lasciarlo solo in calendario.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => set({ notify: !form.notify })}
+                className="relative w-11 h-6 rounded-full flex-shrink-0 transition-colors"
+                style={{ background: form.notify ? '#5A9AB1' : 'var(--ist-w10)' }}
+                aria-pressed={form.notify}
+              >
+                <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: form.notify ? 22 : 2 }} />
+              </button>
+            </div>
+          )}
 
           {!isReminder && (isReplay ? (
             <div className="grid grid-cols-2 gap-3">
