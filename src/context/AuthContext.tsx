@@ -139,6 +139,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // account via edge function (verifica il JWT lato server), poi chiude la sessione.
   const deleteAccount = async (): Promise<{ error: string | null }> => {
     if (!user) return { error: 'Non autenticato' }
+    // Token FRESCO prima dell'invoke: dopo la migrazione a chiavi JWT asimmetriche
+    // la sessione in cache può essere firmata con la vecchia chiave → l'edge
+    // function la rifiuta ("Token non valido"). refreshSession la rigenera.
+    const { error: refreshErr } = await supabase.auth.refreshSession()
+    if (refreshErr) return { error: 'Sessione scaduta. Rifai il login.' }
     const { data, error } = await supabase.functions.invoke('delete-own-account', { body: {} })
     if (error) return { error: error.message || "Errore durante l'eliminazione dell'account" }
     if (data && (data as { error?: string }).error) return { error: (data as { error: string }).error }
