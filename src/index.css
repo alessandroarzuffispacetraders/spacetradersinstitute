@@ -228,6 +228,20 @@ html.is-android *::after {
   -webkit-backdrop-filter: none !important;
 }
 
+/* Android + tema SCURO: senza blur le superfici "frosted" (sfondo bianco 3–8%)
+   restano see-through → le rendiamo OPACHE via i token. Il tema chiaro è già
+   92–98% opaco e non serve toccarlo. Solo Android (classe is-android): iOS/web
+   invariati. `:not(.light)` copre sia il tema scuro sia lo stato iniziale. */
+html.is-android:not(.light) {
+  --ist-card-bg: linear-gradient(145deg, #171b26, #10131b);
+  --ist-card-bg-premium: radial-gradient(circle at 20% 0%, rgba(124,187,208,0.16), transparent 42%), linear-gradient(145deg, #1a212c, #11151d);
+  --ist-nav-bg: #0d101a;
+  --ist-composer-bg: #0b0d16;
+}
+/* Header saluto sticky: su Android niente blur → dagli uno sfondo opaco (pagina)
+   così il testo non si sovrappone alle card che scorrono sotto. */
+html.is-android .home-greeting-bar-bg { background: var(--ist-bg); }
+
 /* ===== Login transition — colori sfocati in movimento che rivelano il logo ===== */
 /* Logo bianco su bianco: appare solo dove i blob colorati passano dietro.
    Ingrandimento lentissimo e quasi impercettibile. */
