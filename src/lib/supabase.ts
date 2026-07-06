@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
-import { loggingFetch, loggingStorage, installAuthDebug } from './authDebug'
+import { loggingFetch, installAuthDebug, logAuthEvent } from './authDebug'
+import { authStorage, isNativePlatform } from './authStorage'
 
 // .trim() guards against a stray trailing newline/space in the env var,
 // which would corrupt the Realtime WebSocket apikey (sent as a URL param).
@@ -14,10 +15,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    // Storage strumentato: traccia scritture/rimozioni della chiave di sessione e
-    // gestisce localStorage inaccessibile (iOS/webview) senza cambiare la chiave.
-    // Serve a diagnosticare i logout intermittenti: vedi src/lib/authDebug.ts.
-    storage: loggingStorage,
+    // Storage della sessione, scelto per piattaforma (vedi src/lib/authStorage.ts):
+    // • NATIVO → Capacitor Preferences (UserDefaults/SharedPreferences): durevole,
+    //   sopravvive all'eviction del localStorage della WKWebView → fix dei logout
+    //   casuali sull'app dello store. Migrazione una-tantum dal localStorage.
+    // • WEB → localStorage strumentato (chiave invariata) per diagnosi.
+    storage: authStorage,
   },
   // fetch strumentato: cattura il CORPO esatto delle risposte fallite di
   // /auth/v1/token (es. "Invalid Refresh Token: Already Used"), passando tutto
@@ -27,3 +30,4 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 // Attiva canary anti-eviction, listener online/offline e window.__istAuth.
 installAuthDebug()
+logAuthEvent('client_init', { store: isNativePlatform ? 'native-preferences' : 'web-localStorage' })

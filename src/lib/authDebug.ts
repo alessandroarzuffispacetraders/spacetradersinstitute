@@ -178,13 +178,13 @@ export const loggingFetch: typeof fetch = async (input, init) => {
 const memoryFallback = new Map<string, string>()
 let warnedNoStorage = false
 
-function isMainSessionKey(key: string): boolean {
+export function isMainSessionKey(key: string): boolean {
   return key.endsWith('-auth-token')
 }
-function isSessionFamilyKey(key: string): boolean {
+export function isSessionFamilyKey(key: string): boolean {
   return key.includes('-auth-token')
 }
-function shortStack(): string {
+export function shortStack(): string {
   try {
     const s = new Error().stack ?? ''
     // Tieni qualche frame utile (dove auth-js chiama removeItem: _removeSession,
