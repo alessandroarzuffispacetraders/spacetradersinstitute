@@ -3,6 +3,13 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { User, UserRole } from '../types'
 import { recordAccess } from '../lib/accessLog'
+import { logAuthEvent, markExplicitSignOut, wasExplicitSignOut } from '../lib/authDebug'
+
+// Secondi alla scadenza dell'access_token della sessione (per la diagnostica).
+function expiresInSeconds(session: Session | null): number | null {
+  if (!session?.expires_at) return null
+  return Math.round(session.expires_at * 1000 - Date.now()) / 1000 | 0
+}
 
 type ProfileUpdate = Partial<Pick<User, 'name' | 'avatarPreset' | 'avatarUrl'>>
 
@@ -110,6 +117,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!session?.user) {
         // Sessione REALMENTE assente (logout / storage vuoto) → login legittimo.
+        // Diagnostica: registra il MOMENTO in cui la sessione diventa null e se è
+        // stato un logout VOLONTARIO (nostro signOut) o INVOLONTARIO (refresh
+        // fallito / storage svuotato) — insieme a chi era loggato prima.
+        logAuthEvent('session_became_null', {
+          explicit: wasExplicitSignOut(),
+          hadUserBefore: !!userRef.current,
+          prevUserId: userRef.current?.id ?? null,
+        })
         if (mounted) setUser(null)
         finish()
         return
@@ -143,7 +158,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // ma NON lasciare mai il loading appeso.
       .catch(() => finish())
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Diagnostica logout intermittenti: registra OGNI evento auth col tipo
+      // (SIGNED_OUT/TOKEN_REFRESHED/SIGNED_IN/INITIAL_SESSION/USER_UPDATED) e
+      // l'expiry residuo. Un SIGNED_OUT che NON è un nostro logout esplicito è la
+      // firma del logout involontario. NB: solo scrittura in localStorage, niente
+      // chiamate Supabase qui dentro (il callback tiene il lock del client).
+      logAuthEvent('onAuthStateChange', {
+        event,
+        hasSession: !!session?.user,
+        expiresIn: expiresInSeconds(session),
+        explicit: event === 'SIGNED_OUT' ? wasExplicitSignOut() : undefined,
+      })
       // setTimeout(0): esce dal callback (rilascia il lock del client) PRIMA di
       // toccare il DB → evita il deadlock del caricamento infinito.
       setTimeout(() => { if (mounted) applySession(session) }, 0)
@@ -171,6 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = async () => {
+    markExplicitSignOut() // così la strumentazione sa che il SIGNED_OUT è VOLUTO
     await supabase.auth.signOut()
     setUser(null)
   }
@@ -197,6 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.functions.invoke('delete-own-account', { body: {} })
     if (error) return { error: error.message || "Errore durante l'eliminazione dell'account" }
     if (data && (data as { error?: string }).error) return { error: (data as { error: string }).error }
+    markExplicitSignOut() // SIGNED_OUT voluto
     await supabase.auth.signOut().catch(() => {/* sessione già invalidata lato server */})
     setUser(null)
     return { error: null }
