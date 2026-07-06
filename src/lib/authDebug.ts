@@ -94,6 +94,22 @@ export function getAuthEvents(): AuthEvent[] {
   return readEvents()
 }
 
+// È la firma di un logout INVOLONTARIO? (per warn automatico + why())
+function isInvoluntaryLogout(e: AuthEvent): boolean {
+  if (e.kind === 'session_became_null' && e.explicit === false && e.hadUserBefore === true) return true
+  if (e.kind === 'onAuthStateChange' && e.event === 'SIGNED_OUT' && e.explicit === false) return true
+  if (e.kind === 'startup' && e.diagnosis === 'whole_storage_cleared_or_first_run' && e.hadCanary === true) return true
+  return false
+}
+
+// Indice dell'ULTIMO logout involontario nel buffer, o -1.
+function lastInvoluntaryLogoutIndex(events: AuthEvent[]): number {
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (isInvoluntaryLogout(events[i])) return i
+  }
+  return -1
+}
+
 // ── distinzione logout volontario vs involontario ────────────────────────────
 export function markExplicitSignOut(): void {
   explicitSignOutAt = Date.now()
@@ -283,11 +299,33 @@ export function installAuthDebug(): void {
         console.table(getAuthEvents())
         return `${getAuthEvents().length} eventi`
       },
+      // why(): stampa in JSON COMPLETO (console.table tronca) gli eventi attorno
+      // all'ultimo logout involontario → la causa vera, copiabile e da inviare.
+      why: () => {
+        const evs = getAuthEvents()
+        const idx = lastInvoluntaryLogoutIndex(evs)
+        const slice = idx >= 0 ? evs.slice(Math.max(0, idx - 10), idx + 3) : evs.slice(-13)
+        // eslint-disable-next-line no-console
+        console.log(JSON.stringify(slice, null, 2))
+        return idx >= 0
+          ? '⚠️ Logout involontario trovato — copia il JSON qui sopra e invialo.'
+          : 'Nessun logout involontario ancora. Sopra gli ultimi eventi.'
+      },
       clear: () => {
         const s = rawLocalStorage()
         try { s?.removeItem(EVENTS_KEY) } catch { /* noop */ }
         return 'cleared'
       },
+    }
+
+    // Avviso automatico: se all'avvio il buffer contiene già un logout
+    // involontario, segnalalo forte così l'utente sa di eseguire why().
+    if (lastInvoluntaryLogoutIndex(getAuthEvents()) >= 0) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '⚠️ [auth] Rilevato un LOGOUT INVOLONTARIO nella cronologia. ' +
+        'Esegui  window.__istAuth.why()  e invia il JSON.',
+      )
     }
   }
 }
