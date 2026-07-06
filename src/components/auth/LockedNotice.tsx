@@ -6,8 +6,8 @@ import { Lock } from 'lucide-react'
 // contatto admin, niente prezzi o link. Solo la comunicazione di fatto che la
 // sezione fa parte del percorso completo. La conversione avviene fuori dall'app.
 export default function LockedNotice({
-  title = 'Sezione riservata',
-  body = 'Questa sezione è riservata agli studenti del percorso completo IST.',
+  title = 'Sezione non disponibile',
+  body = 'Questa sezione non è disponibile per il tuo account.',
 }: {
   title?: string
   body?: string

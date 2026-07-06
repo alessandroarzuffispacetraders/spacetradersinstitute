@@ -40,9 +40,9 @@ export default function SupportPage() {
           Apri l'app e accedi con l'email e la password che hai usato in fase di registrazione. Se
           hai dimenticato la password, contattaci all'indirizzo qui sopra.
         </Faq>
-        <Faq q="Come funziona l'accesso completo?">
-          La registrazione dà accesso immediato alla versione di prova gratuita. Per l'accesso
-          completo al percorso di coaching 1:1 contatta il team dall'app o via email.
+        <Faq q="Come accedo al percorso di coaching?">
+          Il percorso di coaching 1:1 è riservato agli iscritti. Se sei già iscritto, accedi
+          con le tue credenziali; per informazioni sull'iscrizione scrivici all'indirizzo qui sopra.
         </Faq>
         <Faq q="Come elimino il mio account?">
           Dall'app: Profilo → Account → Elimina account, quindi conferma. L'account e i dati

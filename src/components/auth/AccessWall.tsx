@@ -2,6 +2,7 @@ import { Clock, Lock, LogOut, LifeBuoy } from 'lucide-react'
 import ISTLogo from '../ui/ISTLogo'
 import { useAuth } from '../../context/AuthContext'
 import { StudentStatus } from '../../types'
+import { upsellSuppressed } from '../../lib/freeTier'
 
 // Dove mandare chi non ha ancora accesso (link/mail/WhatsApp). Configurabile via env.
 const SUPPORT_URL = (import.meta.env.VITE_SUPPORT_URL as string | undefined)?.trim() || ''
@@ -24,10 +25,20 @@ const COPY: Record<Exclude<StudentStatus, 'active'>, { icon: typeof Clock; title
   },
 }
 
+// Copy NEUTRA per iOS (App Review 3.1.1): niente inviti/direzioni a riattivare o
+// contattare per "riabilitare" l'accesso (letto come pagamento esterno). Solo lo
+// stato di fatto; l'unica azione è uscire. pending resta identico (nessun acquisto).
+const IOS_BODY: Partial<Record<Exclude<StudentStatus, 'active'>, string>> = {
+  blocked: 'Il tuo accesso è attualmente sospeso.',
+  expired: 'Il tuo accesso al percorso non è attivo.',
+}
+
 export default function AccessWall({ status }: { status: Exclude<StudentStatus, 'active'> }) {
   const { logout, user } = useAuth()
   const c = COPY[status]
   const Icon = c.icon
+  const companion = upsellSuppressed()
+  const body = (companion && IOS_BODY[status]) || c.body
 
   return (
     <div
@@ -49,14 +60,14 @@ export default function AccessWall({ status }: { status: Exclude<StudentStatus, 
         </div>
 
         <h1 className="text-xl font-bold mb-2" style={{ color: '#F7FAFC' }}>{c.title}</h1>
-        <p className="text-sm leading-relaxed mb-7 max-w-sm" style={{ color: 'rgba(255,255,255,0.6)' }}>{c.body}</p>
+        <p className="text-sm leading-relaxed mb-7 max-w-sm" style={{ color: 'rgba(255,255,255,0.6)' }}>{body}</p>
 
         {user?.email && (
           <p className="text-xs mb-6" style={{ color: 'rgba(255,255,255,0.35)' }}>Account: {user.email}</p>
         )}
 
         <div className="flex flex-col gap-3 w-full">
-          {SUPPORT_URL && (
+          {!companion && SUPPORT_URL && (
             <a
               href={SUPPORT_URL}
               target="_blank"
