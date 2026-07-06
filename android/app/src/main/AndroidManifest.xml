@@ -27,6 +27,14 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Canale notifiche di default per FCM: heads-up ad alta importanza.
+             Il canale 'ist_default' è creato a runtime in nativePush.ts; qui
+             diciamo a FCM di usarlo per le notifiche che non specificano un canale. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="ist_default"
+        />
     </application>
 
     <!-- Permissions -->
