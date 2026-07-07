@@ -86,11 +86,16 @@ export function useChatMessages(channelId: string | null, userId: string) {
       .select('*')
       .eq('channel_id', channelId)
       .is('deleted_at', null)
-      .order('created_at', { ascending: true })
+      // Prendi i 100 messaggi PIÙ RECENTI (ascending+limit prendeva i 100 più
+      // VECCHI: oltre i 100 messaggi la conversazione recente non si caricava più
+      // all'ingresso → sembrava "sparita"). Si ordina desc e si riavvolge sotto.
+      .order('created_at', { ascending: false })
       .limit(100)
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) console.warn('[chat] load messages error', error.message)
         if (!data) { setLoading(false); return }
-        const msgs = data as DbMessage[]
+        // Rimetti in ordine cronologico (vecchio → nuovo) per la visualizzazione.
+        const msgs = (data as DbMessage[]).slice().reverse()
         setMessages(msgs)
         setLoading(false)
 
