@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
 import {
@@ -590,7 +590,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
   const imagePreview = useMemo(() => imageFile ? URL.createObjectURL(imageFile) : null, [imageFile])
   useEffect(() => () => { if (imagePreview) URL.revokeObjectURL(imagePreview) }, [imagePreview])
 
-  const { messages, loading, reactions, sendMessage: sendToDb, editMessage, deleteMessage, toggleReaction } = useChatMessages(channel.id, userId)
+  const { messages, loading, reactions, hasMore, loadingMore, loadMore, sendMessage: sendToDb, editMessage, deleteMessage, toggleReaction } = useChatMessages(channel.id, userId)
   const { typingUsers, notifyTyping, stopTyping } = useTypingIndicator(channel.id, userId, userName)
   // Avatar reali (foto/preset) degli autori, risolti per user_id.
   const authorAvatars = useAuthorAvatars(useMemo(() => messages.map(m => m.user_id), [messages]))
@@ -612,12 +612,28 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
     return () => setActiveChat(null)
   }, [channel.id])
 
-  // Auto-scroll: only if already at bottom
+  // Auto-scroll + paginazione. Distingue l'APPEND (nuovo messaggio in fondo) dal
+  // PREPEND (messaggi più vecchi caricati in cima da loadMore): sul prepend NON
+  // si scrolla né si conta come "nuovo", ma si conserva la posizione di lettura
+  // compensando l'altezza aggiunta sopra (via useLayoutEffect, prima del paint).
   const prevMsgCount = useRef(0)
-  useEffect(() => {
-    const added = messages.length > prevMsgCount.current
+  const prevLastId = useRef<string | null>(null)
+  const restoreScrollRef = useRef<{ height: number; top: number } | null>(null)
+  useLayoutEffect(() => {
+    const added = messages.length - prevMsgCount.current
+    const lastId = messages[messages.length - 1]?.id ?? null
+    const wasPrepend = added > 0 && prevLastId.current !== null && lastId === prevLastId.current
     prevMsgCount.current = messages.length
-    if (!added) return
+    prevLastId.current = lastId
+    if (added <= 0) return
+
+    if (wasPrepend) {
+      const el = scrollContainerRef.current
+      const r = restoreScrollRef.current
+      if (el && r) el.scrollTop = el.scrollHeight - r.height + r.top
+      restoreScrollRef.current = null
+      return
+    }
 
     if (isAtBottom) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -653,6 +669,13 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60
     setIsAtBottom(atBottom)
     if (atBottom) setNewMsgCount(0)
+    // Vicino alla cima → carica il blocco di messaggi precedenti. Cattura altezza
+    // e posizione PRIMA del prepend, così il layout effect può ripristinare la
+    // vista senza salti. La guard anti-doppio è dentro loadMore (ref sincrona).
+    if (el.scrollTop < 120 && hasMore && !loadingMore) {
+      restoreScrollRef.current = { height: el.scrollHeight, top: el.scrollTop }
+      loadMore()
+    }
   }
 
   const scrollToBottom = () => {
@@ -921,6 +944,13 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
         {!loading && messages.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 gap-2">
             <p className="text-sm" style={{ color: 'var(--ist-text-dim)' }}>Nessun messaggio ancora. Inizia la conversazione!</p>
+          </div>
+        )}
+
+        {/* Caricamento dei messaggi precedenti (paginazione all'indietro) */}
+        {loadingMore && (
+          <div className="flex justify-center py-3">
+            <Loader2 size={16} className="animate-spin" style={{ color: 'var(--ist-text-dim)' }} />
           </div>
         )}
 
