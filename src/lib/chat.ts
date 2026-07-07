@@ -63,10 +63,17 @@ function buildReactions(
   return map
 }
 
+// Quanti messaggi per pagina: all'ingresso i più recenti, poi altri blocchi
+// "più vecchi" via loadMore() quando si scrolla in cima alla conversazione.
+const MESSAGES_PAGE_SIZE = 50
+
 export function useChatMessages(channelId: string | null, userId: string) {
   const [messages, setMessages] = useState<DbMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [reactions, setReactions] = useState<ReactionMap>({})
+  const [hasMore, setHasMore] = useState(false)        // esistono messaggi più vecchi da caricare?
+  const [loadingMore, setLoadingMore] = useState(false)
+  const loadingMoreRef = useRef(false)                 // guard sincrono anti doppio-fetch
   const msgIdsRef = useRef<Set<string>>(new Set())
 
   // keep msgIdsRef in sync
@@ -74,39 +81,51 @@ export function useChatMessages(channelId: string | null, userId: string) {
     msgIdsRef.current = new Set(messages.map(m => m.id))
   }, [messages])
 
+  // Carica le reazioni per un set di messaggi e le FONDE nella mappa esistente
+  // (usato sia al primo load sia quando si aggiungono messaggi più vecchi).
+  const loadReactions = useCallback((ids: string[]) => {
+    if (ids.length === 0) return
+    supabase
+      .from('message_reactions')
+      .select('message_id, user_id, emoji')
+      .in('message_id', ids)
+      .then(({ data: rd }) => {
+        if (rd) setReactions(prev => ({ ...prev, ...buildReactions(rd as any[], userId) }))
+      })
+  }, [userId])
+
   useEffect(() => {
     if (!channelId) return
 
     setLoading(true)
     setMessages([])
     setReactions({})
+    setHasMore(false)
+    setLoadingMore(false)
+    loadingMoreRef.current = false
 
     supabase
       .from('messages')
       .select('*')
       .eq('channel_id', channelId)
       .is('deleted_at', null)
-      // Prendi i 100 messaggi PIÙ RECENTI (ascending+limit prendeva i 100 più
-      // VECCHI: oltre i 100 messaggi la conversazione recente non si caricava più
-      // all'ingresso → sembrava "sparita"). Si ordina desc e si riavvolge sotto.
+      // Prima pagina = i messaggi PIÙ RECENTI (ascending+limit prendeva invece i
+      // più VECCHI: oltre la soglia la conversazione recente non si caricava più
+      // all'ingresso → sembrava "sparita"). Ordina desc, poi riavvolgi sotto.
+      // I più vecchi si caricano a blocchi con loadMore() scrollando in cima.
       .order('created_at', { ascending: false })
-      .limit(100)
+      .limit(MESSAGES_PAGE_SIZE)
       .then(({ data, error }) => {
         if (error) console.warn('[chat] load messages error', error.message)
         if (!data) { setLoading(false); return }
+        const rows = data as DbMessage[]
+        // Pagina piena → probabilmente esistono altri messaggi più vecchi.
+        setHasMore(rows.length === MESSAGES_PAGE_SIZE)
         // Rimetti in ordine cronologico (vecchio → nuovo) per la visualizzazione.
-        const msgs = (data as DbMessage[]).slice().reverse()
+        const msgs = rows.slice().reverse()
         setMessages(msgs)
         setLoading(false)
-
-        if (msgs.length === 0) return
-        supabase
-          .from('message_reactions')
-          .select('message_id, user_id, emoji')
-          .in('message_id', msgs.map(m => m.id))
-          .then(({ data: rd }) => {
-            if (rd) setReactions(buildReactions(rd as any[], userId))
-          })
+        loadReactions(msgs.map(m => m.id))
       })
 
     // Message changes
@@ -179,7 +198,38 @@ export function useChatMessages(channelId: string | null, userId: string) {
       msgSub.unsubscribe()
       reactSub.unsubscribe()
     }
-  }, [channelId, userId])
+  }, [channelId, userId, loadReactions])
+
+  // Carica un blocco di messaggi PIÙ VECCHI di quelli già in lista (paginazione
+  // all'indietro): li antepone in ordine cronologico, deduplicando per id.
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current || !hasMore || !channelId) return
+    const oldest = messages[0]
+    if (!oldest) return
+    loadingMoreRef.current = true
+    setLoadingMore(true)
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('channel_id', channelId)
+      .is('deleted_at', null)
+      .lt('created_at', oldest.created_at)
+      .order('created_at', { ascending: false })
+      .limit(MESSAGES_PAGE_SIZE)
+    loadingMoreRef.current = false
+    setLoadingMore(false)
+    if (error) { console.warn('[chat] load older error', error.message); return }
+    if (!data) return
+    const older = (data as DbMessage[]).slice().reverse()
+    if (older.length < MESSAGES_PAGE_SIZE) setHasMore(false)
+    if (older.length === 0) return
+    setMessages(prev => {
+      const have = new Set(prev.map(m => m.id))
+      const fresh = older.filter(m => !have.has(m.id))
+      return fresh.length ? [...fresh, ...prev] : prev
+    })
+    loadReactions(older.map(m => m.id))
+  }, [channelId, hasMore, messages, loadReactions])
 
   const sendMessage = async (content: string, authorName: string, authorRole: UserRole, media?: MessageMedia) => {
     const trimmed = content.trim()
@@ -263,7 +313,7 @@ export function useChatMessages(channelId: string | null, userId: string) {
     }
   }, [userId, reactions])
 
-  return { messages, loading, reactions, sendMessage, editMessage, deleteMessage, toggleReaction }
+  return { messages, loading, reactions, hasMore, loadingMore, loadMore, sendMessage, editMessage, deleteMessage, toggleReaction }
 }
 
 // Typing indicator via Supabase Broadcast
