@@ -17,6 +17,25 @@ export async function ensureNativePushReady(onNavigate: (url: string) => void) {
   if (!isNative() || listenersReady) return
   listenersReady = true
 
+  // Android: canale notifiche ad ALTA importanza → le push compaiono come banner
+  // heads-up (con suono). Senza un canale creato, FCM usa un fallback a importanza
+  // DEFAULT e le notifiche restano solo in tendina, silenziose (o non compaiono).
+  // È impostato come default anche nel Manifest (default_notification_channel_id)
+  // così FCM lo usa in automatico. Solo Android; su iOS i canali non esistono.
+  if (Capacitor.getPlatform() === 'android') {
+    try {
+      await PushNotifications.createChannel({
+        id: 'ist_default',
+        name: 'Notifiche IST',
+        description: 'Messaggi, live e aggiornamenti del percorso',
+        importance: 5,   // MAX → heads-up banner + suono
+        visibility: 1,   // visibile sulla schermata di blocco
+      })
+    } catch (err) {
+      console.warn('createChannel:', err)
+    }
+  }
+
   // I listener vanno registrati PRIMA di register(), o si perde 'registration'.
   await PushNotifications.addListener('registration', async (token) => {
     // token.value = device token APNs → lo rivendichiamo per l'utente corrente.

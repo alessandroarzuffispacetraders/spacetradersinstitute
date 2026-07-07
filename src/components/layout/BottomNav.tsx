@@ -17,6 +17,14 @@ import {
 import { isPathLockedForFree } from '../../lib/freeTier'
 import UserAvatar from '../ui/UserAvatar'
 import { useNews, NewsDot } from '../../context/NewsContext'
+import { Capacitor } from '@capacitor/core'
+
+// Android edge-to-edge (targetSdk 36): la WebView si estende SOTTO la barra gesti
+// di sistema → la bottom nav va sollevata di `safe-area-inset-bottom` per non
+// accavallarsi ai controlli (home/indietro). iOS/web restano IDENTICI (20/96).
+const IS_ANDROID = Capacitor.getPlatform() === 'android'
+const NAV_BOTTOM: number | string = IS_ANDROID ? 'calc(20px + env(safe-area-inset-bottom, 0px))' : 20
+const SHEET_BOTTOM: number | string = IS_ANDROID ? 'calc(96px + env(safe-area-inset-bottom, 0px))' : 96
 
 const ICON_MAP: Record<string, LucideIcon> = {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
@@ -74,7 +82,7 @@ function OverflowSheet({
       <div
         className="lg:hidden fixed z-50 left-4 right-4"
         style={{
-          bottom: 96,
+          bottom: SHEET_BOTTOM,
           borderRadius: '2rem',
           background: 'var(--ist-nav-bg)',
           border: '1px solid var(--ist-nav-border)',
@@ -275,7 +283,7 @@ export default function BottomNav() {
 
       <nav
         className={`lg:hidden fixed z-50 transition-transform duration-300 ease-in-out ${hideBottomNav ? 'translate-y-[200%]' : 'translate-y-0'}`}
-        style={{ bottom: 20, left: 16, right: 16 }}
+        style={{ bottom: NAV_BOTTOM, left: 16, right: 16 }}
       >
         <div
           className="flex items-center justify-around h-[68px] px-1"
