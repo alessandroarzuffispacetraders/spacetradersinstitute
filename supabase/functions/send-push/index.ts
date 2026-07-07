@@ -1,6 +1,7 @@
 import webPush from 'npm:web-push@3.6.7'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { sendApns } from './apns.ts'
+import { sendFcm } from './fcm.ts'
 
 const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY')!
 const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY')!
@@ -58,12 +59,18 @@ async function dispatch(subscriptions: Sub[], payload: PushPayload) {
     .map((r, i) => (r.status === 'rejected' && [404, 410].includes((r.reason as { statusCode?: number })?.statusCode ?? 0) ? web[i].endpoint : null))
     .filter((e): e is string => e !== null)
 
-  // ── NATIVE PUSH (APNs) — no-op finché non configurato ───────────────────────
-  const { sent: apnsSent, dead: deadTokens } = await sendApns(
-    native.map((s) => s.native_token as string),
-    { title: payload.title, body: payload.body, url: payload.url, channelId: payload.channel_id },
-  )
-  sent += apnsSent
+  // ── NATIVE PUSH — split per piattaforma: iOS→APNs, Android→FCM ───────────────
+  // (prima TUTTI i token native andavano ad APNs, quindi i token FCM di Android
+  // non venivano mai consegnati). Ognuno no-op finché il rispettivo secret manca.
+  const nativePayload = { title: payload.title, body: payload.body, url: payload.url, channelId: payload.channel_id }
+  const iosTokens = native.filter((s) => s.platform !== 'android').map((s) => s.native_token as string)
+  const androidTokens = native.filter((s) => s.platform === 'android').map((s) => s.native_token as string)
+  const [apns, fcm] = await Promise.all([
+    sendApns(iosTokens, nativePayload),
+    sendFcm(androidTokens, nativePayload),
+  ])
+  sent += apns.sent + fcm.sent
+  const deadTokens = [...apns.dead, ...fcm.dead]
 
   // ── Pulizia dei destinatari morti ──────────────────────────────────────────
   if (deadEndpoints.length > 0) {
