@@ -1,7 +1,15 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import { User } from '../types'
+import { User, UserRole } from '../types'
 import { recordAccess } from '../lib/accessLog'
+import { logAuthEvent, markExplicitSignOut, wasExplicitSignOut } from '../lib/authDebug'
+
+// Secondi alla scadenza dell'access_token della sessione (per la diagnostica).
+function expiresInSeconds(session: Session | null): number | null {
+  if (!session?.expires_at) return null
+  return Math.round(session.expires_at * 1000 - Date.now()) / 1000 | 0
+}
 
 type ProfileUpdate = Partial<Pick<User, 'name' | 'avatarPreset' | 'avatarUrl'>>
 
@@ -22,11 +30,16 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null)
 
 async function fetchProfile(userId: string): Promise<User | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single()
+  // Timeout di sicurezza: se la query si impianta (rete instabile) non lasciamo
+  // mai il caricamento appeso — meglio null (→ verrà ritentato) che spinner eterno.
+  const result = await Promise.race([
+    supabase.from('profiles').select('*').eq('id', userId).single(),
+    new Promise<{ data: null; error: unknown }>(resolve =>
+      setTimeout(() => resolve({ data: null, error: 'timeout' }), 6000),
+    ),
+  ])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = result as { data: any; error: unknown }
 
   if (error || !data) return null
 
@@ -47,48 +60,119 @@ async function fetchProfile(userId: string): Promise<User | null> {
   }
 }
 
+// Profilo MINIMO ricavato dalla sessione. Usato SOLO come rete di sicurezza quando
+// la sessione è valida ma il profilo non è raggiungibile (query lenta/timeout al
+// risveglio): così l'app resta accessibile e non rimbalza al login. Viene sostituito
+// dal profilo reale appena la query va a buon fine.
+function minimalUserFromSession(session: Session): User {
+  const m = (session.user.user_metadata ?? {}) as { name?: string; full_name?: string; role?: string }
+  return {
+    id: session.user.id,
+    email: session.user.email ?? '',
+    name: m.name || m.full_name || session.user.email?.split('@')[0] || 'Utente',
+    role: (m.role as UserRole) || 'student',
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  // Copia sincrona di `user` per le decisioni dentro l'init auth (safety timeout,
+  // "sono già dentro?") senza dipendere dal ciclo di render.
+  const userRef = useRef<User | null>(null)
+  useEffect(() => { userRef.current = user }, [user])
   // true solo subito dopo un login esplicito → innesca l'animazione di ingresso.
   // NON viene settato su refresh/ripristino sessione.
   const [justLoggedIn, setJustLoggedIn] = useState(false)
 
   useEffect(() => {
     let mounted = true
+    let latestSession: Session | null = null
 
     // Rete di sicurezza: se l'init auth si impianta (rete mobile instabile,
     // refresh token bloccato, storage inaccessibile in webview/incognito),
     // sblocca comunque la UI invece di restare sullo spinner all'infinito.
-    const safety = setTimeout(() => { if (mounted) setLoading(false) }, 7000)
+    // MA: se esiste una sessione valida senza profilo caricato, NON mostrare il
+    // login — entra con un profilo minimo (il vero bug del "rifai login": una
+    // query profilo fallita non deve MAI sloggare chi ha una sessione valida).
+    const safety = setTimeout(() => {
+      if (!mounted) return
+      if (latestSession?.user && userRef.current === null) {
+        setUser(minimalUserFromSession(latestSession))
+      }
+      setLoading(false)
+    }, 7000)
     const finish = () => { if (mounted) { clearTimeout(safety); setLoading(false) } }
 
+    // Applica sessione + profilo. Il fetch del profilo (query DB) va tenuto FUORI
+    // dal callback di onAuthStateChange: il client GoTrue tiene un lock durante il
+    // callback e chiamare supabase.from() lì dentro provoca un DEADLOCK (query mai
+    // risolta → lock mai rilasciato → tutta l'auth si blocca → "caricamento
+    // infinito", pure il login successivo si impianta). Perciò lì deferiamo.
+    const applySession = async (session: Session | null) => {
+      latestSession = session
+      // Authorize the realtime socket with the user's JWT so RLS-protected
+      // postgres_changes (chat messages/reactions) are delivered live.
+      supabase.realtime.setAuth(session?.access_token ?? null)
+
+      if (!session?.user) {
+        // Sessione REALMENTE assente (logout / storage vuoto) → login legittimo.
+        // Diagnostica: registra il MOMENTO in cui la sessione diventa null e se è
+        // stato un logout VOLONTARIO (nostro signOut) o INVOLONTARIO (refresh
+        // fallito / storage svuotato) — insieme a chi era loggato prima.
+        logAuthEvent('session_became_null', {
+          explicit: wasExplicitSignOut(),
+          hadUserBefore: !!userRef.current,
+          prevUserId: userRef.current?.id ?? null,
+        })
+        if (mounted) setUser(null)
+        finish()
+        return
+      }
+
+      // Se siamo già dentro (es. refresh token in background durante l'uso),
+      // sblocca subito la UI: nessuno spinner e nessun rischio di logout su un
+      // semplice refresh.
+      if (userRef.current) finish()
+
+      // Ritenta il profilo con backoff: al risveglio/rete lenta la prima query può
+      // fallire o andare in timeout. Con una sessione valida NON si slogga MAI.
+      for (let attempt = 0; mounted && attempt < 6; attempt++) {
+        const profile = await fetchProfile(session.user.id)
+        // Se nel frattempo la sessione è cambiata (nuovo refresh) o è arrivato un
+        // logout, abbandona: un loop "vecchio" non deve riscrivere lo stato.
+        if (!mounted || latestSession !== session) return
+        if (profile) { setUser(profile); finish(); return }
+        // Dopo un paio di tentativi a vuoto entra comunque con un profilo minimo,
+        // così l'app è subito utilizzabile; i tentativi proseguono e lo rimpiazzano
+        // col profilo reale appena la rete risponde.
+        if (attempt >= 1) { setUser(prev => prev ?? minimalUserFromSession(session)); finish() }
+        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
+        if (!mounted || latestSession !== session) return
+      }
+    }
+
     supabase.auth.getSession()
-      .then(async ({ data: { session } }) => {
-        // Authorize the realtime socket with the user's JWT so RLS-protected
-        // postgres_changes (chat messages/reactions) are delivered live.
-        supabase.realtime.setAuth(session?.access_token ?? null)
-        if (session?.user) {
-          const profile = await fetchProfile(session.user.id)
-          if (mounted) setUser(profile)
-        }
-      })
+      .then(({ data: { session } }) => applySession(session))
       // getSession può fallire/rifiutare su mobile: procedi come non loggato,
       // ma NON lasciare mai il loading appeso.
-      .catch(() => { /* sessione non recuperabile */ })
-      .finally(finish)
+      .catch(() => finish())
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      supabase.realtime.setAuth(session?.access_token ?? null)
-      if (session?.user) {
-        const profile = await fetchProfile(session.user.id)
-        if (mounted) setUser(profile)
-      } else if (mounted) {
-        setUser(null)
-      }
-      // Anche l'evento auth (incl. INITIAL_SESSION) sblocca il loading: copre
-      // il caso in cui getSession resti appeso ma l'evento arrivi.
-      finish()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Diagnostica logout intermittenti: registra OGNI evento auth col tipo
+      // (SIGNED_OUT/TOKEN_REFRESHED/SIGNED_IN/INITIAL_SESSION/USER_UPDATED) e
+      // l'expiry residuo. Un SIGNED_OUT che NON è un nostro logout esplicito è la
+      // firma del logout involontario. NB: solo scrittura in localStorage, niente
+      // chiamate Supabase qui dentro (il callback tiene il lock del client).
+      logAuthEvent('onAuthStateChange', {
+        event,
+        hasSession: !!session?.user,
+        expiresIn: expiresInSeconds(session),
+        explicit: event === 'SIGNED_OUT' ? wasExplicitSignOut() : undefined,
+      })
+      // setTimeout(0): esce dal callback (rilascia il lock del client) PRIMA di
+      // toccare il DB → evita il deadlock del caricamento infinito.
+      setTimeout(() => { if (mounted) applySession(session) }, 0)
     })
 
     return () => { mounted = false; clearTimeout(safety); subscription.unsubscribe() }
@@ -113,6 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = async () => {
+    markExplicitSignOut() // così la strumentazione sa che il SIGNED_OUT è VOLUTO
     await supabase.auth.signOut()
     setUser(null)
   }
@@ -131,9 +216,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // account via edge function (verifica il JWT lato server), poi chiude la sessione.
   const deleteAccount = async (): Promise<{ error: string | null }> => {
     if (!user) return { error: 'Non autenticato' }
+    // Token FRESCO prima dell'invoke: dopo la migrazione a chiavi JWT asimmetriche
+    // la sessione in cache può essere firmata con la vecchia chiave → l'edge
+    // function la rifiuta ("Token non valido"). refreshSession la rigenera.
+    const { error: refreshErr } = await supabase.auth.refreshSession()
+    if (refreshErr) return { error: 'Sessione scaduta. Rifai il login.' }
     const { data, error } = await supabase.functions.invoke('delete-own-account', { body: {} })
     if (error) return { error: error.message || "Errore durante l'eliminazione dell'account" }
     if (data && (data as { error?: string }).error) return { error: (data as { error: string }).error }
+    markExplicitSignOut() // SIGNED_OUT voluto
     await supabase.auth.signOut().catch(() => {/* sessione già invalidata lato server */})
     setUser(null)
     return { error: null }
