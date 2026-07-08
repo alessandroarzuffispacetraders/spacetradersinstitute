@@ -1972,11 +1972,16 @@ export default function ChatPage() {
 
   // App nativa (Keyboard resize:'none' → il webview NON si ridimensiona e
   // VisualViewport non vede la tastiera): l'altezza arriva dagli eventi del plugin.
-  // Il contenitore resta a schermo pieno e la barra si "alza" con un padding pari
-  // alla tastiera (dipingendo il proprio colore dietro → niente striscia scura).
-  // Web/PWA: nativeKbHeight=0 → si usa il ramo VisualViewport (height area visibile).
+  // iOS (resize:'none' + contentInset:'never'): il WebView NON si ridimensiona con la
+  // tastiera → il container resta a schermo pieno e la barra va "alzata" con un padding
+  // pari alla tastiera (dipingendo il proprio colore dietro → niente striscia scura).
+  // Web/PWA: nativeKbHeight=0 → ramo VisualViewport (height area visibile).
+  // ANDROID: il WebView SI ridimensiona (MISURATO via DevTools: innerHeight 914→578,
+  // container fixed inset-0 → 578 = cima tastiera). Il sistema alza GIÀ la barra sopra
+  // la tastiera; sommare keyboardInset qui = DOPPIA compensazione (l'input schizza su di
+  // ~2× la tastiera). → su Android inset=0: basta il gap di 12px del ramo keyboardOpen.
   const nativeKb = nativeKbHeight > 0
-  const keyboardInset = nativeKbHeight
+  const keyboardInset = Capacitor.getPlatform() === 'android' ? 0 : nativeKbHeight
 
   return (
     <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)', ...(vp?.kbOpen && !nativeKb ? { top: vp.top, height: vp.height, bottom: 'auto' } : null) }}>
