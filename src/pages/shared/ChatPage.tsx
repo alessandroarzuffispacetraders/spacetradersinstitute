@@ -1265,9 +1265,14 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             borderColor: 'var(--ist-composer-border)',
             background: 'var(--ist-composer-bg)',
             backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+            // Tastiera aperta: gap fisso di 12px sopra la tastiera (su Android
+            // keyboardInset=0 perché il WebView si ridimensiona già; su iOS = altezza
+            // tastiera). A riposo: distanza FISSA dal bordo inferiore (min 36px) così la
+            // barra non finisce sotto i tasti di sistema Android, dove env(safe-area) può
+            // valere 0. Se serve più/meno spazio, cambiare il 36.
             paddingBottom: keyboardOpen
               ? (keyboardInset > 0 ? keyboardInset + 12 : 12)
-              : 'calc(12px + env(safe-area-inset-bottom, 0px))',
+              : 'max(env(safe-area-inset-bottom, 0px), 36px)',
           }}
         >
           {/* Anteprima immagine selezionata */}
@@ -1431,7 +1436,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             borderColor: 'var(--ist-composer-border)',
             background: 'var(--ist-composer-bg)',
             backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            paddingBottom: keyboardOpen ? 12 : 'calc(12px + env(safe-area-inset-bottom, 0px))',
+            paddingBottom: keyboardOpen ? 12 : 'max(env(safe-area-inset-bottom, 0px), 36px)',
           }}
         >
           <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>🔒 Solo lettura — non puoi scrivere in questo canale</span>
@@ -1976,15 +1981,13 @@ export default function ChatPage() {
   // tastiera → il container resta a schermo pieno e la barra va "alzata" con un padding
   // pari alla tastiera (dipingendo il proprio colore dietro → niente striscia scura).
   // Web/PWA: nativeKbHeight=0 → ramo VisualViewport (height area visibile).
-  // ANDROID: con resize:'none' il WebView NON si ridimensiona con la tastiera (come
-  // iOS) → serve alzare la barra col padding = altezza tastiera, ESATTAMENTE come la
-  // 1.0.9 (confermata funzionante sui device reali). NB: la 1.0.10 aveva messo inset=0
-  // su Android credendo che il WebView si ridimensionasse — MA quella misura
-  // (innerHeight 914→578) era un artefatto dell'EMULATORE; sui device reali con inset=0
-  // l'input NON si alzava e finiva sotto tastiera/barra di sistema. Perciò: inset uguale
-  // su tutte le piattaforme.
+  // ANDROID: il WebView SI ridimensiona con la tastiera (verificato anche sui device
+  // reali: la barra "schizzava in alto ~2×" con keyboardInset=nativeKbHeight = DOPPIA
+  // compensazione). Quindi su Android inset=0: il sistema alza già la barra sopra la
+  // tastiera, basta il gap fisso di 12px del ramo keyboardOpen. iOS invece NON
+  // ridimensiona (resize:'none'+contentInset:'never') → serve il lift = altezza tastiera.
   const nativeKb = nativeKbHeight > 0
-  const keyboardInset = nativeKbHeight
+  const keyboardInset = Capacitor.getPlatform() === 'android' ? 0 : nativeKbHeight
 
   return (
     <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)', ...(vp?.kbOpen && !nativeKb ? { top: vp.top, height: vp.height, bottom: 'auto' } : null) }}>
