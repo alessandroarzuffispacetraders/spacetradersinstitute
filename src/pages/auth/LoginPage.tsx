@@ -1,9 +1,27 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
+import { Capacitor } from '@capacitor/core'
+import { Keyboard } from '@capacitor/keyboard'
 import { useAuth } from '../../context/AuthContext'
 import ISTLogo from '../../components/ui/ISTLogo'
 
 type Mode = 'login' | 'signup' | 'signup-done'
+
+// App nativa (Keyboard resize:'none' → il WebView NON si ridimensiona): l'altezza
+// della tastiera arriva dagli eventi del plugin. Sul web resta 0. Serve per dare al
+// contenitore del login spazio scrollabile pari alla tastiera, così i campi non
+// restano coperti (con resize:'none' il min-h-screen non lascerebbe nulla da scrollare).
+function useNativeKeyboardHeight() {
+  const [h, setH] = useState(0)
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    const handles: { remove: () => void }[] = []
+    Keyboard.addListener('keyboardWillShow', (info) => setH(info.keyboardHeight)).then((l) => handles.push(l))
+    Keyboard.addListener('keyboardWillHide', () => setH(0)).then((l) => handles.push(l))
+    return () => { handles.forEach((l) => l.remove()) }
+  }, [])
+  return h
+}
 
 export default function LoginPage() {
   const { login, signup } = useAuth()
@@ -17,6 +35,17 @@ export default function LoginPage() {
   // Mobile: quando un campo è a fuoco (tastiera aperta) ancoriamo il contenuto in
   // alto, così i campi non finiscono sotto la tastiera. Su desktop resta centrato.
   const [kbFocus, setKbFocus] = useState(false)
+  const kbHeight = useNativeKeyboardHeight()
+
+  // Con resize:'none' il WebView non si accorcia all'apertura della tastiera: senza
+  // spazio in fondo, overflow-y-auto non ha nulla da scrollare e i campi in basso
+  // restano coperti. Aggiungiamo padding = altezza tastiera (crea spazio scrollabile)
+  // e portiamo il campo a fuoco nell'area visibile.
+  const handleFieldFocus = (e: React.FocusEvent<HTMLElement>) => {
+    setKbFocus(true)
+    const el = e.target as HTMLElement
+    setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300)
+  }
 
   const switchMode = (next: Mode) => {
     setMode(next)
@@ -54,6 +83,9 @@ export default function LoginPage() {
       className={`min-h-screen flex flex-col items-center px-6 overflow-y-auto transition-all duration-200 ${kbFocus ? 'justify-start pt-8 pb-8 lg:justify-center lg:pt-0' : 'justify-center'}`}
       style={{
         background: 'radial-gradient(circle at 20% 10%, rgba(90,154,177,0.28) 0%, transparent 34%), radial-gradient(circle at 80% 20%, rgba(40,102,128,0.22) 0%, transparent 32%), linear-gradient(135deg, #070812 0%, #0B1020 52%, #061D2A 100%)',
+        // Spazio scrollabile pari alla tastiera (native): evita che i campi restino
+        // coperti quando il WebView non si ridimensiona (resize:'none').
+        paddingBottom: kbHeight ? kbHeight + 24 : undefined,
       }}
     >
       <div
@@ -120,7 +152,7 @@ export default function LoginPage() {
 
             <form
               onSubmit={handleSubmit}
-              onFocus={() => setKbFocus(true)}
+              onFocus={handleFieldFocus}
               onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setKbFocus(false) }}
               className="w-full flex flex-col gap-4"
             >

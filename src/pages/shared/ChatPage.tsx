@@ -1976,12 +1976,15 @@ export default function ChatPage() {
   // tastiera → il container resta a schermo pieno e la barra va "alzata" con un padding
   // pari alla tastiera (dipingendo il proprio colore dietro → niente striscia scura).
   // Web/PWA: nativeKbHeight=0 → ramo VisualViewport (height area visibile).
-  // ANDROID: il WebView SI ridimensiona (MISURATO via DevTools: innerHeight 914→578,
-  // container fixed inset-0 → 578 = cima tastiera). Il sistema alza GIÀ la barra sopra
-  // la tastiera; sommare keyboardInset qui = DOPPIA compensazione (l'input schizza su di
-  // ~2× la tastiera). → su Android inset=0: basta il gap di 12px del ramo keyboardOpen.
+  // ANDROID: con resize:'none' il WebView NON si ridimensiona con la tastiera (come
+  // iOS) → serve alzare la barra col padding = altezza tastiera, ESATTAMENTE come la
+  // 1.0.9 (confermata funzionante sui device reali). NB: la 1.0.10 aveva messo inset=0
+  // su Android credendo che il WebView si ridimensionasse — MA quella misura
+  // (innerHeight 914→578) era un artefatto dell'EMULATORE; sui device reali con inset=0
+  // l'input NON si alzava e finiva sotto tastiera/barra di sistema. Perciò: inset uguale
+  // su tutte le piattaforme.
   const nativeKb = nativeKbHeight > 0
-  const keyboardInset = Capacitor.getPlatform() === 'android' ? 0 : nativeKbHeight
+  const keyboardInset = nativeKbHeight
 
   return (
     <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)', ...(vp?.kbOpen && !nativeKb ? { top: vp.top, height: vp.height, bottom: 'auto' } : null) }}>
