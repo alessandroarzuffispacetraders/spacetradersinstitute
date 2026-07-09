@@ -11,7 +11,7 @@ import { hideNativeSplash, isNativeApp } from './lib/nativeUi'
 // Badge di versione VISIBILE nell'app nativa (temporaneo, per diagnosi): serve a
 // confermare a colpo d'occhio quale build è installata sul device — evita di
 // perdere giri con versioni vecchie non aggiornate dal Play Store. Bumpare a ogni build.
-const APP_BUILD = '1.0.20'
+const APP_BUILD = '1.0.21'
 
 // DIAGNOSTICA TEMPORANEA (solo per capire il comportamento tastiera/inset sul device
 // reale, che l'emulatore non riproduce): stampa nel badge i numeri chiave.
@@ -23,10 +23,23 @@ const APP_BUILD = '1.0.20'
 //        guida keyboardOpen (=vp.kbOpen||nativeKb). Se a TASTIERA CHIUSA risulta f=1 o
 //        kb>0, keyboardOpen è "incastrato" true → il composer usa il ramo 8px (aperto)
 //        e finisce sotto la nav bar: quello è il bug, NON i pixel troppo pochi.
+//   sat/sab = valore REALE (px) di env(safe-area-inset-top/bottom), misurato con una
+//        sonda. sab>0 → il WebView consegna l'inset della nav bar alla CSS → il fix
+//        adattivo con env() funziona. sab=0 → env è morto sotto (limite Capacitor
+//        Android) → serve un fisso o l'inset nativo. sat>0 con sab=0 = consegna solo
+//        il top → conferma che è specificamente il bottom a non arrivare.
 // Con UNO screenshot sappiamo con certezza cosa fare invece di indovinare. Da rimuovere
 // una volta chiuso il tuning della barra chat.
+function readSafeArea(side: 'top' | 'bottom'): number {
+  const probe = document.createElement('div')
+  probe.style.cssText = `position:fixed;left:0;width:0;height:env(safe-area-inset-${side},0px);visibility:hidden;pointer-events:none`
+  document.body.appendChild(probe)
+  const h = Math.round(probe.getBoundingClientRect().height)
+  document.body.removeChild(probe)
+  return h
+}
 function useViewportDiag() {
-  const [d, setD] = useState({ iH: 0, vv: 0, kb: 0, f: 0 })
+  const [d, setD] = useState({ iH: 0, vv: 0, kb: 0, f: 0, sat: 0, sab: 0 })
   useEffect(() => {
     const focused = () => {
       const el = document.activeElement as HTMLElement | null
@@ -38,6 +51,8 @@ function useViewportDiag() {
       vv: Math.round(window.visualViewport?.height ?? 0),
       kb: kb ?? prev.kb,
       f: focused(),
+      sat: readSafeArea('top'),
+      sab: readSafeArea('bottom'),
     }))
     upd(0)
     const onResize = () => upd()
@@ -105,6 +120,7 @@ function VersionBadge() {
     >
       <div style={{ fontWeight: 700 }}>v{APP_BUILD}</div>
       <div style={{ fontSize: 10, opacity: 0.85 }}>iH{d.iH} vv{d.vv} kb{d.kb} f{d.f}</div>
+      <div style={{ fontSize: 10, opacity: 0.85 }}>safe t{d.sat} b{d.sab}</div>
     </div>
   )
 }
