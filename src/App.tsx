@@ -9,7 +9,7 @@ import { hideNativeSplash, isNativeApp } from './lib/nativeUi'
 // Badge di versione VISIBILE nell'app nativa (temporaneo, per diagnosi): serve a
 // confermare a colpo d'occhio quale build è installata sul device — evita di
 // perdere giri con versioni vecchie non aggiornate dal Play Store. Bumpare a ogni build.
-const APP_BUILD = '1.0.17'
+const APP_BUILD = '1.0.18'
 
 export default function App() {
   // Nell'app nativa: la UI è montata → dissolvi lo splash (no-op sul web).

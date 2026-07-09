@@ -1994,7 +1994,7 @@ export default function ChatPage() {
   const keyboardInset = Capacitor.getPlatform() === 'android' ? 0 : nativeKbHeight
 
   return (
-    <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)', ...(vp?.kbOpen && !nativeKb ? { top: vp.top, height: vp.height, bottom: 'auto' } : null) }}>
+    <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)', ...(vp?.kbOpen && !nativeKb && Capacitor.getPlatform() !== 'android' ? { top: vp.top, height: vp.height, bottom: 'auto' } : null) }}>
       {/* Sidebar */}
       <div
         className={`flex-shrink-0 ${mobileView === 'channels' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[240px] lg:ml-[108px] flex-col overflow-hidden`}
