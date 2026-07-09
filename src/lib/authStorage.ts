@@ -80,5 +80,12 @@ const nativeStorage = {
   },
 }
 
-// Nativo → Preferences durevole. Web → localStorage strumentato.
-export const authStorage = isNativePlatform ? nativeStorage : loggingStorage
+// iOS nativo → Preferences durevole (il localStorage della WKWebView viene
+// evictato → logout casuali). Android + Web → localStorage strumentato.
+//
+// NB (1.0.11): su ANDROID torniamo a localStorage come nella 1.0.9 (che bootava
+// su tutti i device). La 1.0.10 usava Preferences (storage ASINCRONO via bridge)
+// anche su Android e i device reali restavano bloccati sullo splash all'avvio;
+// Android non soffre l'eviction del localStorage come iOS, quindi qui non serve.
+export const authStorage =
+  isNativePlatform && Capacitor.getPlatform() === 'ios' ? nativeStorage : loggingStorage

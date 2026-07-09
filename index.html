@@ -2,6 +2,34 @@
 <html lang="it">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Rete di sicurezza anti "splash infinito" + cattura dell'errore di boot.
+      // Se dopo alcuni secondi React non ha montato nulla in #root, mostriamo una
+      // schermata di recupero col dettaglio dell'errore (screenshottabile dai
+      // tester) invece di lasciare lo schermo bloccato. Gira anche se il bundle
+      // JS va in errore, perché è inline e installato prima del module script.
+      (function () {
+        var boot = { err: null };
+        window.__bootErr = boot;
+        window.addEventListener('error', function (e) {
+          boot.err = (e && (e.message || (e.error && e.error.message))) || 'errore sconosciuto';
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason; boot.err = 'promise: ' + ((r && (r.message || r)) || 'sconosciuto');
+        });
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (root && root.childElementCount > 0) return; // React montato → tutto ok
+          document.body.innerHTML =
+            '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;background:#070812;color:#e6edf3;font-family:-apple-system,system-ui,sans-serif;text-align:center">' +
+            '<div style="font-size:18px;font-weight:600">Impossibile avviare l\'app</div>' +
+            '<div style="font-size:14px;opacity:.75;max-width:420px">Controlla la connessione e riprova. Se continua, invia questo dettaglio al supporto:</div>' +
+            (boot.err ? '<code style="font-size:12px;opacity:.7;word-break:break-word;max-width:420px">' + String(boot.err).replace(/</g, '&lt;') + '</code>' : '') +
+            '<button onclick="location.reload()" style="margin-top:8px;padding:12px 24px;border:0;border-radius:12px;background:#4a90a4;color:#fff;font-size:15px;font-weight:600">Riprova</button>' +
+            '</div>';
+        }, 7000);
+      })();
+    </script>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -13,7 +41,18 @@
     <title>IST — Space Traders Institute</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- Font non-render-blocking: su rete mobile lenta un <link rel=stylesheet>
+         verso il CDN font può ritardare il primo render/boot. Lo carichiamo in
+         modo asincrono (media=print → all all'onload); fallback in <noscript>. -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    </noscript>
   </head>
   <body>
     <div id="root"></div>

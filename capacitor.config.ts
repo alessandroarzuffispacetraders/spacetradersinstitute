@@ -16,9 +16,17 @@ const config: CapacitorConfig = {
   },
   plugins: {
     SplashScreen: {
-      // Lo splash resta finché la web app è pronta e chiama SplashScreen.hide()
-      // (in nativeUi.ts) → niente flash di webview grezzo. Sfondo = dark brand.
-      launchAutoHide: false,
+      // Di norma lo splash lo nasconde la web app appena pronta, chiamando
+      // SplashScreen.hide() (in nativeUi.ts) → niente flash di webview grezzo.
+      //
+      // MA con launchAutoHide:false, se su un device reale quel percorso si
+      // impianta (boot lento, hide() senza effetto), lo splash resta PER SEMPRE:
+      // è la causa dello "splash infinito" segnalato dai tester Android in 1.0.10.
+      // Rete di sicurezza NATIVA: launchAutoHide:true + launchShowDuration → lo
+      // splash si dissolve comunque da solo dopo N ms anche se il JS non chiama
+      // hide(). Sul boot normale hide() lo toglie prima, quindi nessun ritardo.
+      launchAutoHide: true,
+      launchShowDuration: 3000,
       backgroundColor: '#070812',
       showSpinner: false,
       splashFullScreen: true,
