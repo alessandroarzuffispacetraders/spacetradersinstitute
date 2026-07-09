@@ -1265,15 +1265,15 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             borderColor: 'var(--ist-composer-border)',
             background: 'var(--ist-composer-bg)',
             backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            // Tastiera aperta: barra ATTACCATA alla tastiera, 0px (su Android
-            // keyboardInset=0, il WebView si ridimensiona già; su iOS = altezza tastiera).
-            // A riposo: valore FISSO che copre la nav bar. env(safe-area-inset-bottom) su
-            // Android è 0 (il WebView non riceve gli inset) e la lettura nativa degli inset
-            // (1.0.14) rompeva il boot sui device reali → torniamo a un fisso. 48px copre la
-            // nav bar a 3 tasti (~48dp); su gesture (~24dp) resta un piccolo margine in più.
+            // Su Android usiamo NUMERI FISSI puri: max()/env(safe-area-inset-bottom) veniva
+            // IGNORATO dalla WebView dei device reali (bottom ~0 → barra sovrapposta alla nav
+            // bar) e la lettura nativa degli inset (1.0.14) rompeva il boot. I due valori sono
+            // indipendenti: a riposo 60px (spazio sopra la nav a 3 tasti ~48dp), tastiera
+            // aperta 8px (il WebView si ridimensiona già → serve solo un piccolo gap).
+            // iOS/web restano su env(safe-area) + keyboardInset = altezza tastiera.
             paddingBottom: keyboardOpen
-              ? keyboardInset
-              : 'max(env(safe-area-inset-bottom, 0px), 48px)',
+              ? (Capacitor.getPlatform() === 'android' ? 8 : keyboardInset)
+              : (Capacitor.getPlatform() === 'android' ? 60 : 'max(env(safe-area-inset-bottom, 0px), 48px)'),
           }}
         >
           {/* Anteprima immagine selezionata */}
@@ -1437,7 +1437,10 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             borderColor: 'var(--ist-composer-border)',
             background: 'var(--ist-composer-bg)',
             backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            paddingBottom: keyboardOpen ? 0 : 'max(env(safe-area-inset-bottom, 0px), 48px)',
+            // Vedi composer scrivibile: fissi puri su Android (riposo 60px, aperto 8px).
+            paddingBottom: keyboardOpen
+              ? (Capacitor.getPlatform() === 'android' ? 8 : 0)
+              : (Capacitor.getPlatform() === 'android' ? 60 : 'max(env(safe-area-inset-bottom, 0px), 48px)'),
           }}
         >
           <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>🔒 Solo lettura — non puoi scrivere in questo canale</span>
