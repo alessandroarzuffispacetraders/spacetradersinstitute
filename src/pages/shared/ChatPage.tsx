@@ -1265,14 +1265,14 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             borderColor: 'var(--ist-composer-border)',
             background: 'var(--ist-composer-bg)',
             backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            // Tastiera aperta: gap fisso di 12px sopra la tastiera (su Android
-            // keyboardInset=0 perché il WebView si ridimensiona già; su iOS = altezza
-            // tastiera). A riposo: distanza FISSA dal bordo inferiore (min 36px) così la
-            // barra non finisce sotto i tasti di sistema Android, dove env(safe-area) può
-            // valere 0. Se serve più/meno spazio, cambiare il 36.
+            // Tastiera aperta: barra ATTACCATA alla tastiera, 0px (su Android
+            // keyboardInset=0, il WebView si ridimensiona già; su iOS = altezza tastiera).
+            // A riposo: esattamente sopra la nav bar usando l'inset REALE letto dal nativo
+            // (--sys-nav-bottom, iniettato da MainActivity) perché su Android
+            // env(safe-area-inset-bottom) è 0. Fallback 36px finché il nativo non risponde.
             paddingBottom: keyboardOpen
-              ? (keyboardInset > 0 ? keyboardInset + 12 : 12)
-              : 'max(env(safe-area-inset-bottom, 0px), 36px)',
+              ? keyboardInset
+              : 'var(--sys-nav-bottom, 36px)',
           }}
         >
           {/* Anteprima immagine selezionata */}
@@ -1436,7 +1436,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             borderColor: 'var(--ist-composer-border)',
             background: 'var(--ist-composer-bg)',
             backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            paddingBottom: keyboardOpen ? 12 : 'max(env(safe-area-inset-bottom, 0px), 36px)',
+            paddingBottom: keyboardOpen ? 0 : 'var(--sys-nav-bottom, 36px)',
           }}
         >
           <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>🔒 Solo lettura — non puoi scrivere in questo canale</span>
