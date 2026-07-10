@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Loader2, Undo2, Eraser, X } from 'lucide-react'
 import { downloadExerciseBlob } from '../../lib/assignments'
+import { useBackInterceptor } from '../../lib/androidBack'
 
 const COLORS = ['#FF3B3B', '#3B82F6', '#46D39A', '#F6C85F', '#FFFFFF', '#111111']
 const WIDTHS = [3, 6, 12]
@@ -24,6 +25,9 @@ export default function ImageAnnotator({ objectKey, onSave, onClose }: {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [, force] = useState(0) // re-render after ref-based stroke changes
+
+  // Montato solo quando aperto → il tasto indietro Android lo chiude.
+  useBackInterceptor(onClose, true)
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current, img = imgRef.current

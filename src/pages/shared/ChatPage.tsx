@@ -7,6 +7,7 @@ import {
   Edit2, Trash2, SmilePlus, ImagePlus, Plus, Mic, Paperclip, FileText,
 } from 'lucide-react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
+import { useBackInterceptor } from '../../lib/androidBack'
 import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
 import {
@@ -845,6 +846,12 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
 
   const cancelEdit = () => setEditingId(null)
 
+  // Tasto indietro Android dentro la conversazione: chiudi il picker emoji o
+  // annulla la modifica messaggio prima di uscire dalla chat. Registrati quando
+  // si aprono → finiscono in cima allo stack (priorità sui livelli sotto).
+  useBackInterceptor(() => setShowReactFor(null), showReactFor !== null)
+  useBackInterceptor(cancelEdit, editingId !== null)
+
   const handleDeleteMessage = async (id: string) => {
     if (!confirm('Eliminare questo messaggio?')) return
     await deleteMessage(id)
@@ -1661,6 +1668,8 @@ function BachecaArea({
 }) {
   const { posts, loading, createPost, deletePost, togglePin } = useBachecaPosts(channel.id, userId)
   const [composing, setComposing] = useState(false)
+  // Tasto indietro Android: chiudi il compositore bacheca invece di navigare.
+  useBackInterceptor(() => setComposing(false), composing)
   const canPost = channel.canPost.includes(userRole)
   const isAdmin = userRole === 'admin'
 
@@ -1961,6 +1970,15 @@ export default function ChatPage() {
   }
 
   const goBack = () => setMobileView('channels')
+
+  // Tasto indietro Android (precedenza LIFO: l'ultimo registrato è in cima).
+  // 1) chat aperta su mobile → torna alla lista canali (non lasciare la pagina);
+  // 2) card utente aperta → chiudila PRIMA (registrata dopo = priorità più alta).
+  useBackInterceptor(() => {
+    if (window.innerWidth >= 1024) return false // desktop: liste e chat sempre visibili
+    goBack()
+  }, mobileView === 'chat')
+  useBackInterceptor(() => setUserCard(null), userCard !== null)
 
   // Edge-swipe (mobile): tocco che parte dal bordo SINISTRO (~28px) e scorre
   // verso destra → torna alla lista chat. Si arma solo sul bordo per non

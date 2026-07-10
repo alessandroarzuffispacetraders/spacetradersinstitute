@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useBackInterceptor } from '../../lib/androidBack'
 import { Radio, Edit2, Trash2, X, Plus, Loader2, Play, Square, Save } from 'lucide-react'
 import {
   useLiveAdmin, LiveEvent, LiveInput, LiveStatus, LiveRole,
@@ -210,6 +211,9 @@ export default function LiveManager({ api, defaultHost }: {
   const [modal, setModal] = useState<{ open: boolean; editing?: LiveEvent }>({ open: false })
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [replayDraft, setReplayDraft] = useState<Record<string, string>>({})
+
+  // Tasto indietro Android: chiudi il modale live invece di navigare.
+  useBackInterceptor(() => setModal({ open: false }), modal.open)
 
   if (api.loading) {
     return <div className="flex items-center justify-center py-24"><Loader2 size={24} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} /></div>

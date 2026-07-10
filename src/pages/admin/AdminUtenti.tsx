@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useBackInterceptor } from '../../lib/androidBack'
 import PageHeader from '../../components/ui/PageHeader'
 import { ChevronDown, Radio, Upload, Shield, X, Loader2, Mail, KeyRound, Trash2, Globe, MapPin, Download } from 'lucide-react'
 import { UserPermissions, UserRole, StudentStatus, StudentPhase, UserTier } from '../../types'
@@ -641,6 +642,9 @@ export default function AdminUtenti() {
   const [roleFilter, setRoleFilter] = useState('all')
   const [editingUser, setEditingUser] = useState<Profile | null>(null)
   const { summaries } = useAccessSummaries()
+
+  // Tasto indietro Android: chiudi la scheda utente invece di navigare.
+  useBackInterceptor(() => setEditingUser(null), editingUser !== null)
 
   useEffect(() => {
     supabase

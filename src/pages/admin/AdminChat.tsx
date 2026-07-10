@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useBackInterceptor } from '../../lib/androidBack'
 import { Hash, Megaphone, Edit2, Trash2, X, Plus, Loader2 } from 'lucide-react'
 import Card from '../../components/ui/Card'
 import PageHeader from '../../components/ui/PageHeader'
@@ -401,6 +402,10 @@ export default function AdminChat() {
   const [modal, setModal] = useState<{ open: boolean; editing?: Channel }>({ open: false })
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [broadcastOpen, setBroadcastOpen] = useState(false)
+
+  // Tasto indietro Android: chiudi i pannelli invece di navigare/uscire.
+  useBackInterceptor(() => setBroadcastOpen(false), broadcastOpen)
+  useBackInterceptor(() => setModal({ open: false }), modal.open)
 
   const bachecaChannels = channels.filter(c => c.type === 'bacheca').map(c => ({ id: c.id, name: c.name, free: c.free }))
 

@@ -1,9 +1,12 @@
 import { X } from 'lucide-react'
 import ExerciseImage from './ExerciseImage'
+import { useBackInterceptor } from '../../lib/androidBack'
 
 // Full-screen viewer for a private exercise image. Click the backdrop or the X
 // to close; clicking the image itself does not close.
 export default function ImageLightbox({ objectKey, onClose }: { objectKey: string; onClose: () => void }) {
+  // Montato solo quando aperto → il tasto indietro Android lo chiude.
+  useBackInterceptor(onClose, true)
   return (
     <div
       className="fixed inset-0 z-[120] flex items-center justify-center p-4"

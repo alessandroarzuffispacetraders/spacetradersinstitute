@@ -1,4 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect, useRef } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
+import { Capacitor } from '@capacitor/core'
+import { App as CapacitorApp } from '@capacitor/app'
+import { runBackInterceptors } from '../lib/androidBack'
 import { useAuth } from '../context/AuthContext'
 import AppLayout from '../components/layout/AppLayout'
 import RequireRole from '../components/auth/RequireRole'
@@ -138,6 +142,7 @@ export default function AppRouter() {
 
   return (
     <BrowserRouter>
+      <AndroidBackHandler />
       <Routes>
         {/* Pagine pubbliche (accessibili senza login) — richieste da App Store */}
         <Route path="/privacy" element={<PrivacyPolicy />} />
@@ -150,4 +155,41 @@ export default function AppRouter() {
       </Routes>
     </BrowserRouter>
   )
+}
+
+// Solo le lezioni/corsi/live sono schermate di DETTAGLIo (pushate): lì "indietro"
+// naviga indietro. Tutto il resto (tab di primo livello, login) = root → esce.
+const DETAIL_PATH = /^\/student\/(corsi|live)\/[^/]+/
+
+// Gestore globale del tasto/gesto "indietro" di Android. Headless (non renderizza
+// nulla), montato UNA volta dentro BrowserRouter così può usare navigate()/location.
+// Priorità: 1) overlay/stato aperto (interceptor) → chiudi; 2) schermata di
+// dettaglio → navigate(-1); 3) root → esci dall'app.
+function AndroidBackHandler() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const navRef = useRef(navigate)
+  const locRef = useRef(location)
+  navRef.current = navigate
+  locRef.current = location
+
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== 'android') return
+    const subs: Array<{ remove: () => void }> = []
+    CapacitorApp.addListener('backButton', () => {
+      // 1) Un overlay/stato-tipo-indietro consuma il back?
+      if (runBackInterceptors()) return
+      // 2) Schermata di dettaglio → torna indietro nell'app.
+      const path = locRef.current.pathname
+      if (DETAIL_PATH.test(path) || path === '/privacy' || path === '/support') {
+        navRef.current(-1)
+        return
+      }
+      // 3) Schermata principale (root) → chiudi l'app.
+      CapacitorApp.exitApp()
+    }).then((s) => subs.push(s))
+    return () => subs.forEach((s) => s?.remove?.())
+  }, [])
+
+  return null
 }

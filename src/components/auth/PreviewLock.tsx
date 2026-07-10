@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useState } from 'react'
 import UpgradeCard from './UpgradeCard'
+import { useBackInterceptor } from '../../lib/androidBack'
 
 // Secondi prima che compaia il popup di upsell dopo l'apertura della pagina.
 const POPUP_DELAY_MS = 3500
@@ -25,6 +26,9 @@ export default function PreviewLock({
     const t = setTimeout(() => setOpen(true), POPUP_DELAY_MS)
     return () => clearTimeout(t)
   }, [])
+
+  // Tasto indietro Android: chiudi il popup di upsell invece di navigare.
+  useBackInterceptor(() => setOpen(false), open)
 
   return (
     <>

@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { useBackInterceptor } from '../../lib/androidBack'
 import PageHeader from '../../components/ui/PageHeader'
 import {
   ChevronDown, Plus, Edit2, Trash2,
@@ -618,6 +619,9 @@ export default function AdminContenuti() {
   const liveAdmin = useLiveAdmin({ ownerId: user?.id })
   const [tab, setTab] = useState<Tab>('corsi')
   const [modal, setModal] = useState<ModalState | null>(null)
+
+  // Tasto indietro Android: chiudi l'editor invece di navigare.
+  useBackInterceptor(() => setModal(null), modal !== null)
 
   const totalCats    = admin.categories.length
   const totalCourses = admin.categories.reduce((s, c) => s + c.courses.length, 0)

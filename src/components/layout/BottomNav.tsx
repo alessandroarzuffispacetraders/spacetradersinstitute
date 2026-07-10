@@ -17,6 +17,7 @@ import {
 import { isPathLockedForFree } from '../../lib/freeTier'
 import UserAvatar from '../ui/UserAvatar'
 import { useNews, NewsDot } from '../../context/NewsContext'
+import { useBackInterceptor } from '../../lib/androidBack'
 import { Capacitor } from '@capacitor/core'
 
 // Android edge-to-edge (targetSdk 36): la WebView si estende SOTTO la barra gesti
@@ -238,6 +239,9 @@ export default function BottomNav() {
   const { hasNews } = useNews()
   const navigate = useNavigate()
   const [moreOpen, setMoreOpen] = useState(false)
+
+  // Tasto indietro Android: chiudi il pannello "Altro" invece di navigare.
+  useBackInterceptor(() => setMoreOpen(false), moreOpen)
 
   // Il tour interattivo apre/chiude il pannello "Altro" tramite eventi.
   useEffect(() => {

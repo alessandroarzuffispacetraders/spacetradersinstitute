@@ -10,6 +10,7 @@ import UserAvatar, { PRESET_AVATARS } from './UserAvatar'
 import { subscribeToPush, unsubscribeFromPush } from '../../lib/push'
 import { uploadAvatar, deleteAvatar } from '../../lib/storage'
 import { isNativeApp } from '../../lib/nativeUi'
+import { useBackInterceptor } from '../../lib/androidBack'
 import { PushNotifications } from '@capacitor/push-notifications'
 
 const ROLE_LABELS: Record<string, string> = {
@@ -80,6 +81,12 @@ export default function ProfileModal({ isOpen, onClose }: Props) {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [isOpen, onClose])
+
+  // Tasto indietro Android: prima torna alla sezione principale, poi chiude.
+  useBackInterceptor(() => {
+    if (section !== 'main') setSection('main')
+    else onClose()
+  }, isOpen)
 
   if (!isOpen || !user) return null
 
