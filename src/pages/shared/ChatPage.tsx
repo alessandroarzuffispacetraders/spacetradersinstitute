@@ -1265,15 +1265,18 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             borderColor: 'var(--ist-composer-border)',
             background: 'var(--ist-composer-bg)',
             backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            // Su Android usiamo NUMERI FISSI puri: max()/env(safe-area-inset-bottom) veniva
-            // IGNORATO dalla WebView dei device reali (bottom ~0 → barra sovrapposta alla nav
-            // bar) e la lettura nativa degli inset (1.0.14) rompeva il boot. I due valori sono
-            // indipendenti: a riposo 60px (spazio sopra la nav a 3 tasti ~48dp), tastiera
-            // aperta 8px (il WebView si ridimensiona già → serve solo un piccolo gap).
-            // iOS/web restano su env(safe-area) + keyboardInset = altezza tastiera.
-            paddingBottom: keyboardOpen
-              ? (Capacitor.getPlatform() === 'android' ? 8 : keyboardInset)
-              : (Capacitor.getPlatform() === 'android' ? 60 : 'max(env(safe-area-inset-bottom, 0px), 48px)'),
+            // Su Android padding ADATTIVO basato sulla safe-area, INCONDIZIONATO (non
+            // dipende da keyboardOpen → immune al "focus incastrato"). Misurato sul device
+            // reale (badge 1.0.21): env(safe-area-inset-bottom)=39 a tastiera CHIUSA → 39+8
+            // = 47px, il campo sta sopra la nav bar; =0 a tastiera APERTA → 8px, sopra la
+            // tastiera. Lo sfondo del composer si estende comunque dietro i tasti (il padding
+            // è DENTRO questo contenitore, non sul fixed inset-0 esterno). NON rimuovere:
+            // era proprio l'assenza di questo padding a causare l'overlap. viewport-fit=cover
+            // è già in index.html → env funziona (vecchia nota "env=0 su Android" era stantìa).
+            // iOS/web invariati (env + keyboardInset = altezza tastiera).
+            paddingBottom: Capacitor.getPlatform() === 'android'
+              ? 'calc(env(safe-area-inset-bottom, 0px) + 8px)'
+              : (keyboardOpen ? keyboardInset : 'max(env(safe-area-inset-bottom, 0px), 48px)'),
           }}
         >
           {/* Anteprima immagine selezionata */}
@@ -1437,10 +1440,10 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             borderColor: 'var(--ist-composer-border)',
             background: 'var(--ist-composer-bg)',
             backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            // Vedi composer scrivibile: fissi puri su Android (riposo 60px, aperto 8px).
-            paddingBottom: keyboardOpen
-              ? (Capacitor.getPlatform() === 'android' ? 8 : 0)
-              : (Capacitor.getPlatform() === 'android' ? 60 : 'max(env(safe-area-inset-bottom, 0px), 48px)'),
+            // Vedi composer scrivibile: su Android padding adattivo safe-area incondizionato.
+            paddingBottom: Capacitor.getPlatform() === 'android'
+              ? 'calc(env(safe-area-inset-bottom, 0px) + 8px)'
+              : (keyboardOpen ? 0 : 'max(env(safe-area-inset-bottom, 0px), 48px)'),
           }}
         >
           <span className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>🔒 Solo lettura — non puoi scrivere in questo canale</span>

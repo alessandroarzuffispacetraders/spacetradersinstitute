@@ -11,7 +11,7 @@ import { hideNativeSplash, isNativeApp } from './lib/nativeUi'
 // Badge di versione VISIBILE nell'app nativa (temporaneo, per diagnosi): serve a
 // confermare a colpo d'occhio quale build è installata sul device — evita di
 // perdere giri con versioni vecchie non aggiornate dal Play Store. Bumpare a ogni build.
-const APP_BUILD = '1.0.21'
+const APP_BUILD = '1.0.22'
 
 // DIAGNOSTICA TEMPORANEA (solo per capire il comportamento tastiera/inset sul device
 // reale, che l'emulatore non riproduce): stampa nel badge i numeri chiave.
