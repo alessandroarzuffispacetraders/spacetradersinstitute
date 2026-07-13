@@ -4,6 +4,14 @@ import { supabase } from '../lib/supabase'
 import { User, UserRole } from '../types'
 import { recordAccess } from '../lib/accessLog'
 import { logAuthEvent, markExplicitSignOut, wasExplicitSignOut } from '../lib/authDebug'
+import {
+  recoveryUrl,
+  passwordResetRedirectUrl,
+  friendlyAuthError,
+  isRecoveryActive,
+  markRecoveryActive,
+  clearRecoveryActive,
+} from '../lib/authRecovery'
 
 // Secondi alla scadenza dell'access_token della sessione (per la diagnostica).
 function expiresInSeconds(session: Session | null): number | null {
@@ -20,6 +28,21 @@ interface AuthContextType {
   logout: () => Promise<void>
   updateProfile: (data: ProfileUpdate) => Promise<void>
   changePassword: (current: string, next: string) => Promise<{ error: string | null }>
+  // "Password dimenticata": invia l'email col link di recupero.
+  requestPasswordReset: (email: string) => Promise<{ error: string | null }>
+  // Imposta la nuova password usando la sessione creata dal link di recupero.
+  completePasswordReset: (next: string) => Promise<{ error: string | null }>
+  // true quando l'utente è entrato da un link di recupero: l'app "pinna" la
+  // schermata /reset-password (router) finché non completa o annulla.
+  recoveryMode: boolean
+  // true SOLO con un vero token di recupero (o evento PASSWORD_RECOVERY): è ciò
+  // che abilita davvero il form "nuova password". Distinto da recoveryMode così
+  // una sessione NORMALE (o un URL d'errore fabbricato) non può cambiare la
+  // password scavalcando la ri-autenticazione di changePassword.
+  recoveryActive: boolean
+  // Errore arrivato nell'URL del link (es. link scaduto/già usato), se presente.
+  recoveryError: string | null
+  cancelPasswordReset: () => Promise<void>
   deleteAccount: () => Promise<{ error: string | null }>
   isAuthenticated: boolean
   loading: boolean
@@ -84,6 +107,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // true solo subito dopo un login esplicito → innesca l'animazione di ingresso.
   // NON viene settato su refresh/ripristino sessione.
   const [justLoggedIn, setJustLoggedIn] = useState(false)
+
+  // Recupero password. Il valore iniziale viene dall'URL letto SINCRONAMENTE
+  // all'avvio (vedi lib/authRecovery): l'evento PASSWORD_RECOVERY può scattare
+  // prima che questo provider si iscriva, quindi non possiamo dipendere solo da
+  // lui. Il listener sotto lo tiene comunque come seconda rete di sicurezza.
+  const [recoveryMode, setRecoveryMode] = useState(recoveryUrl.isRecovery)
+  // Abilita il form: vero token adesso, OPPURE flag durevole già impostato
+  // (es. l'utente ha ricaricato /reset-password e l'URL non ha più il token).
+  const [recoveryActive, setRecoveryActive] = useState(recoveryUrl.isRecoveryToken || isRecoveryActive())
+  const [recoveryError] = useState<string | null>(
+    recoveryUrl.errorCode ? friendlyAuthError(recoveryUrl.errorDescription || recoveryUrl.errorCode) : null,
+  )
 
   useEffect(() => {
     let mounted = true
@@ -170,6 +205,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         expiresIn: expiresInSeconds(session),
         explicit: event === 'SIGNED_OUT' ? wasExplicitSignOut() : undefined,
       })
+      // L'utente è entrato da un link "password dimenticata" → l'app deve
+      // mostrargli solo la schermata "nuova password" (vedi AppRouter). Questo è
+      // l'UNICO evento (oltre al token nell'URL) che abilita il form: lo marchiamo
+      // durevole così sopravvive a un reload della pagina.
+      if (event === 'PASSWORD_RECOVERY' && mounted) {
+        markRecoveryActive()
+        setRecoveryMode(true)
+        setRecoveryActive(true)
+      }
       // setTimeout(0): esce dal callback (rilascia il lock del client) PRIMA di
       // toccare il DB → evita il deadlock del caricamento infinito.
       setTimeout(() => { if (mounted) applySession(session) }, 0)
@@ -212,6 +256,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null }
   }
 
+  // "Password dimenticata": Supabase manda un'email con un link a /reset-password.
+  // NB: la risposta è volutamente identica sia che l'email esista sia che non
+  // esista (Supabase non rivela quali indirizzi sono registrati) → il messaggio
+  // mostrato all'utente deve restare neutro.
+  const requestPasswordReset = async (email: string): Promise<{ error: string | null }> => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: passwordResetRedirectUrl(),
+    })
+    if (error) return { error: friendlyAuthError(error.message) }
+    return { error: null }
+  }
+
+  // Imposta la nuova password. Funziona perché il link di recupero ha già creato
+  // una sessione (quella "di recovery"): updateUser la usa per autenticarsi.
+  const completePasswordReset = async (next: string): Promise<{ error: string | null }> => {
+    // Difesa in profondità: cambiare password QUI (senza la password attuale) è
+    // lecito SOLO dentro un flusso di recupero genuino. Una sessione normale deve
+    // passare da changePassword (che ri-autentica). Il flag è impostato solo da un
+    // vero token / evento PASSWORD_RECOVERY.
+    if (!isRecoveryActive()) {
+      return { error: 'Sessione di recupero non valida. Richiedi un nuovo link.' }
+    }
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return { error: 'Il link di recupero è scaduto o è già stato usato. Richiedine uno nuovo.' }
+    const { error } = await supabase.auth.updateUser({ password: next })
+    if (error) return { error: friendlyAuthError(error.message) }
+    // Password impostata: usciamo dalla modalità recupero e l'utente prosegue
+    // nell'app già autenticato con la sessione appena aggiornata.
+    clearRecoveryActive()
+    setRecoveryActive(false)
+    setRecoveryMode(false)
+    recordAccess()
+    return { error: null }
+  }
+
+  // Annulla il recupero: la sessione di recovery va chiusa, altrimenti si
+  // resterebbe loggati con un link email (che è di fatto una credenziale usa e getta).
+  const cancelPasswordReset = async () => {
+    clearRecoveryActive()
+    setRecoveryActive(false)
+    setRecoveryMode(false)
+    markExplicitSignOut()
+    await supabase.auth.signOut().catch(() => {/* nessuna sessione: va bene così */})
+    setUser(null)
+  }
+
   // Cancellazione account self-service (obbligo App Store): elimina il PROPRIO
   // account via edge function (verifica il JWT lato server), poi chiude la sessione.
   const deleteAccount = async (): Promise<{ error: string | null }> => {
@@ -243,7 +333,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, updateProfile, changePassword, deleteAccount, isAuthenticated: !!user, loading, justLoggedIn, clearJustLoggedIn: () => setJustLoggedIn(false) }}>
+    <AuthContext.Provider value={{ user, login, signup, logout, updateProfile, changePassword, requestPasswordReset, completePasswordReset, cancelPasswordReset, recoveryMode, recoveryActive, recoveryError, deleteAccount, isAuthenticated: !!user, loading, justLoggedIn, clearJustLoggedIn: () => setJustLoggedIn(false) }}>
       {children}
     </AuthContext.Provider>
   )

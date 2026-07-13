@@ -1,13 +1,13 @@
 import { useState } from 'react'
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff, Mail } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import ISTLogo from '../../components/ui/ISTLogo'
 import { upsellSuppressed } from '../../lib/freeTier'
 
-type Mode = 'login' | 'signup' | 'signup-done'
+type Mode = 'login' | 'signup' | 'signup-done' | 'forgot' | 'forgot-done'
 
 export default function LoginPage() {
-  const { login, signup } = useAuth()
+  const { login, signup, requestPasswordReset } = useAuth()
   const [mode, setMode] = useState<Mode>('login')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -26,7 +26,9 @@ export default function LoginPage() {
     setMode(next)
     setError(null)
     setName('')
-    setEmail('')
+    // Passando da/verso "password dimenticata" l'email digitata si tiene:
+    // è la stessa che serve, riscriverla sarebbe solo un fastidio.
+    if (next !== 'forgot' && mode !== 'forgot') setEmail('')
     setPassword('')
   }
 
@@ -35,7 +37,13 @@ export default function LoginPage() {
     setError(null)
     setLoading(true)
 
-    if (mode === 'login') {
+    if (mode === 'forgot') {
+      const { error } = await requestPasswordReset(email)
+      // La risposta è neutra anche se l'email non esiste (Supabase non rivela
+      // quali indirizzi sono registrati): mostriamo sempre la stessa conferma.
+      if (error) setError(error)
+      else setMode('forgot-done')
+    } else if (mode === 'login') {
       const { error } = await login(email, password)
       if (error) setError('Email o password non corretti')
     } else {
@@ -73,20 +81,36 @@ export default function LoginPage() {
           Space Traders
         </h1>
 
-        {mode === 'signup-done' ? (
+        {mode === 'signup-done' || mode === 'forgot-done' ? (
           <div className="mt-10 w-full text-center flex flex-col items-center gap-4">
             <div
               className="w-14 h-14 rounded-full flex items-center justify-center"
               style={{ background: 'rgba(90,154,177,0.15)', border: '1px solid rgba(90,154,177,0.3)' }}
             >
-              <svg className="w-7 h-7 text-ist-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
+              {mode === 'forgot-done' ? (
+                <Mail className="text-ist-300" size={26} strokeWidth={2} />
+              ) : (
+                <svg className="w-7 h-7 text-ist-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
             </div>
-            <p className="text-white font-semibold text-lg">Registrazione completata!</p>
-            <p className="text-sm" style={{ color: '#8495A3' }}>
-              Conferma la tua email, poi accedi: la <strong>versione gratuita</strong> è già attiva e puoi iniziare subito.
-            </p>
+            {mode === 'forgot-done' ? (
+              <>
+                <p className="text-white font-semibold text-lg">Controlla la tua email</p>
+                <p className="text-sm" style={{ color: '#8495A3' }}>
+                  Se esiste un account associato a <strong style={{ color: '#F7FAFC' }}>{email}</strong>, riceverai un
+                  link per reimpostare la password. Controlla anche lo spam.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-white font-semibold text-lg">Registrazione completata!</p>
+                <p className="text-sm" style={{ color: '#8495A3' }}>
+                  Conferma la tua email, poi accedi: la <strong>versione gratuita</strong> è già attiva e puoi iniziare subito.
+                </p>
+              </>
+            )}
             <button
               onClick={() => switchMode('login')}
               className="mt-2 w-full py-3.5 rounded-2xl font-semibold text-white transition-all active:scale-[0.98]"
@@ -95,14 +119,21 @@ export default function LoginPage() {
                 boxShadow: '0 4px 24px rgba(90,154,177,0.3)',
               }}
             >
-              Vai al login
+              {mode === 'forgot-done' ? 'Torna al login' : 'Vai al login'}
             </button>
           </div>
         ) : (
           <>
             {/* Toggle login / registrazione — colori fissi (login sempre su sfondo scuro).
                 Su iOS la registrazione non è disponibile (companion, solo login). */}
-            {allowSignup ? (
+            {mode === 'forgot' ? (
+              <div className="mt-8 mb-8 w-full text-center">
+                <h2 className="text-lg font-bold text-white mb-1.5">Password dimenticata</h2>
+                <p className="text-sm" style={{ color: 'rgba(247,250,252,0.6)' }}>
+                  Inserisci la tua email: ti mandiamo un link per impostarne una nuova.
+                </p>
+              </div>
+            ) : allowSignup ? (
               <div
                 className="mt-8 mb-8 flex rounded-2xl p-1 w-full"
                 style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)' }}
@@ -143,6 +174,7 @@ export default function LoginPage() {
                     value={name}
                     onChange={e => setName(e.target.value)}
                     required
+                    autoComplete="name"
                     placeholder="Il tuo nome"
                     className="w-full px-4 py-3 rounded-2xl placeholder:text-white/30 outline-none focus:ring-2 focus:ring-ist-400/50 transition-all"
                     style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#F7FAFC' }}
@@ -157,35 +189,39 @@ export default function LoginPage() {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   required
+                  autoComplete="email"
                   placeholder="la-tua@email.com"
                   className="w-full px-4 py-3 rounded-2xl text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-ist-400/50 transition-all"
                   style={{ background: 'var(--ist-w8)', border: '1px solid var(--ist-border)' }}
                 />
               </div>
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-ist-300 uppercase tracking-wider">Password</label>
-                <div className="relative">
-                  <input
-                    type={showPw ? 'text' : 'password'}
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    required
-                    placeholder="••••••••"
-                    className="w-full px-4 py-3 pr-11 rounded-2xl text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-ist-400/50 transition-all"
-                    style={{ background: 'var(--ist-w8)', border: '1px solid var(--ist-border)' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPw(v => !v)}
-                    aria-label={showPw ? 'Nascondi password' : 'Mostra password'}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-80"
-                    style={{ color: 'rgba(247,250,252,0.55)' }}
-                  >
-                    {showPw ? <EyeOff size={17} strokeWidth={2} /> : <Eye size={17} strokeWidth={2} />}
-                  </button>
+              {mode !== 'forgot' && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-ist-300 uppercase tracking-wider">Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPw ? 'text' : 'password'}
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      required
+                      autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                      placeholder="••••••••"
+                      className="w-full px-4 py-3 pr-11 rounded-2xl text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-ist-400/50 transition-all"
+                      style={{ background: 'var(--ist-w8)', border: '1px solid var(--ist-border)' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPw(v => !v)}
+                      aria-label={showPw ? 'Nascondi password' : 'Mostra password'}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-80"
+                      style={{ color: 'rgba(247,250,252,0.55)' }}
+                    >
+                      {showPw ? <EyeOff size={17} strokeWidth={2} /> : <Eye size={17} strokeWidth={2} />}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {error && (
                 <p className="text-sm text-red-400 text-center">{error}</p>
@@ -201,9 +237,31 @@ export default function LoginPage() {
                 }}
               >
                 {loading
-                  ? (mode === 'login' ? 'Accesso in corso...' : 'Registrazione...')
-                  : (mode === 'login' ? 'Accedi' : 'Prova gratis')}
+                  ? (mode === 'login' ? 'Accesso in corso...' : mode === 'forgot' ? 'Invio in corso...' : 'Registrazione...')
+                  : (mode === 'login' ? 'Accedi' : mode === 'forgot' ? 'Inviami il link' : 'Prova gratis')}
               </button>
+
+              {mode === 'login' && (
+                <button
+                  type="button"
+                  onClick={() => switchMode('forgot')}
+                  className="text-center text-xs transition-opacity hover:opacity-80"
+                  style={{ color: 'rgba(247,250,252,0.55)' }}
+                >
+                  Password dimenticata?
+                </button>
+              )}
+
+              {mode === 'forgot' && (
+                <button
+                  type="button"
+                  onClick={() => switchMode('login')}
+                  className="text-center text-xs transition-opacity hover:opacity-80"
+                  style={{ color: 'rgba(247,250,252,0.55)' }}
+                >
+                  Torna al login
+                </button>
+              )}
 
               {mode === 'signup' && (
                 <p className="text-center text-xs" style={{ color: 'rgba(247,250,252,0.55)' }}>

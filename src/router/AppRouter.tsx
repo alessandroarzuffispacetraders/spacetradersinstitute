@@ -1,10 +1,12 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { RESET_PATH } from '../lib/authRecovery'
 import AppLayout from '../components/layout/AppLayout'
 import RequireRole from '../components/auth/RequireRole'
 import RequireFullAccess from '../components/auth/RequireFullAccess'
 import AccessGate from '../components/auth/AccessGate'
 import LoginPage from '../pages/auth/LoginPage'
+import ResetPasswordPage from '../pages/auth/ResetPasswordPage'
 import PrivacyPolicy from '../pages/legal/PrivacyPolicy'
 import SupportPage from '../pages/legal/SupportPage'
 import AccountDeletion from '../pages/legal/AccountDeletion'
@@ -126,8 +128,42 @@ function PrivateRoutes() {
   )
 }
 
+// Alberatura delle rotte. Sta dentro il BrowserRouter (usa useLocation) e resta
+// SEMPRE lo stesso nodo React: così, quando `recoveryMode` si spegne a reset
+// completato, ResetPasswordPage non viene rimontata e la schermata di conferma
+// resta a video.
+function RoutesTree() {
+  const { isAuthenticated, recoveryMode } = useAuth()
+  const location = useLocation()
+
+  // Recupero password: il link dell'email crea una sessione VALIDA, quindi senza
+  // questo dirottamento l'utente finirebbe dritto in dashboard senza impostare la
+  // nuova password. Copre anche il caso in cui Supabase rimandi al Site URL (`/`)
+  // invece che a /reset-password, es. se l'URL non è nell'allowlist dei redirect.
+  if (recoveryMode && location.pathname !== RESET_PATH) {
+    return <Navigate to={RESET_PATH} replace />
+  }
+
+  return (
+    <Routes>
+      {/* Pagine pubbliche (accessibili senza login) — richieste da App Store */}
+      <Route path="/privacy" element={<PrivacyPolicy />} />
+      <Route path="/support" element={<SupportPage />} />
+      <Route path="/account-deletion" element={<AccountDeletion />} />
+      {/* Reset password: pubblica. Ci si arriva dal link email, che crea una
+          sessione → NON va nascosta a chi risulta autenticato. */}
+      <Route path={RESET_PATH} element={<ResetPasswordPage />} />
+      <Route
+        path="/login"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
+      />
+      <Route path="/*" element={<PrivateRoutes />} />
+    </Routes>
+  )
+}
+
 export default function AppRouter() {
-  const { isAuthenticated, loading } = useAuth()
+  const { loading } = useAuth()
 
   if (loading) {
     return (
@@ -139,17 +175,7 @@ export default function AppRouter() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        {/* Pagine pubbliche (accessibili senza login) — richieste da App Store */}
-        <Route path="/privacy" element={<PrivacyPolicy />} />
-        <Route path="/support" element={<SupportPage />} />
-        <Route path="/account-deletion" element={<AccountDeletion />} />
-        <Route
-          path="/login"
-          element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
-        />
-        <Route path="/*" element={<PrivateRoutes />} />
-      </Routes>
+      <RoutesTree />
     </BrowserRouter>
   )
 }

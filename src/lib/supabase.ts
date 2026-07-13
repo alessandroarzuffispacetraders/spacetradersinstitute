@@ -1,6 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 import { loggingFetch, installAuthDebug, logAuthEvent } from './authDebug'
 import { authStorage, isNativePlatform } from './authStorage'
+// IMPORTANTE: importato PRIMA di createClient. Il modulo legge l'URL al primo
+// import per capire se siamo arrivati da un link "password dimenticata": subito
+// dopo, `detectSessionInUrl` consuma il fragment e ripulisce l'URL. Non spostare
+// sotto createClient (l'ordine degli import determina l'ordine di esecuzione).
+import { recoveryUrl } from './authRecovery'
 
 // .trim() guards against a stray trailing newline/space in the env var,
 // which would corrupt the Realtime WebSocket apikey (sent as a URL param).
@@ -30,4 +35,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 // Attiva canary anti-eviction, listener online/offline e window.__istAuth.
 installAuthDebug()
-logAuthEvent('client_init', { store: isNativePlatform ? 'native-preferences' : 'web-localStorage' })
+logAuthEvent('client_init', {
+  store: isNativePlatform ? 'native-preferences' : 'web-localStorage',
+  recoveryLink: recoveryUrl.isRecovery,
+  recoveryError: recoveryUrl.errorCode,
+})
