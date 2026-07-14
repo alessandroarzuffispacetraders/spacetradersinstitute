@@ -75,10 +75,14 @@ export function useChatMessages(channelId: string | null, userId: string) {
   const [loadingMore, setLoadingMore] = useState(false)
   const loadingMoreRef = useRef(false)                 // guard sincrono anti doppio-fetch
   const msgIdsRef = useRef<Set<string>>(new Set())
+  // Copia sincrona dei messaggi correnti: serve al "catch-up" (sotto) per sapere
+  // qual è il più recente senza dover ricreare le callback ad ogni messaggio.
+  const messagesRef = useRef<DbMessage[]>([])
 
-  // keep msgIdsRef in sync
+  // keep refs in sync
   useEffect(() => {
     msgIdsRef.current = new Set(messages.map(m => m.id))
+    messagesRef.current = messages
   }, [messages])
 
   // Carica le reazioni per un set di messaggi e le FONDE nella mappa esistente
@@ -93,6 +97,50 @@ export function useChatMessages(channelId: string | null, userId: string) {
         if (rd) setReactions(prev => ({ ...prev, ...buildReactions(rd as any[], userId) }))
       })
   }, [userId])
+
+  // Recupero "catch-up": rilegge dal server i messaggi PIÙ RECENTI di quelli che
+  // abbiamo già e li fonde. Indispensabile sul NATIVO: quando iOS/iPadOS sospende
+  // l'app la WebSocket realtime si chiude e i messaggi arrivati nel frattempo NON
+  // vengono consegnati (postgres_changes non fa "backfill"). Al ritorno in primo
+  // piano — o alla riconnessione del canale — l'app da sola non rileggeva niente,
+  // così gli ultimi messaggi (sia ricevuti sia inviati da un altro device)
+  // restavano invisibili anche riaprendo. Questo colma il buco.
+  const catchUp = useCallback(async () => {
+    if (!channelId) return
+    // Il messaggio REALE (non ottimistico) più recente che abbiamo in lista.
+    const list = messagesRef.current
+    let newestAt: string | null = null
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (!list[i].id.startsWith('temp_')) { newestAt = list[i].created_at; break }
+    }
+    const base = supabase.from('messages').select('*').eq('channel_id', channelId).is('deleted_at', null)
+    // Con dei messaggi già in lista: prendi tutto ciò che è ≥ del più recente
+    // (>= per non perdere messaggi con lo stesso timestamp; i doppioni si tolgono
+    // per id). Lista vuota (es. socket mai connesso all'avvio): ricarica i più recenti.
+    const { data, error } = newestAt
+      ? await base.gte('created_at', newestAt).order('created_at', { ascending: true }).limit(300)
+      : await base.order('created_at', { ascending: false }).limit(MESSAGES_PAGE_SIZE)
+    if (error || !data) return
+    const rows = data as DbMessage[]
+    const ordered = newestAt ? rows : rows.slice().reverse()
+    if (ordered.length === 0) return
+    const added: DbMessage[] = []
+    setMessages(prev => {
+      const have = new Set(prev.map(m => m.id))
+      const fresh = ordered.filter(m => !have.has(m.id))
+      if (fresh.length === 0) return prev
+      added.push(...fresh)
+      // Come l'handler INSERT: togli gli ottimistici (temp_) rimpiazzati da un
+      // messaggio reale appena riletto (stesso autore + contenuto), altrimenti si
+      // vedrebbe il doppione del messaggio appena inviato.
+      const freshKeys = new Set(fresh.map(m => `${m.user_id}|${m.content}`))
+      const withoutTemp = prev.filter(m => !(m.id.startsWith('temp_') && freshKeys.has(`${m.user_id}|${m.content}`)))
+      const merged = [...withoutTemp, ...fresh]
+      merged.sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0))
+      return merged
+    })
+    if (added.length) loadReactions(added.map(m => m.id))
+  }, [channelId, loadReactions])
 
   useEffect(() => {
     if (!channelId) return
@@ -129,6 +177,7 @@ export function useChatMessages(channelId: string | null, userId: string) {
       })
 
     // Message changes
+    let subscribedOnce = false
     const msgSub = supabase
       .channel(`chat:${channelId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `channel_id=eq.${channelId}` }, (payload) => {
@@ -152,7 +201,16 @@ export function useChatMessages(channelId: string | null, userId: string) {
         const id = (payload.old as { id: string }).id
         setMessages(prev => prev.filter(m => m.id !== id))
       })
-      .subscribe()
+      .subscribe((status) => {
+        // Alla RI-connessione del canale (dopo un drop, es. rientro dal
+        // background) colma l'eventuale buco: mentre il socket era giù i
+        // postgres_changes non consegnano nulla e non c'è backfill. Il primo
+        // SUBSCRIBED è quello iniziale (già coperto dal load): lo saltiamo.
+        if (status === 'SUBSCRIBED') {
+          if (subscribedOnce) catchUp()
+          subscribedOnce = true
+        }
+      })
 
     // Reaction changes — no filter, filter client-side
     const reactSub = supabase
@@ -198,7 +256,24 @@ export function useChatMessages(channelId: string | null, userId: string) {
       msgSub.unsubscribe()
       reactSub.unsubscribe()
     }
-  }, [channelId, userId, loadReactions])
+  }, [channelId, userId, loadReactions, catchUp])
+
+  // Ritorno in primo piano / rete tornata online → colma i messaggi persi mentre
+  // l'app era sospesa (vedi catchUp). Su iOS `visibilitychange` scatta quando la
+  // WebView torna visibile; aggiungiamo anche focus/online per robustezza.
+  useEffect(() => {
+    if (!channelId) return
+    const onVisible = () => { if (document.visibilityState === 'visible') catchUp() }
+    const onOnline = () => catchUp()
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    window.addEventListener('online', onOnline)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [channelId, catchUp])
 
   // Carica un blocco di messaggi PIÙ VECCHI di quelli già in lista (paginazione
   // all'indietro): li antepone in ordine cronologico, deduplicando per id.

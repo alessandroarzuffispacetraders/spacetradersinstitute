@@ -1,3 +1,11 @@
+import { Capacitor } from '@capacitor/core'
+
+// Sul NATIVO (WKWebView iOS/iPadOS, WebView Android) la cache HTTP della WebView
+// può servire risposte GET vecchie: la chat mostrava messaggi stantìi anche
+// riaprendo l'app. Forziamo `no-store` su tutte le richieste Supabase native
+// (le POST non sono comunque cachate, quindi l'effetto reale è solo sui GET).
+const IS_NATIVE = Capacitor.isNativePlatform()
+
 // ────────────────────────────────────────────────────────────────────────────
 // Strumentazione auth per diagnosticare i logout INTERMITTENTI ("a volte rientro
 // e mi ritrovo al login pur non avendo fatto logout").
@@ -140,7 +148,7 @@ export const loggingFetch: typeof fetch = async (input, init) => {
 
   let res: Response
   try {
-    res = await fetch(input, init)
+    res = await fetch(input, IS_NATIVE ? { ...init, cache: 'no-store' } : init)
   } catch (err) {
     // Errore di RETE (fetch rejected): auth-js NON slogga in questo caso, ma è
     // utile saperlo (rientro offline, DNS, ecc.).
