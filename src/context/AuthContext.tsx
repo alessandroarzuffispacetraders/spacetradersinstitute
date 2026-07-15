@@ -24,7 +24,7 @@ type ProfileUpdate = Partial<Pick<User, 'name' | 'avatarPreset' | 'avatarUrl'>>
 interface AuthContextType {
   user: User | null
   login: (email: string, password: string) => Promise<{ error: string | null }>
-  signup: (email: string, password: string, name: string) => Promise<{ error: string | null }>
+  signup: (email: string, password: string, name: string, phone: string) => Promise<{ error: string | null }>
   logout: () => Promise<void>
   updateProfile: (data: ProfileUpdate) => Promise<void>
   changePassword: (current: string, next: string) => Promise<{ error: string | null }>
@@ -230,11 +230,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null }
   }
 
-  const signup = async (email: string, password: string, name: string): Promise<{ error: string | null }> => {
+  const signup = async (email: string, password: string, name: string, phone: string): Promise<{ error: string | null }> => {
+    // `phone` finisce nei user_metadata: il trigger handle_new_user lo salva in
+    // profiles_private (tabella riservata, leggibile solo da self+admin).
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name, role: 'student' } },
+      options: { data: { name, phone: phone.trim(), role: 'student' } },
     })
     if (error) return { error: error.message }
     return { error: null }

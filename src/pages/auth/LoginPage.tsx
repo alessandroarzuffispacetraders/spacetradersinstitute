@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<Mode>('login')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -26,6 +27,7 @@ export default function LoginPage() {
     setMode(next)
     setError(null)
     setName('')
+    setPhone('')
     // Passando da/verso "password dimenticata" l'email digitata si tiene:
     // è la stessa che serve, riscriverla sarebbe solo un fastidio.
     if (next !== 'forgot' && mode !== 'forgot') setEmail('')
@@ -52,7 +54,14 @@ export default function LoginPage() {
         setLoading(false)
         return
       }
-      const { error } = await signup(email, password, name)
+      // Telefono obbligatorio: almeno 7 cifre (a parte +, spazi, trattini, parentesi).
+      const digits = phone.replace(/[^\d]/g, '')
+      if (digits.length < 7) {
+        setError('Inserisci un numero di telefono valido')
+        setLoading(false)
+        return
+      }
+      const { error } = await signup(email, password, name, phone)
       if (error) setError('Registrazione non riuscita. Riprova.')
       else setMode('signup-done')
     }
@@ -176,6 +185,23 @@ export default function LoginPage() {
                     required
                     autoComplete="name"
                     placeholder="Il tuo nome"
+                    className="w-full px-4 py-3 rounded-2xl placeholder:text-white/30 outline-none focus:ring-2 focus:ring-ist-400/50 transition-all"
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#F7FAFC' }}
+                  />
+                </div>
+              )}
+
+              {mode === 'signup' && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-ist-300 uppercase tracking-wider">Telefono</label>
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                    required
+                    autoComplete="tel"
+                    inputMode="tel"
+                    placeholder="+39 333 1234567"
                     className="w-full px-4 py-3 rounded-2xl placeholder:text-white/30 outline-none focus:ring-2 focus:ring-ist-400/50 transition-all"
                     style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#F7FAFC' }}
                   />

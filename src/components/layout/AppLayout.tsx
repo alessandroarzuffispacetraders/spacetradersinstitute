@@ -7,6 +7,7 @@ import { UIProvider, useUI, hasStoredNavMode } from '../../context/UIContext'
 import { NewsProvider } from '../../context/NewsContext'
 import ProfileModal from '../ui/ProfileModal'
 import AppPrompts from '../ui/AppPrompts'
+import AppDownloadPrompt from '../ui/AppDownloadPrompt'
 import { useAuth } from '../../context/AuthContext'
 import { hasManagement, normalizeRoles } from '../../router/navConfig'
 import { supabase } from '../../lib/supabase'
@@ -149,9 +150,10 @@ function AppShell() {
         </main>
         <BottomNav />
         <ProfileModal isOpen={profileOpen} onClose={() => setProfileOpen(false)} />
-        {/* Banner "Aggiungi alla home" + richiesta notifiche: solo sul web.
-            Nell'app nativa non servono (è già installata) → nascosti. */}
+        {/* Banner "Aggiungi alla home" + richiesta notifiche + invito a scaricare
+            l'app nativa: solo sul web. Nell'app nativa non servono → nascosti. */}
         {!Capacitor.isNativePlatform() && <AppPrompts />}
+        {!Capacitor.isNativePlatform() && <AppDownloadPrompt />}
         <NotificationManager />
         <PushNavigationBridge />
         <NativePushBridge />

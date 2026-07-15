@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import PageHeader from '../../components/ui/PageHeader'
-import { ChevronDown, Radio, Upload, Shield, X, Loader2, Mail, KeyRound, Trash2, Globe, MapPin, Download } from 'lucide-react'
+import { ChevronDown, Radio, Upload, Shield, X, Loader2, Mail, KeyRound, Trash2, Globe, MapPin, Download, Phone } from 'lucide-react'
 import { UserPermissions, UserRole, StudentStatus, StudentPhase, UserTier } from '../../types'
 import { supabase } from '../../lib/supabase'
 import { updateUserAuth, deleteUserAccount } from '../../lib/adminUsers'
@@ -22,6 +22,9 @@ interface Profile {
   assigned_coach_id: string | null
   assigned_mental_coach_id: string | null
   created_at: string
+  // Telefono riservato: sta in `profiles_private` (leggibile solo self+admin),
+  // qui è unito lato client. Visibile SOLO all'admin, mai a coach/mental/altri.
+  phone?: string | null
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -212,6 +215,12 @@ function EditModal({ user, coaches, mentalCoaches, onClose, onSave, onDelete }: 
           <div>
             <p className="font-bold text-base" style={{ color: 'var(--ist-text)' }}>{user.name}</p>
             <p className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>{user.email}</p>
+            {/* Telefono: visibile SOLO all'admin (questa pagina è admin-only). */}
+            {user.phone && (
+              <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: 'var(--ist-text-muted)' }}>
+                <Phone size={11} strokeWidth={2} /> {user.phone}
+              </p>
+            )}
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/[0.06]" style={{ color: 'var(--ist-text-muted)' }}>
             <X size={16} />
@@ -643,14 +652,19 @@ export default function AdminUtenti() {
   const { summaries } = useAccessSummaries()
 
   useEffect(() => {
-    supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        if (data) setUsers(data as Profile[])
-        setLoading(false)
-      })
+    // Telefono: sta in `profiles_private` (RLS self+admin). L'admin le legge tutte
+    // e le unisce qui per id. Coach/mental non ricevono mai questa tabella.
+    Promise.all([
+      supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+      supabase.from('profiles_private').select('id, phone'),
+    ]).then(([{ data: profs }, { data: priv }]) => {
+      if (profs) {
+        const phoneById = new Map<string, string | null>()
+        for (const p of (priv ?? []) as { id: string; phone: string | null }[]) phoneById.set(p.id, p.phone)
+        setUsers((profs as Profile[]).map(u => ({ ...u, phone: phoneById.get(u.id) ?? null })))
+      }
+      setLoading(false)
+    })
   }, [])
 
   const hasRole = (u: Profile, r: UserRole) => u.role === r || (u.roles ?? []).includes(r)
@@ -693,12 +707,13 @@ export default function AdminUtenti() {
   const handleExportCsv = () => {
     const nameById = (id: string | null) => id ? (users.find(u => u.id === id)?.name ?? '') : ''
     const fmtD = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
-    const headers = ['Nome', 'Email', 'Ruolo', 'Stato', 'Piano', 'Fase', 'Coach', 'Mental coach', 'Registrato il', 'Ultimo accesso', 'Città distinte', 'Luoghi']
+    const headers = ['Nome', 'Email', 'Telefono', 'Ruolo', 'Stato', 'Piano', 'Fase', 'Coach', 'Mental coach', 'Registrato il', 'Ultimo accesso', 'Città distinte', 'Luoghi']
     const rows = filtered.map(u => {
       const s = summaries[u.id]
       return [
         u.name,
         u.email,
+        u.phone ?? '',
         ROLE_LABELS[u.role] ?? u.role,
         u.status ? (STATUS_LABELS[u.status] ?? u.status) : '',
         u.role === 'student' ? (u.tier === 'free' ? 'Gratuito' : 'Completo') : '',
