@@ -304,7 +304,11 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
   const isStaff = userRole === 'coach' || userRole === 'mental_coach' || userRole === 'admin'
   const isAdmin = userRole === 'admin'
 
-  const groupChannels = channels.filter(ch => ch.roles.includes(userRole) && ch.channelKind === 'group')
+  // `channels` qui è già la lista visibile (filtrata per la MIA audience nel
+  // padre: free→'free', pagante→'student', staff→ruolo). NON rifiltrare per
+  // `userRole`: per un utente free `userRole` è 'student' e nasconderebbe i canali
+  // con audience 'free' (bug: "abilito ai free ma non vedono le chat").
+  const groupChannels = channels.filter(ch => ch.channelKind === 'group')
 
   // Group by category (only for groups tab)
   const categories: Record<string, Channel[]> = {}
@@ -2125,7 +2129,7 @@ export default function ChatPage() {
           onSelect={selectChannel}
           userRole={userRole}
           userId={userId}
-          channels={channels}
+          channels={visibleChannels}
           dmUsers={dmUsers}
           unreadCounts={unreadCounts}
           tab={sidebarTab}
