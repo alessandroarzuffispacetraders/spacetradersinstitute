@@ -52,6 +52,24 @@ export function useAudioRecorder() {
   const resolveRef = useRef<((r: RecordedAudio | null) => void) | null>(null)
   const cancelledRef = useRef(false)
 
+  // Wake Lock: tiene lo schermo acceso mentre si registra, così iOS non va in
+  // auto-lock (spegnendo schermo e interrompendo la cattura). API standard: WKWebView
+  // iOS ≥16.4 e Android/Chrome; dove manca degrada in silenzio (nessun effetto).
+  const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null)
+  const acquireWakeLock = useCallback(async () => {
+    try {
+      if (wakeLockRef.current) return
+      const wl = (navigator as unknown as {
+        wakeLock?: { request: (t: string) => Promise<{ release: () => Promise<void>; addEventListener?: (e: string, cb: () => void) => void }> }
+      }).wakeLock
+      if (!wl?.request) return
+      const sentinel = await wl.request('screen')
+      wakeLockRef.current = sentinel
+      // Se il sistema lo rilascia da solo, azzera il ref così si può riottenere.
+      sentinel.addEventListener?.('release', () => { wakeLockRef.current = null })
+    } catch { /* non critico */ }
+  }, [])
+
   // NB: non fermiamo lo stream qui — è condiviso (micStream) e va riusato per le
   // registrazioni successive; disattiviamo solo la cattura e ne programmiamo il
   // rilascio dopo inattività.
@@ -60,6 +78,10 @@ export function useAudioRecorder() {
     streamRef.current?.getAudioTracks().forEach(t => { t.enabled = false })
     scheduleMicRelease()
     recRef.current = null
+    // Fine registrazione → rilascia il wake lock (lo schermo può rispegnersi).
+    const wl = wakeLockRef.current
+    wakeLockRef.current = null
+    wl?.release().catch(() => { /* non critico */ })
   }, [])
 
   // Allo smontaggio (es. si esce dalla chat): ferma un'eventuale registrazione e
@@ -70,6 +92,18 @@ export function useAudioRecorder() {
     if (rec && rec.state !== 'inactive') { cancelledRef.current = true; try { rec.stop() } catch { /* noop */ } }
     cleanup()
   }, [cleanup])
+
+  // iOS rilascia il wake lock quando la pagina passa in background; al ritorno in
+  // primo piano lo riottiene se stiamo ancora registrando.
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible' && recRef.current?.state === 'recording') {
+        void acquireWakeLock()
+      }
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [acquireWakeLock])
 
   const start = useCallback(async (): Promise<boolean> => {
     setError(null)
@@ -111,6 +145,7 @@ export function useAudioRecorder() {
       // stop. Fondamentale per i vocali lunghi (iOS/WebView): i chunk si
       // accumulano man mano → niente perdita del blob e stop più affidabile.
       rec.start(1000)
+      void acquireWakeLock() // schermo acceso finché si registra
       setRecording(true)
       setElapsedMs(0)
       timerRef.current = setInterval(() => {
@@ -123,7 +158,7 @@ export function useAudioRecorder() {
       setError('Microfono non disponibile. Consenti l’accesso al microfono per registrare.')
       return false
     }
-  }, [cleanup])
+  }, [cleanup, acquireWakeLock])
 
   // Ferma e restituisce il vocale (o null se vuoto).
   const stop = useCallback((): Promise<RecordedAudio | null> => {

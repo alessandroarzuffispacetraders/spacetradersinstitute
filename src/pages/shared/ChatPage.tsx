@@ -5,7 +5,7 @@ import {
   Hash, Megaphone, ChevronDown, ChevronRight,
   Send, ArrowLeft, Search, Pin, MessageCircle, UsersRound, Loader2, X,
   Edit2, Trash2, SmilePlus, ImagePlus, Plus, Mic, Paperclip, FileText,
-  VolumeX, Volume2, Reply, Clock, AlertCircle,
+  VolumeX, Volume2, Reply, Clock, AlertCircle, Bell, BellOff,
 } from 'lucide-react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
@@ -17,6 +17,7 @@ import { useBachecaPosts, BachecaPost, NewBachecaPost } from '../../lib/bacheca'
 import {
   useChatMessages, useDmUsers, useUnreadCounts, useTypingIndicator,
   useAuthorAvatars, dmChannelId, DmUser, DbMessage, MessageMedia,
+  useMutedChannels, useDmLastMessages, DmThreadInfo,
 } from '../../lib/chat'
 import { useChannels } from '../../lib/channels'
 import { setActiveChat } from '../../lib/activeChat'
@@ -275,7 +276,7 @@ function UserCard({ name, role, avatar, canDm, onStartDm, onClose, canModerate, 
 
 // ─── channel row (groups) ────────────────────────────────────────────────────
 
-function ChannelRow({ channel, active, unread, onSelect }: { channel: Channel; active: boolean; unread: number; onSelect: (id: string) => void }) {
+function ChannelRow({ channel, active, unread, muted, onSelect }: { channel: Channel; active: boolean; unread: number; muted?: boolean; onSelect: (id: string) => void }) {
   return (
     <button
       onClick={() => onSelect(channel.id)}
@@ -291,11 +292,28 @@ function ChannelRow({ channel, active, unread, onSelect }: { channel: Channel; a
       <span className="text-sm truncate flex-1 font-medium">
         {channel.name}
       </span>
+      {muted && (
+        <BellOff size={12} strokeWidth={2} className="flex-shrink-0" style={{ color: 'var(--ist-text-dim)', opacity: 0.75 }} />
+      )}
       {unread > 0 && !active && (
         <UnreadBadge count={unread} />
       )}
     </button>
   )
+}
+
+// Orario compatto per la lista chat private (stile WhatsApp): oggi → HH:MM,
+// ieri → "Ieri", altrimenti gg/mm.
+function formatDmTime(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+  }
+  const yest = new Date(now)
+  yest.setDate(now.getDate() - 1)
+  if (d.toDateString() === yest.toDateString()) return 'Ieri'
+  return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' })
 }
 
 
@@ -309,11 +327,13 @@ interface SidebarProps {
   channels: Channel[]
   dmUsers: DmUser[]
   unreadCounts: Record<string, number>
+  dmThreads: Record<string, DmThreadInfo>
+  mutedChannels: Set<string>
   tab: 'groups' | 'direct'
   onTabChange: (t: 'groups' | 'direct') => void
 }
 
-function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, dmUsers, unreadCounts, tab, onTabChange }: SidebarProps) {
+function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, dmUsers, unreadCounts, dmThreads, mutedChannels, tab, onTabChange }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [search, setSearch] = useState('')
   const [dmFilter, setDmFilter] = useState<'all' | 'unread'>('all')
@@ -347,9 +367,20 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
   const dmTierFiltered = (isAdmin && tierFilter !== 'all')
     ? dmSearched.filter(u => u.role === 'student' && (tierFilter === 'free' ? u.tier === 'free' : u.tier !== 'free'))
     : dmSearched
-  const filteredDms = (isStaff && dmFilter === 'unread')
+  // Ordina le chat private per recency (l'ultima con cui ho scritto in cima),
+  // stile WhatsApp; i contatti senza messaggi restano in fondo (ordine invariato).
+  const dmSort = (a: DmUser, b: DmUser) => {
+    const ta = dmThreads[dmChannelId(userId, a.id)]?.at
+    const tb = dmThreads[dmChannelId(userId, b.id)]?.at
+    if (ta && tb) return ta < tb ? 1 : ta > tb ? -1 : 0
+    if (ta) return -1
+    if (tb) return 1
+    return 0
+  }
+  const filteredDms = ((isStaff && dmFilter === 'unread')
     ? dmTierFiltered.filter(u => (unreadCounts[dmChannelId(userId, u.id)] ?? 0) > 0)
     : dmTierFiltered
+  ).slice().sort(dmSort)
 
   const toggleCategory = (cat: string) => {
     setCollapsed(p => ({ ...p, [cat]: !p[cat] }))
@@ -507,25 +538,41 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
               const renderUser = (u: DmUser) => {
                 const chId = dmChannelId(userId, u.id)
                 const dmUnread = unreadCounts[chId] ?? 0
+                const thread = dmThreads[chId]
+                const isActive = activeChannel === chId
+                const highlight = dmUnread > 0 && !isActive
                 return (
                   <button
                     key={u.id}
                     onClick={() => onSelect(chId)}
                     className="w-full flex items-center gap-3 px-2 py-2 rounded-xl text-left transition-all duration-100"
-                    style={activeChannel === chId ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' } : {}}
+                    style={isActive ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' } : {}}
                   >
                     <div className="relative flex-shrink-0">
                       <UserAvatar user={{ name: u.name, avatarUrl: u.avatarUrl, avatarPreset: u.avatarPreset }} size={36} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: activeChannel === chId ? 'var(--ist-accent-text)' : 'var(--ist-text)' }}>
-                        {u.name}
-                      </p>
-                      <p className="text-[11px]" style={{ color: ROLE_TEXT[u.role] }}>
-                        {ROLE_LABEL[u.role]}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold truncate flex-1" style={{ color: isActive ? 'var(--ist-accent-text)' : 'var(--ist-text)' }}>
+                          {u.name}
+                        </p>
+                        {thread && (
+                          <span className="text-[10px] flex-shrink-0" style={{ color: highlight ? 'var(--ist-accent-text)' : 'var(--ist-text-dim)' }}>
+                            {formatDmTime(thread.at)}
+                          </span>
+                        )}
+                      </div>
+                      {thread ? (
+                        <p className="text-[11px] truncate" style={{ color: highlight ? 'var(--ist-text-muted)' : 'var(--ist-text-dim)' }}>
+                          {thread.fromMe ? 'Tu: ' : ''}{thread.preview}
+                        </p>
+                      ) : (
+                        <p className="text-[11px]" style={{ color: ROLE_TEXT[u.role] }}>
+                          {ROLE_LABEL[u.role]}
+                        </p>
+                      )}
                     </div>
-                    {dmUnread > 0 && activeChannel !== chId && (
+                    {dmUnread > 0 && !isActive && (
                       <UnreadBadge count={dmUnread} />
                     )}
                   </button>
@@ -595,7 +642,7 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
           filteredGroups ? (
             <div className="px-1 py-1">
               {filteredGroups.map(ch => (
-                <ChannelRow key={ch.id} channel={ch} active={activeChannel === ch.id} unread={unreadCounts[ch.id] ?? 0} onSelect={onSelect} />
+                <ChannelRow key={ch.id} channel={ch} active={activeChannel === ch.id} unread={unreadCounts[ch.id] ?? 0} muted={mutedChannels.has(ch.id)} onSelect={onSelect} />
               ))}
               {filteredGroups.length === 0 && (
                 <p className="text-xs px-3 py-4 text-center" style={{ color: 'var(--ist-text-dim)' }}>
@@ -625,7 +672,7 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
                   {!isCollapsed && (
                     <div className="px-1">
                       {channels.map(ch => (
-                        <ChannelRow key={ch.id} channel={ch} active={activeChannel === ch.id} unread={unreadCounts[ch.id] ?? 0} onSelect={onSelect} />
+                        <ChannelRow key={ch.id} channel={ch} active={activeChannel === ch.id} unread={unreadCounts[ch.id] ?? 0} muted={mutedChannels.has(ch.id)} onSelect={onSelect} />
                       ))}
                     </div>
                   )}
@@ -652,10 +699,13 @@ interface ChatAreaProps {
   initialInput?: string
   keyboardOpen?: boolean
   keyboardInset?: number
+  safeBottom?: number
   mutedUntil?: string | null
+  isMuted?: boolean
+  onToggleMute?: () => void
 }
 
-function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack, isMobile, initialInput, keyboardOpen, keyboardInset = 0, mutedUntil }: ChatAreaProps) {
+function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack, isMobile, initialInput, keyboardOpen, keyboardInset = 0, safeBottom = 0, mutedUntil, isMuted, onToggleMute }: ChatAreaProps) {
   const [input, setInput] = useState(initialInput ?? '')
   const [inputTall, setInputTall] = useState(false) // multi-riga → rettangolo stondato invece della pillola
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -1056,6 +1106,18 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             <p className="text-[11px] truncate" style={{ color: 'var(--ist-text-muted)' }}>{channel.description}</p>
           ) : null}
         </div>
+
+        {/* Silenzia canale (per-utente, stile WhatsApp) — solo per i gruppi */}
+        {!isDirect && onToggleMute && (
+          <button
+            onClick={onToggleMute}
+            className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors"
+            style={{ background: 'var(--ist-w8)', color: isMuted ? 'var(--ist-text-dim)' : 'var(--ist-text-muted)' }}
+            title={isMuted ? 'Riattiva le notifiche di questo canale' : 'Silenzia le notifiche di questo canale'}
+          >
+            {isMuted ? <BellOff size={15} strokeWidth={2} /> : <Bell size={15} strokeWidth={2} />}
+          </button>
+        )}
       </div>
 
       {/* Messages */}
@@ -1453,7 +1515,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
             paddingBottom: keyboardOpen
               ? (keyboardInset > 0 ? keyboardInset + 12 : 12)
-              : 'calc(12px + env(safe-area-inset-bottom, 0px))',
+              : 12 + safeBottom,
           }}
         >
           {/* Stai rispondendo a un messaggio (impostato con lo swipe) */}
@@ -1631,7 +1693,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
             borderColor: 'var(--ist-composer-border)',
             background: 'var(--ist-composer-bg)',
             backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            paddingBottom: keyboardOpen ? 12 : 'calc(12px + env(safe-area-inset-bottom, 0px))',
+            paddingBottom: keyboardOpen ? 12 : 12 + safeBottom,
           }}
         >
           {mutedHere ? (
@@ -2015,6 +2077,41 @@ function useNativeKeyboardHeight() {
   return h
 }
 
+// Valore STABILE di safe-area-inset-bottom (px). Su WKWebView iOS `env(safe-area-
+// inset-bottom)` ogni tanto sfarfalla a 0 durante i relayout (chiusura tastiera,
+// ritorno in foreground): usato direttamente nel CSS farebbe "ricadere" la barra
+// di scrittura in fondo. Lo misuriamo con una sonda e teniamo il MASSIMO osservato,
+// così non torna mai a 0. Web/desktop senza safe-area → resta 0 (nessun effetto).
+function useStableSafeAreaBottom(): number {
+  const [inset, setInset] = useState(0)
+  useEffect(() => {
+    const probe = document.createElement('div')
+    probe.style.cssText = 'position:fixed;left:-9999px;bottom:0;width:0;height:0;visibility:hidden;pointer-events:none;padding-bottom:env(safe-area-inset-bottom,0px)'
+    document.body.appendChild(probe)
+    let maxSeen = 0
+    const measure = () => {
+      const v = parseFloat(getComputedStyle(probe).paddingBottom) || 0
+      if (v > maxSeen + 0.5) { maxSeen = v; setInset(v) }
+    }
+    measure()
+    // Ri-misura per qualche secondo all'avvio + sugli eventi di relayout: cattura
+    // il valore "vero" anche se al primo frame non è ancora applicato.
+    const iv = setInterval(measure, 400)
+    const stop = setTimeout(() => clearInterval(iv), 4000)
+    window.addEventListener('resize', measure)
+    window.addEventListener('orientationchange', measure)
+    window.visualViewport?.addEventListener('resize', measure)
+    return () => {
+      clearInterval(iv); clearTimeout(stop)
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('orientationchange', measure)
+      window.visualViewport?.removeEventListener('resize', measure)
+      probe.remove()
+    }
+  }, [])
+  return inset
+}
+
 // ─── main component ───────────────────────────────────────────────────────────
 
 export default function ChatPage() {
@@ -2022,11 +2119,15 @@ export default function ChatPage() {
   const { setHideBottomNav } = useUI()
   const vp = useVisibleViewport()
   const nativeKbHeight = useNativeKeyboardHeight()
+  const safeBottom = useStableSafeAreaBottom()
   const location = useLocation()
   const navigate = useNavigate()
   const userRole = (user?.role ?? 'student') as MemberRole
   const userId = user?.id ?? ''
   const userName = user?.name ?? ''
+  // Silenzia canali (per-utente) + ultimo messaggio per DM (lista stile WhatsApp).
+  const { muted: mutedChannels, toggleMute } = useMutedChannels(userId)
+  const dmThreads = useDmLastMessages(userId)
 
   // L'utente gratuito ha chat private SOLO con gli admin (contatto per l'upgrade).
   const isFree = isFreeUser(user)
@@ -2254,6 +2355,8 @@ export default function ChatPage() {
           channels={visibleChannels}
           dmUsers={dmUsers}
           unreadCounts={unreadCounts}
+          dmThreads={dmThreads}
+          mutedChannels={mutedChannels}
           tab={sidebarTab}
           onTabChange={setSidebarTab}
         />
@@ -2286,9 +2389,12 @@ export default function ChatPage() {
             onBack={goBack}
             isMobile={mobileView === 'chat'}
             keyboardInset={keyboardInset}
+            safeBottom={safeBottom}
             initialInput={prefill?.channelId === activeChannelId ? prefill.text : undefined}
             keyboardOpen={(vp?.kbOpen ?? false) || nativeKb}
             mutedUntil={myMutedUntil}
+            isMuted={mutedChannels.has(activeChannelId)}
+            onToggleMute={() => toggleMute(activeChannelId)}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">

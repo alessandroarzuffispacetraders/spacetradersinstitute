@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from './AuthContext'
 import { normalizeRoles } from '../router/navConfig'
 import { useChannels } from '../lib/channels'
-import { useDmUsers, dmChannelId } from '../lib/chat'
+import { useDmUsers, dmChannelId, useMutedChannels } from '../lib/chat'
 
 // Novità per sezione → pallino rosso sulle icone di navigazione.
 interface NewsState {
@@ -59,11 +59,13 @@ function ChatUnreadWatcher({
 }) {
   const { channels } = useChannels()
   const dmUsers = useDmUsers(userId, role)
+  const { muted } = useMutedChannels(userId)
 
   // Solo i canali di gruppo "veri" (esclusi bacheca e le chat delle live `live_*`).
   const groupIds = channels.filter(c => c.type === 'chat' && !c.id.startsWith('live_')).map(c => c.id)
   const dmIds = dmUsers.map(u => dmChannelId(userId, u.id))
-  const channelIds = [...groupIds, ...dmIds]
+  // I canali silenziati (stile WhatsApp) NON accendono il pallino "novità".
+  const channelIds = [...groupIds, ...dmIds].filter(id => !muted.has(id))
   const idsKey = channelIds.join(',')
 
   const refetch = useCallback(async () => {

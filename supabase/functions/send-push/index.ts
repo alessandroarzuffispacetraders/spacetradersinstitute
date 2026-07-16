@@ -213,6 +213,16 @@ Deno.serve(async (req) => {
       if (recipient) userFilter = `user_id=eq.${recipient}`
     }
 
+    // Chi ha SILENZIATO questo canale (channel_mutes, stile WhatsApp) non riceve
+    // la push — resta escluso dai destinatari.
+    const mutedRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/channel_mutes?channel_id=eq.${encodeURIComponent(message.channel_id)}&select=user_id`,
+      { headers: REST_HEADERS },
+    )
+    const mutedRows = await mutedRes.json().catch(() => [])
+    const mutedIds = Array.isArray(mutedRows) ? mutedRows.map((m: { user_id: string }) => m.user_id) : []
+    if (mutedIds.length > 0) userFilter += `&user_id=not.in.(${mutedIds.join(',')})`
+
     // Recupera le subscription (web + native) di tutti i destinatari
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/push_subscriptions?${userFilter}&select=endpoint,keys,platform,native_token`,

@@ -742,3 +742,106 @@ export function useDmUsers(currentUserId: string, currentRole: UserRole) {
 
   return users
 }
+
+// ─── Silenzia canali (per-utente, stile WhatsApp) ──────────────────────────────
+// L'utente silenzia uno o più canali di gruppo PER SÉ: niente push (gate anche
+// server-side in send-push) e il canale non accende più il pallino "novità" in
+// navigazione. I non-letti restano visibili nella lista (come su WhatsApp).
+export function useMutedChannels(userId: string) {
+  const [muted, setMuted] = useState<Set<string>>(new Set())
+  const mutedRef = useRef(muted)
+  useEffect(() => { mutedRef.current = muted }, [muted])
+
+  useEffect(() => {
+    if (!userId) { setMuted(new Set()); return }
+    let cancelled = false
+    supabase
+      .from('channel_mutes')
+      .select('channel_id')
+      .eq('user_id', userId)
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        setMuted(new Set((data as { channel_id: string }[]).map(r => r.channel_id)))
+      })
+    return () => { cancelled = true }
+  }, [userId])
+
+  const toggleMute = useCallback(async (channelId: string) => {
+    if (!userId || !channelId) return
+    const wasMuted = mutedRef.current.has(channelId)
+    // Ottimistico: aggiorna subito la UI, poi persiste (rollback se fallisce).
+    setMuted(prev => {
+      const next = new Set(prev)
+      if (wasMuted) next.delete(channelId); else next.add(channelId)
+      return next
+    })
+    if (wasMuted) {
+      const { error } = await supabase.from('channel_mutes')
+        .delete().eq('user_id', userId).eq('channel_id', channelId)
+      if (error) setMuted(prev => { const n = new Set(prev); n.add(channelId); return n })
+    } else {
+      const { error } = await supabase.from('channel_mutes')
+        .upsert({ user_id: userId, channel_id: channelId }, { onConflict: 'user_id,channel_id' })
+      if (error) setMuted(prev => { const n = new Set(prev); n.delete(channelId); return n })
+    }
+  }, [userId])
+
+  return { muted, toggleMute }
+}
+
+// ─── Ultimo messaggio per ogni DM (lista chat private in stile WhatsApp) ────────
+// Serve a ordinare le chat private per recency e a mostrarne l'anteprima.
+export interface DmThreadInfo { preview: string; at: string; fromMe: boolean }
+
+type DmMsgRow = {
+  channel_id: string; content: string | null; user_id: string; created_at: string
+  image_url: string | null; audio_url: string | null; file_url: string | null; deleted_at: string | null
+}
+
+function dmPreviewOf(m: DmMsgRow): string {
+  if (m.deleted_at) return 'Messaggio eliminato'
+  if (m.audio_url) return '🎤 Vocale'
+  if (m.image_url) return '📷 Foto'
+  if (m.file_url) return '📎 File'
+  return (m.content ?? '').replace(/\s+/g, ' ').trim() || 'Allegato'
+}
+
+export function useDmLastMessages(userId: string): Record<string, DmThreadInfo> {
+  const [map, setMap] = useState<Record<string, DmThreadInfo>>({})
+
+  useEffect(() => {
+    if (!userId) { setMap({}); return }
+    let cancelled = false
+
+    supabase
+      .from('messages')
+      .select('channel_id, content, user_id, created_at, image_url, audio_url, file_url, deleted_at')
+      .like('channel_id', 'dm_%')
+      .like('channel_id', `%${userId}%`)     // solo i MIEI DM (id nel channel_id)
+      .order('created_at', { ascending: false })
+      .limit(400)
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        const next: Record<string, DmThreadInfo> = {}
+        for (const m of data as DmMsgRow[]) {
+          if (next[m.channel_id]) continue   // già visto il più recente (ordinati desc)
+          next[m.channel_id] = { preview: dmPreviewOf(m), at: m.created_at, fromMe: m.user_id === userId }
+        }
+        setMap(next)
+      })
+
+    // Aggiornamento live: un nuovo messaggio in un mio DM aggiorna l'anteprima.
+    const sub = supabase
+      .channel('dm-threads:' + userId)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const m = payload.new as DmMsgRow
+        if (!m.channel_id?.startsWith('dm_') || !m.channel_id.includes(userId)) return
+        setMap(prev => ({ ...prev, [m.channel_id]: { preview: dmPreviewOf(m), at: m.created_at, fromMe: m.user_id === userId } }))
+      })
+      .subscribe()
+
+    return () => { cancelled = true; sub.unsubscribe() }
+  }, [userId])
+
+  return map
+}
