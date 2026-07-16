@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase } from './supabase'
 import { UserRole, UserTier } from '../types'
 import { triggerPushNotifications } from './push'
+import { uploadChatAudio } from './storage'
 
 export interface DbMessage {
   id: string
@@ -21,6 +22,13 @@ export interface DbMessage {
   deleted_at?: string | null
   kind?: string | null            // 'welcome' = messaggio automatico di benvenuto
   target_user_id?: string | null  // destinatario del messaggio di sistema (es. benvenuto)
+  // Risposta a un altro messaggio (quote): id + snapshot autore/anteprima.
+  reply_to?: string | null
+  reply_to_author?: string | null
+  reply_to_preview?: string | null
+  // SOLO client (mai dal DB): stato di invio del messaggio ottimistico.
+  // 'sending' = in corso; 'failed' = da ritentare (blob/dati tenuti in memoria).
+  sendState?: 'sending' | 'failed'
 }
 
 // Allegati opzionali di un messaggio (immagine inline, vocale, file).
@@ -31,6 +39,32 @@ export interface MessageMedia {
   fileUrl?: string | null
   fileName?: string | null
   fileSize?: number | null
+  // Vocale NON ancora caricato: il blob resta in memoria così l'upload+invio è
+  // ritentabile senza ri-registrare (fix "vocali persi con rete scarsa").
+  audioBlob?: Blob
+  audioExt?: string
+  audioMime?: string
+}
+
+// Riferimento al messaggio a cui si risponde (per la citazione in bolla).
+export interface ReplyRef {
+  id: string
+  author: string
+  preview: string
+}
+
+// Tutto ciò che serve a (ri)tentare un invio: sopravvive ai fallimenti in memoria.
+interface PendingSend {
+  channelId: string
+  content: string
+  authorName: string
+  authorRole: UserRole
+  media: MessageMedia
+  reply?: ReplyRef
+  // Id RIGA generato dal client: usato come messages.id così un re-invio (retry)
+  // colpisce la PK e NON crea un doppione se l'INSERT precedente era andato a buon
+  // fine ma la risposta HTTP era andata persa (rete instabile).
+  rowId: string
 }
 
 export interface DmUser {
@@ -78,12 +112,30 @@ export function useChatMessages(channelId: string | null, userId: string) {
   // Copia sincrona dei messaggi correnti: serve al "catch-up" (sotto) per sapere
   // qual è il più recente senza dover ricreare le callback ad ogni messaggio.
   const messagesRef = useRef<DbMessage[]>([])
+  // Invii in sospeso (per id ottimistico temp_...): tengono TUTTO il necessario a
+  // ritentare — incluso il blob del vocale — così un fallimento non perde nulla.
+  const pendingRef = useRef<Map<string, PendingSend>>(new Map())
+  // Invii ATTUALMENTE in volo: guardia sincrona anti doppio-invio (doppio tap su
+  // "Riprova" non deve partire due volte).
+  const sendingRef = useRef<Set<string>>(new Set())
+  // Object URL (blob:) dei vocali ottimistici, per revocarli (no memory leak).
+  const blobUrlsRef = useRef<Map<string, string>>(new Map())
+  const revokeBlobUrl = useCallback((tempId: string) => {
+    const u = blobUrlsRef.current.get(tempId)
+    if (u) { URL.revokeObjectURL(u); blobUrlsRef.current.delete(tempId) }
+  }, [])
+  // Revoca tutti gli object URL rimasti allo smontaggio dell'hook.
+  useEffect(() => () => { blobUrlsRef.current.forEach(u => URL.revokeObjectURL(u)); blobUrlsRef.current.clear() }, [])
+  // Canale corrente (sincrono): un invio partito su un canale non deve toccare la
+  // lista di un canale diverso se l'utente naviga altrove mentre invia.
+  const channelIdRef = useRef<string | null>(channelId)
 
   // keep refs in sync
   useEffect(() => {
     msgIdsRef.current = new Set(messages.map(m => m.id))
     messagesRef.current = messages
   }, [messages])
+  useEffect(() => { channelIdRef.current = channelId }, [channelId])
 
   // Carica le reazioni per un set di messaggi e le FONDE nella mappa esistente
   // (usato sia al primo load sia quando si aggiungono messaggi più vecchi).
@@ -134,7 +186,10 @@ export function useChatMessages(channelId: string | null, userId: string) {
       // messaggio reale appena riletto (stesso autore + contenuto), altrimenti si
       // vedrebbe il doppione del messaggio appena inviato.
       const freshKeys = new Set(fresh.map(m => `${m.user_id}|${m.content}`))
-      const withoutTemp = prev.filter(m => !(m.id.startsWith('temp_') && freshKeys.has(`${m.user_id}|${m.content}`)))
+      // NB: mai deduplicare un temp in stato 'failed' (non ha un reale in arrivo:
+      // i vocali hanno content='' → altrimenti l'eco di un vocale ne cancellerebbe
+      // un altro fallito, perdendolo insieme al suo tasto "Riprova").
+      const withoutTemp = prev.filter(m => !(m.id.startsWith('temp_') && m.sendState !== 'failed' && freshKeys.has(`${m.user_id}|${m.content}`)))
       const merged = [...withoutTemp, ...fresh]
       merged.sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0))
       return merged
@@ -185,7 +240,9 @@ export function useChatMessages(channelId: string | null, userId: string) {
         if (msg.deleted_at) return
         setMessages(prev => {
           if (prev.some(m => m.id === msg.id)) return prev
-          const withoutTemp = prev.filter(m => !(m.id.startsWith('temp_') && m.user_id === msg.user_id && m.content === msg.content))
+          // Un temp 'failed' non ha un reale in arrivo → non deduplicarlo (i vocali
+          // hanno content='': l'eco di un vocale cancellerebbe un altro fallito).
+          const withoutTemp = prev.filter(m => !(m.id.startsWith('temp_') && m.sendState !== 'failed' && m.user_id === msg.user_id && m.content === msg.content))
           return [...withoutTemp, msg]
         })
       })
@@ -306,11 +363,107 @@ export function useChatMessages(channelId: string | null, userId: string) {
     loadReactions(older.map(m => m.id))
   }, [channelId, hasMore, messages, loadReactions])
 
-  const sendMessage = async (content: string, authorName: string, authorRole: UserRole, media?: MessageMedia) => {
+  // Aggiorna un messaggio ottimistico SOLO se siamo ancora sul suo canale (evita
+  // che un invio in background scriva nella lista di un altro canale).
+  const patchOptimistic = useCallback((chId: string, tempId: string, patch: Partial<DbMessage> | null) => {
+    if (channelIdRef.current !== chId) return
+    setMessages(prev => patch === null
+      ? prev.filter(m => m.id !== tempId)
+      : prev.map(m => m.id === tempId ? { ...m, ...patch } : m))
+  }, [])
+
+  // Tenta (o ritenta) l'invio di un messaggio ottimistico: carica il vocale se
+  // ancora in memoria, poi fa l'INSERT. Fallimento → stato 'failed' + blob tenuto.
+  const attemptSend = useCallback(async (tempId: string) => {
+    const p = pendingRef.current.get(tempId)
+    if (!p) return
+    if (sendingRef.current.has(tempId)) return   // già in volo → niente doppio invio
+    sendingRef.current.add(tempId)
+    patchOptimistic(p.channelId, tempId, { sendState: 'sending' })
+    try {
+      // 1) Upload del vocale se non ancora su storage (blob trattenuto in memoria).
+      if (p.media.audioBlob && !p.media.audioUrl) {
+        const url = await uploadChatAudio(userId, p.media.audioBlob, p.media.audioExt ?? 'webm', p.media.audioMime ?? '')
+        if (!url) { patchOptimistic(p.channelId, tempId, { sendState: 'failed' }); return }
+        p.media.audioUrl = url
+      }
+
+      // 2) INSERT. id = rowId (client): un retry dopo una risposta persa colpisce
+      //    la PK (23505) invece di duplicare. .select() rimpiazza il temp col reale
+      //    in modo deterministico (i vocali hanno content vuoto → la dedup per
+      //    contenuto non basterebbe).
+      const m = p.media
+      const row: Record<string, unknown> = {
+        id: p.rowId,
+        channel_id: p.channelId,
+        user_id: userId,
+        author_name: p.authorName,
+        author_role: p.authorRole,
+        content: p.content,
+        image_url: m.imageUrl ?? null,
+        audio_url: m.audioUrl ?? null,
+        audio_duration_sec: m.audioDuration ?? null,
+        file_url: m.fileUrl ?? null,
+        file_name: m.fileName ?? null,
+        file_size: m.fileSize ?? null,
+      }
+      // Le colonne reply_* solo se è una risposta: un messaggio normale si invia
+      // anche senza la migration reply applicata.
+      if (p.reply) {
+        row.reply_to = p.reply.id
+        row.reply_to_author = p.reply.author
+        row.reply_to_preview = p.reply.preview
+      }
+
+      let real: DbMessage | null = null
+      const { data, error } = await supabase.from('messages').insert(row).select('*').single()
+      if (error || !data) {
+        const code = (error as { code?: string } | null)?.code
+        if (code === '23505') {
+          // Un tentativo PRECEDENTE era andato a buon fine ma la risposta HTTP era
+          // persa: la riga esiste già → recuperala, NON è un errore.
+          const { data: existing } = await supabase.from('messages').select('*').eq('id', p.rowId).maybeSingle()
+          if (existing) real = existing as DbMessage
+        } else if (p.reply && (code === 'PGRST204' || code === '42703')) {
+          // Colonne reply_* assenti (migration non applicata): ritenta come
+          // messaggio normale (senza citazione) invece di restare bloccato.
+          delete row.reply_to; delete row.reply_to_author; delete row.reply_to_preview
+          const retry = await supabase.from('messages').insert(row).select('*').single()
+          if (!retry.error && retry.data) real = retry.data as DbMessage
+        }
+        if (!real) { patchOptimistic(p.channelId, tempId, { sendState: 'failed' }); return }
+      } else {
+        real = data as DbMessage
+      }
+
+      // 3) Successo: libera il pending, revoca l'object URL, rimpiazza il temp.
+      pendingRef.current.delete(tempId)
+      revokeBlobUrl(tempId)
+      const done = real
+      if (channelIdRef.current === p.channelId) {
+        setMessages(prev => prev.some(x => x.id === done.id)
+          ? prev.filter(x => x.id !== tempId)
+          : prev.map(x => x.id === tempId ? done : x))
+      }
+      const preview = p.content
+        || (m.audioUrl ? '🎤 Messaggio vocale' : m.fileUrl ? `📎 ${m.fileName ?? 'File'}` : m.imageUrl ? '📷 Foto' : '')
+      triggerPushNotifications({ channel_id: p.channelId, user_id: userId, author_name: p.authorName, content: preview })
+    } finally {
+      sendingRef.current.delete(tempId)
+    }
+  }, [userId, patchOptimistic, revokeBlobUrl])
+
+  const sendMessage = useCallback(async (content: string, authorName: string, authorRole: UserRole, media?: MessageMedia, reply?: ReplyRef) => {
     const trimmed = content.trim()
-    const { imageUrl, audioUrl, audioDuration, fileUrl, fileName, fileSize } = media ?? {}
-    if (!channelId || !userId || (!trimmed && !imageUrl && !audioUrl && !fileUrl)) return
-    const tempId = `temp_${Date.now()}`
+    const m = media ?? {}
+    const hasAudio = !!(m.audioUrl || m.audioBlob)
+    if (!channelId || !userId || (!trimmed && !m.imageUrl && !hasAudio && !m.fileUrl)) return
+    const tempId = `temp_${Date.now()}_${Math.round(performance.now())}`
+    const rowId = crypto.randomUUID()
+    // Vocale non ancora caricato: URL locale (blob:) per riascoltarlo SUBITO,
+    // mentre l'upload va in background. Verrà sostituito dall'URL di storage.
+    const localAudio = m.audioBlob && !m.audioUrl ? URL.createObjectURL(m.audioBlob) : m.audioUrl ?? null
+    if (localAudio && localAudio.startsWith('blob:')) blobUrlsRef.current.set(tempId, localAudio)
     const optimistic: DbMessage = {
       id: tempId,
       channel_id: channelId,
@@ -318,38 +471,34 @@ export function useChatMessages(channelId: string | null, userId: string) {
       author_name: authorName,
       author_role: authorRole,
       content: trimmed,
-      image_url: imageUrl ?? null,
-      audio_url: audioUrl ?? null,
-      audio_duration_sec: audioDuration ?? null,
-      file_url: fileUrl ?? null,
-      file_name: fileName ?? null,
-      file_size: fileSize ?? null,
+      image_url: m.imageUrl ?? null,
+      audio_url: localAudio,
+      audio_duration_sec: m.audioDuration ?? null,
+      file_url: m.fileUrl ?? null,
+      file_name: m.fileName ?? null,
+      file_size: m.fileSize ?? null,
+      reply_to: reply?.id ?? null,
+      reply_to_author: reply?.author ?? null,
+      reply_to_preview: reply?.preview ?? null,
       created_at: new Date().toISOString(),
+      sendState: 'sending',
     }
+    pendingRef.current.set(tempId, { channelId, content: trimmed, authorName, authorRole, media: { ...m }, reply, rowId })
     setMessages(prev => [...prev, optimistic])
+    await attemptSend(tempId)
+  }, [channelId, userId, attemptSend])
 
-    const { error } = await supabase.from('messages').insert({
-      channel_id: channelId,
-      user_id: userId,
-      author_name: authorName,
-      author_role: authorRole,
-      content: trimmed,
-      image_url: imageUrl ?? null,
-      audio_url: audioUrl ?? null,
-      audio_duration_sec: audioDuration ?? null,
-      file_url: fileUrl ?? null,
-      file_name: fileName ?? null,
-      file_size: fileSize ?? null,
-    })
-    if (error) {
-      setMessages(prev => prev.filter(m => m.id !== tempId))
-      return
-    }
-    // Anteprima notifica: testo se presente, altrimenti il tipo di allegato.
-    const preview = trimmed
-      || (audioUrl ? '🎤 Messaggio vocale' : fileUrl ? `📎 ${fileName ?? 'File'}` : imageUrl ? '📷 Foto' : '')
-    triggerPushNotifications({ channel_id: channelId, user_id: userId, author_name: authorName, content: preview })
-  }
+  // Riprova un invio fallito (dal tasto sull'errore del messaggio).
+  const retryMessage = useCallback((tempId: string) => {
+    if (pendingRef.current.has(tempId)) void attemptSend(tempId)
+  }, [attemptSend])
+
+  // Scarta un messaggio fallito (rimuovilo senza inviarlo).
+  const discardMessage = useCallback((tempId: string) => {
+    pendingRef.current.delete(tempId)
+    revokeBlobUrl(tempId)
+    setMessages(prev => prev.filter(x => x.id !== tempId))
+  }, [revokeBlobUrl])
 
   const editMessage = useCallback(async (id: string, content: string) => {
     const trimmed = content.trim()
@@ -388,7 +537,7 @@ export function useChatMessages(channelId: string | null, userId: string) {
     }
   }, [userId, reactions])
 
-  return { messages, loading, reactions, hasMore, loadingMore, loadMore, sendMessage, editMessage, deleteMessage, toggleReaction }
+  return { messages, loading, reactions, hasMore, loadingMore, loadMore, sendMessage, retryMessage, discardMessage, editMessage, deleteMessage, toggleReaction }
 }
 
 // Typing indicator via Supabase Broadcast

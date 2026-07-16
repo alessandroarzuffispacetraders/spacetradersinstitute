@@ -5,7 +5,7 @@ import {
   Hash, Megaphone, ChevronDown, ChevronRight,
   Send, ArrowLeft, Search, Pin, MessageCircle, UsersRound, Loader2, X,
   Edit2, Trash2, SmilePlus, ImagePlus, Plus, Mic, Paperclip, FileText,
-  VolumeX, Volume2,
+  VolumeX, Volume2, Reply, Clock, AlertCircle,
 } from 'lucide-react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
@@ -21,7 +21,7 @@ import {
 import { useChannels } from '../../lib/channels'
 import { setActiveChat } from '../../lib/activeChat'
 import {
-  uploadChatImage, uploadChatFile, uploadChatAudio,
+  uploadChatImage, uploadChatFile,
   isAllowedChatFile, CHAT_FILE_MAX_BYTES, CHAT_FILE_ACCEPT,
 } from '../../lib/storage'
 import { useAudioRecorder, isAudioRecordingSupported, formatDuration } from '../../lib/audioRecorder'
@@ -53,13 +53,32 @@ function sameDay(a: string, b: string) {
   return new Date(a).toDateString() === new Date(b).toDateString()
 }
 
-// Rende cliccabili gli URL dentro un testo (usato nei post bacheca: link Zoom ecc.).
+// Apre un link esterno in modo affidabile anche dentro la webview nativa
+// (Capacitor): window.open('_blank') delega al browser di sistema, che sa poi
+// passare la mano all'app giusta (es. Zoom). Stesso pattern già usato altrove.
+function openExternalLink(url: string, e?: React.MouseEvent) {
+  e?.preventDefault()
+  e?.stopPropagation()
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+// Rende cliccabili gli URL dentro un testo (bacheca + messaggi chat: link Zoom ecc.).
 function linkify(text: string) {
   return text.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
     /^https?:\/\//.test(part)
-      ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--ist-accent-text)', textDecoration: 'underline', wordBreak: 'break-all' }}>{part}</a>
+      ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" onClick={e => openExternalLink(part, e)} style={{ color: 'var(--ist-accent-text)', textDecoration: 'underline', wordBreak: 'break-all' }}>{part}</a>
       : part,
   )
+}
+
+// Anteprima breve di un messaggio, per la citazione nelle risposte.
+function msgPreview(m: DbMessage): string {
+  const t = (m.content ?? '').trim()
+  if (t) return t.length > 90 ? t.slice(0, 90) + '…' : t
+  if (m.audio_url) return '🎤 Messaggio vocale'
+  if (m.image_url) return '📷 Foto'
+  if (m.file_url) return `📎 ${m.file_name ?? 'File'}`
+  return 'Messaggio'
 }
 
 const ROLE_LABEL: Record<MemberRole, string> = {
@@ -665,7 +684,37 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
   const imagePreview = useMemo(() => imageFile ? URL.createObjectURL(imageFile) : null, [imageFile])
   useEffect(() => () => { if (imagePreview) URL.revokeObjectURL(imagePreview) }, [imagePreview])
 
-  const { messages, loading, reactions, hasMore, loadingMore, loadMore, sendMessage: sendToDb, editMessage, deleteMessage, toggleReaction } = useChatMessages(channel.id, userId)
+  const { messages, loading, reactions, hasMore, loadingMore, loadMore, sendMessage: sendToDb, retryMessage, discardMessage, editMessage, deleteMessage, toggleReaction } = useChatMessages(channel.id, userId)
+  // Messaggio a cui si sta rispondendo (impostato con lo swipe sulla bolla).
+  const [replyTo, setReplyTo] = useState<{ id: string; author: string; preview: string } | null>(null)
+
+  // Swipe-to-reply: trascina una bolla verso destra per rispondere a quel messaggio.
+  const swipeStartRef = useRef<{ id: string; x: number; y: number } | null>(null)
+  const [swipeDx, setSwipeDx] = useState<{ id: string; dx: number } | null>(null)
+  const onBubbleDown = (e: React.PointerEvent, id: string) => {
+    if (e.pointerType === 'mouse') return   // solo touch/pen
+    if (id.startsWith('temp_')) return       // non si risponde a un messaggio non ancora inviato
+    if (e.clientX <= 30) return              // lascia la gesture "torna indietro" dal bordo
+    swipeStartRef.current = { id, x: e.clientX, y: e.clientY }
+  }
+  const onBubbleMove = (e: React.PointerEvent) => {
+    const s = swipeStartRef.current
+    if (!s) return
+    const dx = e.clientX - s.x
+    const dy = e.clientY - s.y
+    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) { swipeStartRef.current = null; setSwipeDx(null); return }
+    // Soglia di attivazione: nessun re-render finché non è chiaramente uno swipe
+    // orizzontale (sopprime il jitter dei tap e i primi frame dello scroll verticale).
+    if (dx < 8) { setSwipeDx(prev => (prev ? null : prev)); return }
+    setSwipeDx({ id: s.id, dx: Math.min(dx, 72) })
+  }
+  const onBubbleUp = (fullMsg: DbMessage) => {
+    const s = swipeStartRef.current
+    const dx = swipeDx && s && swipeDx.id === s.id ? swipeDx.dx : 0
+    swipeStartRef.current = null
+    setSwipeDx(null)
+    if (dx >= 50) setReplyTo({ id: fullMsg.id, author: fullMsg.author_name, preview: msgPreview(fullMsg) })
+  }
   const { typingUsers, notifyTyping, stopTyping } = useTypingIndicator(channel.id, userId, userName)
   // Avatar reali (foto/preset) degli autori, risolti per user_id.
   const authorAvatars = useAuthorAvatars(useMemo(() => messages.map(m => m.user_id), [messages]))
@@ -809,13 +858,15 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
     } finally {
       setUploading(false)
     }
+    const reply = replyTo ?? undefined
     setInput('')
     setInputTall(false)
     setImageFile(null)
     setFileAttachment(null)
+    setReplyTo(null)
     stopTyping()
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
-    await sendToDb(text, userName, userRole, media)
+    await sendToDb(text, userName, userRole, media, reply)
   }
 
   // ── Vocali: registra tenendo premuto, invia al rilascio ────────────────────
@@ -826,11 +877,12 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
     // Blob vuoto/registrazione fallita: NON restare in silenzio (il vocale è
     // "fondamentale") → avvisa così l'utente riprova invece di credere sia partito.
     if (!rec) { alert('Vocale non registrato. Riprova tenendo premuto un istante in più.'); return }
-    setUploading(true)
-    const url = await uploadChatAudio(userId, rec.blob, rec.ext, rec.mime)
-    setUploading(false)
-    if (!url) { alert('Invio del vocale non riuscito. Riprova.'); return }
-    await sendToDb('', userName, userRole, { audioUrl: url, audioDuration: rec.durationSec })
+    // NIENTE upload qui: passiamo il blob a sendMessage, che lo tiene in memoria,
+    // lo carica in background e — se la rete fallisce — mostra "riprova" sul
+    // messaggio invece di perdere il vocale.
+    const reply = replyTo ?? undefined
+    setReplyTo(null)
+    void sendToDb('', userName, userRole, { audioBlob: rec.blob, audioExt: rec.ext, audioMime: rec.mime, audioDuration: rec.durationSec }, reply)
   }
 
   const cancelAudio = () => {
@@ -1099,11 +1151,28 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
 
                       return (
                         <div key={msg.id} className="relative w-full" style={{ marginBottom: hasReactions ? 8 : 0 }}>
+                          {/* Indicatore "rispondi" che compare trascinando la bolla */}
+                          {swipeDx?.id === msg.id && swipeDx.dx > 8 && (
+                            <div className="absolute left-1 top-1/2 -translate-y-1/2 pointer-events-none z-10" style={{ opacity: Math.min(1, swipeDx.dx / 50) }}>
+                              <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--ist-w8)', color: 'var(--ist-accent-text)' }}>
+                                <Reply size={14} strokeWidth={2.2} />
+                              </div>
+                            </div>
+                          )}
                           {/* Message bubble with action bar */}
                           <div
                             className={`relative flex items-end gap-1 ${group.own ? 'flex-row-reverse' : 'flex-row'}`}
                             onMouseEnter={() => setHoveredMsgId(msg.id)}
                             onMouseLeave={() => { if (showReactFor !== msg.id) setHoveredMsgId(null) }}
+                            onPointerDown={e => onBubbleDown(e, msg.id)}
+                            onPointerMove={onBubbleMove}
+                            onPointerUp={() => onBubbleUp(msg.fullMsg)}
+                            onPointerCancel={() => { swipeStartRef.current = null; setSwipeDx(null) }}
+                            style={{
+                              transform: swipeDx?.id === msg.id ? `translateX(${swipeDx.dx}px)` : undefined,
+                              transition: swipeDx?.id === msg.id ? 'none' : 'transform 0.18s ease',
+                              touchAction: 'pan-y',
+                            }}
                           >
                             {/* Action bar (shown on hover for desktop) */}
                             {(isHovered || showReactFor === msg.id) && !isEditing && (
@@ -1208,6 +1277,19 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                                   }
                                 }
                               >
+                                {(msg.fullMsg.reply_to_author || msg.fullMsg.reply_to_preview) && (
+                                  <div
+                                    className="mb-1.5 pl-2 pr-2 py-1 rounded-md text-xs"
+                                    style={{ borderLeft: '3px solid var(--ist-accent-text)', background: 'var(--ist-w8)' }}
+                                  >
+                                    <div className="font-semibold" style={{ color: 'var(--ist-accent-text)' }}>
+                                      {msg.fullMsg.reply_to_author || 'Messaggio'}
+                                    </div>
+                                    <div className="opacity-80 truncate" style={{ maxWidth: 240 }}>
+                                      {msg.fullMsg.reply_to_preview}
+                                    </div>
+                                  </div>
+                                )}
                                 {msg.fullMsg.image_url && (
                                   <a
                                     href={msg.fullMsg.image_url}
@@ -1245,9 +1327,35 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
                                     />
                                   </div>
                                 )}
-                                {msg.text}
+                                {linkify(msg.text)}
                                 {msg.editedAt && (
                                   <span className="text-[9px] ml-1.5 opacity-50">modificato</span>
+                                )}
+                                {msg.fullMsg.sendState === 'sending' && (
+                                  <span className="text-[9px] ml-1.5 opacity-60 inline-flex items-center gap-1 align-middle">
+                                    <Clock size={9} strokeWidth={2} /> invio…
+                                  </span>
+                                )}
+                                {msg.fullMsg.sendState === 'failed' && (
+                                  <span className="ml-1.5 inline-flex items-center gap-1.5 align-middle">
+                                    <span className="text-[10px] inline-flex items-center gap-1" style={{ color: '#FF6B7A' }}>
+                                      <AlertCircle size={10} strokeWidth={2} /> non inviato
+                                    </span>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); retryMessage(msg.id) }}
+                                      className="text-[10px] font-semibold underline"
+                                      style={{ color: 'var(--ist-accent-text)' }}
+                                    >
+                                      Riprova
+                                    </button>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); discardMessage(msg.id) }}
+                                      className="text-[10px] opacity-60 underline"
+                                      style={{ color: 'var(--ist-text-muted)' }}
+                                    >
+                                      Elimina
+                                    </button>
+                                  </span>
                                 )}
                               </div>
                             )}
@@ -1348,6 +1456,20 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
               : 'calc(12px + env(safe-area-inset-bottom, 0px))',
           }}
         >
+          {/* Stai rispondendo a un messaggio (impostato con lo swipe) */}
+          {replyTo && (
+            <div className="flex items-center gap-2 self-stretch rounded-xl px-3 py-2" style={{ background: 'var(--ist-w6)', borderLeft: '3px solid var(--ist-accent-text)' }}>
+              <Reply size={15} strokeWidth={2} style={{ color: 'var(--ist-accent-text)', flexShrink: 0 }} />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold" style={{ color: 'var(--ist-accent-text)' }}>Rispondi a {replyTo.author}</div>
+                <div className="text-xs truncate" style={{ color: 'var(--ist-text-muted)' }}>{replyTo.preview}</div>
+              </div>
+              <button onClick={() => setReplyTo(null)} className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }} title="Annulla risposta">
+                <X size={12} strokeWidth={2.5} />
+              </button>
+            </div>
+          )}
+
           {/* Anteprima immagine selezionata */}
           {imagePreview && (
             <div className="relative self-start">
