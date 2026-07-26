@@ -11,7 +11,7 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
 import {
-  Channel, MemberRole,
+  Channel, MemberRole, ChannelAudience,
 } from '../../data/chatData'
 import { useBachecaPosts, BachecaPost, NewBachecaPost } from '../../lib/bacheca'
 import {
@@ -691,6 +691,10 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
 interface ChatAreaProps {
   channel: Channel
   userRole: MemberRole
+  // Audience usata SOLO per il permesso di scrittura ('free' per gli studenti
+  // gratuiti, altrimenti coincide con userRole) — allineata a can_post lato server
+  // (my_audiences()). userRole resta il ruolo vero per autore/badge/moderazione.
+  postAudience: ChannelAudience
   userId: string
   userName: string
   onShowUserCard: (card: { userId: string; name: string; role: MemberRole; avatar?: { avatarUrl?: string; avatarPreset?: string } }) => void
@@ -705,7 +709,7 @@ interface ChatAreaProps {
   onToggleMute?: () => void
 }
 
-function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack, isMobile, initialInput, keyboardOpen, keyboardInset = 0, safeBottom = 0, mutedUntil, isMuted, onToggleMute }: ChatAreaProps) {
+function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUserCard, onBack, isMobile, initialInput, keyboardOpen, keyboardInset = 0, safeBottom = 0, mutedUntil, isMuted, onToggleMute }: ChatAreaProps) {
   const [input, setInput] = useState(initialInput ?? '')
   const [inputTall, setInputTall] = useState(false) // multi-riga → rettangolo stondato invece della pillola
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -858,7 +862,7 @@ function ChatArea({ channel, userRole, userId, userName, onShowUserCard, onBack,
     setNewMsgCount(0)
   }
 
-  const canPost = channel.canPost.includes(userRole)
+  const canPost = channel.canPost.includes(postAudience)
   // Mute: un utente silenziato non può scrivere nei canali di GRUPPO. I DM restano
   // aperti (così può comunque contattare coach/admin), quindi qui escludiamo i DM.
   const mutedHere = !!mutedUntil && channel.channelKind !== 'direct'
@@ -1903,6 +1907,7 @@ function BachecaComposeModal({
 function BachecaArea({
   channel,
   userRole,
+  postAudience,
   userId,
   userName,
   onBack,
@@ -1910,6 +1915,7 @@ function BachecaArea({
 }: {
   channel: Channel
   userRole: MemberRole
+  postAudience: ChannelAudience
   userId: string
   userName: string
   onBack?: () => void
@@ -1917,7 +1923,7 @@ function BachecaArea({
 }) {
   const { posts, loading, createPost, deletePost, togglePin } = useBachecaPosts(channel.id, userId)
   const [composing, setComposing] = useState(false)
-  const canPost = channel.canPost.includes(userRole)
+  const canPost = channel.canPost.includes(postAudience)
   const isAdmin = userRole === 'admin'
 
   return (
@@ -2296,8 +2302,11 @@ export default function ChatPage() {
       channelKind: 'direct',
       category: 'Privati',
       categoryIcon: '',
-      roles: ['student', 'coach', 'mental_coach', 'admin'],
-      canPost: ['student', 'coach', 'mental_coach', 'admin'],
+      // Placeholder: le DM non sono gated da questi array (il vero controllo è
+      // server-side per-partecipante, ramo dm_ in may_post) — includono anche
+      // 'free' per non bloccare il client sugli utenti gratuiti.
+      roles: ['student', 'coach', 'mental_coach', 'admin', 'free'],
+      canPost: ['student', 'coach', 'mental_coach', 'admin', 'free'],
       dmWith: { name: activeDmUser.name, role: activeDmUser.role, avatarUrl: activeDmUser.avatarUrl, avatarPreset: activeDmUser.avatarPreset },
     }
     : null
@@ -2378,6 +2387,7 @@ export default function ChatPage() {
           <BachecaArea
             channel={activeGroupChannel}
             userRole={userRole}
+            postAudience={myAudience}
             userId={userId}
             userName={userName}
             onBack={goBack}
@@ -2388,6 +2398,7 @@ export default function ChatPage() {
             key={activeChannelId}
             channel={activeChannel}
             userRole={userRole}
+            postAudience={myAudience}
             userId={userId}
             userName={userName}
             onShowUserCard={showUserCard}
