@@ -2,8 +2,9 @@
 // dall'auth) — richiesta da Google Play (campo "Eliminazione dell'account") e utile
 // anche per App Store. Deve essere raggiungibile SENZA login: spiega sia la via in-app
 // sia quella via email per chi non riesce ad accedere. Auto-contenuta.
+import { COMPANY_NAME, COMPANY_ADDRESS, COMPANY_EIN, COMPANY_EMAIL } from '../../lib/companyInfo'
 
-const SUPPORT_EMAIL = 'alessandroarzuffi.spacetraders@gmail.com'
+const SUPPORT_EMAIL = COMPANY_EMAIL
 
 export default function AccountDeletion() {
   return (
@@ -65,9 +66,16 @@ export default function AccountDeletion() {
           e la pagina di <a href="/support" style={{ color: '#7CBBD0' }}>Supporto</a>.
         </p>
 
-        <p style={{ fontSize: 12, color: '#6b7480', marginTop: 32 }}>
-          © {new Date().getFullYear()} Orion Trade Dynamics LLC — Space Traders Institute.
-        </p>
+        <div style={{ marginTop: 32, paddingTop: 20, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <p style={{ fontSize: 12, color: '#6b7480', lineHeight: 1.7 }}>
+            {COMPANY_NAME}<br />
+            {COMPANY_ADDRESS} · EIN {COMPANY_EIN}<br />
+            <a href={`mailto:${COMPANY_EMAIL}`} style={{ color: '#7CBBD0' }}>{COMPANY_EMAIL}</a>
+          </p>
+          <p style={{ fontSize: 12, color: '#6b7480', marginTop: 10 }}>
+            © {new Date().getFullYear()} {COMPANY_NAME} — Space Traders Institute.
+          </p>
+        </div>
       </div>
     </div>
   )

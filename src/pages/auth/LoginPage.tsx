@@ -3,6 +3,7 @@ import { Eye, EyeOff, Mail } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import ISTLogo from '../../components/ui/ISTLogo'
 import { upsellSuppressed } from '../../lib/freeTier'
+import { COMPANY_NAME, COMPANY_ADDRESS, COMPANY_EIN, COMPANY_EMAIL } from '../../lib/companyInfo'
 
 type Mode = 'login' | 'signup' | 'signup-done' | 'forgot' | 'forgot-done'
 
@@ -301,6 +302,9 @@ export default function LoginPage() {
 
       <div className="absolute bottom-8 text-center text-xs flex flex-col items-center gap-1.5" style={{ color: '#56636F' }}>
         <a href="/privacy" style={{ color: '#7CBBD0' }}>Privacy Policy</a>
+        <span>{COMPANY_NAME}</span>
+        <span>{COMPANY_ADDRESS} · EIN {COMPANY_EIN}</span>
+        <a href={`mailto:${COMPANY_EMAIL}`} style={{ color: '#7CBBD0' }}>{COMPANY_EMAIL}</a>
         <span>© 2024 IST — Space Traders Institute</span>
       </div>
     </div>

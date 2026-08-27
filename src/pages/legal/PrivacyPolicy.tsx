@@ -1,10 +1,10 @@
 // Privacy Policy PUBBLICA (route /privacy, fuori dall'auth) — necessaria per la
 // pubblicazione su App Store (campo "Privacy Policy URL"). Auto-contenuta e
 // sempre leggibile (colori fissi scuri, non dipende dal tema/provider).
-// NB: i dati del Titolare (ragione sociale, indirizzo, email) sono da confermare.
 import type { ReactNode } from 'react'
+import { COMPANY_NAME, COMPANY_ADDRESS, COMPANY_EIN, COMPANY_EMAIL } from '../../lib/companyInfo'
 
-const CONTACT_EMAIL = 'alessandroarzuffi.spacetraders@gmail.com'
+const CONTACT_EMAIL = COMPANY_EMAIL
 const LAST_UPDATE = '4 luglio 2026'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -30,15 +30,15 @@ export default function PrivacyPolicy() {
         </p>
 
         <p style={{ fontSize: 14.5, lineHeight: 1.7, marginTop: 22 }}>
-          La presente informativa descrive come Orion Trade Dynamics LLC (“noi”, il “Titolare”),
+          La presente informativa descrive come {COMPANY_NAME} (“noi”, il “Titolare”),
           che gestisce Space Traders Institute, raccoglie e tratta i dati personali degli utenti
           dell'applicazione e della piattaforma web Space Traders Institute (l'“App”), una scuola
           di coaching 1:1 per trader.
         </p>
 
         <Section title="1. Titolare del trattamento">
-          Il Titolare del trattamento è <strong style={{ color: '#dfe5ec' }}>Orion Trade Dynamics LLC</strong>,
-          con sede in 30 N Gould St, Ste R, Sheridan, WY 82801, Stati Uniti (EIN 61-2254267), operante
+          Il Titolare del trattamento è <strong style={{ color: '#dfe5ec' }}>{COMPANY_NAME}</strong>,
+          con sede in {COMPANY_ADDRESS}, Stati Uniti (EIN {COMPANY_EIN}), operante
           come “Space Traders Institute”. Per qualsiasi richiesta relativa ai tuoi dati puoi scriverci
           a <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: '#7CBBD0' }}>{CONTACT_EMAIL}</a>.
         </Section>
@@ -106,7 +106,14 @@ export default function PrivacyPolicy() {
           Per domande o richieste sui tuoi dati: <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: '#7CBBD0' }}>{CONTACT_EMAIL}</a>.
         </Section>
 
-        <p style={{ fontSize: 12, color: '#6b7480', marginTop: 40 }}>© {new Date().getFullYear()} Orion Trade Dynamics LLC — Space Traders Institute. Tutti i diritti riservati.</p>
+        <div style={{ marginTop: 40, paddingTop: 20, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <p style={{ fontSize: 12, color: '#6b7480', lineHeight: 1.7 }}>
+            {COMPANY_NAME}<br />
+            {COMPANY_ADDRESS} · EIN {COMPANY_EIN}<br />
+            <a href={`mailto:${COMPANY_EMAIL}`} style={{ color: '#7CBBD0' }}>{COMPANY_EMAIL}</a>
+          </p>
+          <p style={{ fontSize: 12, color: '#6b7480', marginTop: 10 }}>© {new Date().getFullYear()} {COMPANY_NAME} — Space Traders Institute. Tutti i diritti riservati.</p>
+        </div>
       </div>
     </div>
   )

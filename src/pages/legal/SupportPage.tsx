@@ -1,8 +1,9 @@
 // Pagina di SUPPORTO pubblica (route /support, fuori dall'auth) — necessaria per
 // la pubblicazione su App Store (campo "Support URL"). Auto-contenuta e sempre
-// leggibile. NB: l'email di supporto è da confermare.
+// leggibile.
+import { COMPANY_NAME, COMPANY_ADDRESS, COMPANY_EIN, COMPANY_EMAIL } from '../../lib/companyInfo'
 
-const SUPPORT_EMAIL = 'alessandroarzuffi.spacetraders@gmail.com'
+const SUPPORT_EMAIL = COMPANY_EMAIL
 
 function Faq({ q, children }: { q: string; children: string }) {
   return (
@@ -57,7 +58,14 @@ export default function SupportPage() {
           Consulta anche la nostra <a href="/privacy" style={{ color: '#7CBBD0' }}>Informativa sulla Privacy</a>.
         </p>
 
-        <p style={{ fontSize: 12, color: '#6b7480', marginTop: 32 }}>© {new Date().getFullYear()} Orion Trade Dynamics LLC — Space Traders Institute.</p>
+        <div style={{ marginTop: 32, paddingTop: 20, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <p style={{ fontSize: 12, color: '#6b7480', lineHeight: 1.7 }}>
+            {COMPANY_NAME}<br />
+            {COMPANY_ADDRESS} · EIN {COMPANY_EIN}<br />
+            <a href={`mailto:${COMPANY_EMAIL}`} style={{ color: '#7CBBD0' }}>{COMPANY_EMAIL}</a>
+          </p>
+          <p style={{ fontSize: 12, color: '#6b7480', marginTop: 10 }}>© {new Date().getFullYear()} {COMPANY_NAME} — Space Traders Institute.</p>
+        </div>
       </div>
     </div>
   )
