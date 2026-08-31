@@ -21,12 +21,18 @@ interface SimNode extends GraphNode {
 
 interface View { scale: number; tx: number; ty: number }
 
-const REPULSIONE = 1200
-const MOLLA = 0.02
-const RIPOSO = 90
-const GRAVITA = 0.002
-const ATTRITO = 0.85
-const QUIETE_ENERGIA = 0.02
+// Costanti tarate per ~150-200 nodi: con più nodi la repulsione cumulativa per
+// nodo cresce da sola (somma su tutte le coppie), quindi la costante per-coppia
+// dev'essere molto più bassa che con poche decine di nodi, altrimenti il sistema
+// diverge numericamente (velocità che esplode verso l'infinito → NaN → canvas
+// che smette di disegnare, lo schermo restava vuoto/nero).
+const REPULSIONE = 220
+const MOLLA = 0.012
+const RIPOSO = 42
+const GRAVITA = 0.0025
+const ATTRITO = 0.80
+const MAX_VELOCITA = 0.5 // clamp per-frame: garantisce un movimento sempre lento e leggero
+const QUIETE_ENERGIA = 0.004
 const QUIETE_FRAME = 180 // ~3s a 60fps
 
 interface Props {
@@ -48,6 +54,11 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   const hoveredRef = useRef<string | null>(null)
   const rafRef = useRef<number | null>(null)
   const quietFramesRef = useRef(0)
+  // Raggio entro cui i nodi devono restare (contenimento "morbido": non un
+  // bordo rigido, ma una forza di richiamo oltre quella distanza) — lascia
+  // margini ai lati invece di riempire tutto lo schermo. Aggiornato ad ogni
+  // resize, con un default ragionevole prima della prima misura reale.
+  const boundaryRef = useRef(260)
 
   // Drag/pan state (mutabile, non serve un re-render ad ogni pixel)
   const dragRef = useRef<{ mode: 'node' | 'pan' | 'pinch'; nodeId?: string; lastX: number; lastY: number; moved: boolean; pinchDist?: number } | null>(null)
@@ -78,17 +89,40 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       ;(b as any).fx_force -= (f * dx) / d; (b as any).fy_force -= (f * dy) / d
     }
 
+    const boundary = boundaryRef.current
     let energia = 0
     for (const n of nodes) {
+      // Contenimento circolare morbido: solo oltre il raggio, richiamo verso
+      // il centro proporzionale all'eccesso — dentro il cerchio non fa nulla,
+      // quindi non appiattisce la forma organica della disposizione.
+      const dist = Math.hypot(n.x, n.y)
+      if (dist > boundary) {
+        const eccesso = dist - boundary
+        const richiamo = eccesso * 0.03
+        ;(n as any).fx_force -= (n.x / dist) * richiamo
+        ;(n as any).fy_force -= (n.y / dist) * richiamo
+      }
       ;(n as any).fx_force += -n.x * GRAVITA
       ;(n as any).fy_force += -n.y * GRAVITA
       if (n.fx !== null && n.fy !== null) { n.x = n.fx; n.y = n.fy; n.vx = 0; n.vy = 0; continue }
       n.vx = (n.vx + (n as any).fx_force) * ATTRITO
       n.vy = (n.vy + (n as any).fy_force) * ATTRITO
+
+      // Clamp di velocità: mantiene il movimento sempre lento/leggero E fa da
+      // rete di sicurezza contro un'eventuale divergenza numerica (prima causa
+      // dello schermo che diventava nero con molti nodi).
+      const velocita = Math.hypot(n.vx, n.vy)
+      if (velocita > MAX_VELOCITA) { n.vx = (n.vx / velocita) * MAX_VELOCITA; n.vy = (n.vy / velocita) * MAX_VELOCITA }
+      if (!Number.isFinite(n.vx) || !Number.isFinite(n.vy)) { n.vx = 0; n.vy = 0 }
+
       n.x += n.vx; n.y += n.vy
+      if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) { n.x = 0; n.y = 0 }
       energia += n.vx * n.vx + n.vy * n.vy
     }
-    return energia
+    // Media per nodo, non somma totale: con 160 nodi una soglia assoluta non
+    // verrebbe mai raggiunta (anche un residuo minimo per nodo, sommato su
+    // tutti, resta sopra soglia) e il loop non si fermerebbe mai.
+    return nodes.length > 0 ? energia / nodes.length : 0
   }, [])
 
   // ── Disegno ────────────────────────────────────────────────────────────────
@@ -111,6 +145,7 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     for (const [i, j] of edgesIdxRef.current) {
       const a = simRef.current[i], b = simRef.current[j]
       if (!a || !b) continue
+      if (!Number.isFinite(a.x) || !Number.isFinite(a.y) || !Number.isFinite(b.x) || !Number.isFinite(b.y)) continue
       const touchesHover = hovered && (a.id === hovered || b.id === hovered)
       const [ax, ay] = toScreen(a.x, a.y)
       const [bx, by] = toScreen(b.x, b.y)
@@ -130,6 +165,7 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       const dim = hovered && !isHovered && !isNeighbor
       const [x, y] = toScreen(n.x, n.y)
       const r = nodeRadius(n.grado) * Math.min(1.4, Math.max(0.7, view.scale))
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(r) || r <= 0) continue
       const baseAlpha = Math.min(1, 0.32 + Math.sqrt(n.grado) * 0.1)
 
       ctx.beginPath()
@@ -176,14 +212,20 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
 
   // ── Inizializza la simulazione quando cambiano i dati ─────────────────────
   useEffect(() => {
-    const n = nodi.length
-    const raggioIniziale = Math.max(120, Math.sqrt(n) * 40)
+    const n = Math.max(1, nodi.length)
+    // Disposizione "a girasole" (Fibonacci): riempie un disco in modo già
+    // uniforme fin dal primo frame, invece di un anello sottile — i nodi ci
+    // sono tutti da subito, ordinati, e devono solo assestarsi con un piccolo
+    // movimento anziché "esplodere" verso le posizioni finali.
+    const angoloAureo = Math.PI * (3 - Math.sqrt(5))
+    const raggioDisco = boundaryRef.current * 0.92
     simRef.current = nodi.map((node, i) => {
-      const angolo = (i / Math.max(1, n)) * Math.PI * 2
+      const r = raggioDisco * Math.sqrt((i + 0.5) / n)
+      const angolo = i * angoloAureo
       return {
         ...node,
-        x: Math.cos(angolo) * raggioIniziale,
-        y: Math.sin(angolo) * raggioIniziale,
+        x: Math.cos(angolo) * r,
+        y: Math.sin(angolo) * r,
         vx: 0, vy: 0, fx: null, fy: null,
       }
     })
@@ -212,6 +254,11 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     const observer = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect
       setSize({ w: width, h: height })
+      // Il cerchio di contenimento resta entro il lato corto, con margine ai
+      // lati (non riempie tutto lo schermo, come richiesto). Ignora misure
+      // transitorie a ~0 (durante il primo layout) che collasserebbero tutti
+      // i nodi nell'origine.
+      if (Math.min(width, height) > 40) boundaryRef.current = Math.min(width, height) * 0.4
       if (viewRef.current.tx === 0 && viewRef.current.ty === 0) {
         viewRef.current = { scale: 1, tx: width / 2, ty: height / 2 }
       }
