@@ -193,7 +193,10 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       const isNeighbor = !!activeNeighbors?.has(n.id)
       const dim = hovered && !isHovered && !isNeighbor
       const [x, y] = toScreen(n.x, n.y)
-      const r = nodeRadius(n.grado) * Math.min(1.4, Math.max(0.7, view.scale))
+      // Il raggio segue lo zoom molto debolmente (mai proporzionale 1:1 come
+      // prima): i pallini devono restare piccoli sia molto de-zoommati sia
+      // molto ingranditi, non gonfiarsi o rimpicciolirsi con lo zoom.
+      const r = nodeRadius(n.grado) * Math.min(1.15, Math.max(0.45, 0.5 + view.scale * 0.4))
       const baseAlpha = Math.min(1, 0.32 + Math.sqrt(n.grado) * 0.1)
 
       ctx.beginPath()
