@@ -13,27 +13,24 @@ function nodeRadius(grado: number): number {
   return 1.5 + Math.sqrt(grado) * 1.1
 }
 
+// FERMO PER ORA (richiesta esplicita): niente simulazione a forze né
+// requestAnimationFrame — un giro di instabilità della fisica con 160 nodi
+// portava a un artefatto di disegno (frame vecchi non ripuliti che si
+// accumulavano fino a rendere tutto nero). Il layout iniziale a disco piace
+// già così com'è; qui sotto solo posizionamento statico + disegno on-demand
+// (un ridisegno per evento: resize, hover, drag, zoom — mai un loop continuo).
+// Quando si vorrà rianimarlo, reintrodurre uno step fisico chiamato da un
+// unico requestAnimationFrame la cui identità NON cambi mai (es. leggendo la
+// logica corrente da un ref aggiornato a parte), per evitare la classe di bug
+// vista qui: un giro di animazione avviato con una chiusura "vecchia" (draw
+// legato a una dimensione del canvas superata) continua a girare da solo e
+// pulisce/disegna con misure sbagliate finché una nuova richiesta non lo
+// rimpiazza.
 interface SimNode extends GraphNode {
   x: number; y: number
-  vx: number; vy: number
-  fx: number | null; fy: number | null // posizione fissa mentre l'utente trascina
 }
 
 interface View { scale: number; tx: number; ty: number }
-
-// Costanti tarate per ~150-200 nodi: con più nodi la repulsione cumulativa per
-// nodo cresce da sola (somma su tutte le coppie), quindi la costante per-coppia
-// dev'essere molto più bassa che con poche decine di nodi, altrimenti il sistema
-// diverge numericamente (velocità che esplode verso l'infinito → NaN → canvas
-// che smette di disegnare, lo schermo restava vuoto/nero).
-const REPULSIONE = 220
-const MOLLA = 0.012
-const RIPOSO = 42
-const GRAVITA = 0.0025
-const ATTRITO = 0.80
-const MAX_VELOCITA = 0.5 // clamp per-frame: garantisce un movimento sempre lento e leggero
-const QUIETE_ENERGIA = 0.004
-const QUIETE_FRAME = 180 // ~3s a 60fps
 
 interface Props {
   nodi: GraphNode[]
@@ -52,78 +49,12 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   const neighborsRef = useRef<Map<string, Set<string>>>(new Map())
   const viewRef = useRef<View>({ scale: 1, tx: 0, ty: 0 })
   const hoveredRef = useRef<string | null>(null)
-  const rafRef = useRef<number | null>(null)
-  const quietFramesRef = useRef(0)
-  // Raggio entro cui i nodi devono restare (contenimento "morbido": non un
-  // bordo rigido, ma una forza di richiamo oltre quella distanza) — lascia
-  // margini ai lati invece di riempire tutto lo schermo. Aggiornato ad ogni
-  // resize, con un default ragionevole prima della prima misura reale.
+  // Raggio del disco entro cui si dispongono i nodi — lascia margine ai lati
+  // invece di riempire tutto lo schermo. Aggiornato ad ogni resize, con un
+  // default ragionevole prima della prima misura reale.
   const boundaryRef = useRef(260)
 
-  // Drag/pan state (mutabile, non serve un re-render ad ogni pixel)
   const dragRef = useRef<{ mode: 'node' | 'pan' | 'pinch'; nodeId?: string; lastX: number; lastY: number; moved: boolean; pinchDist?: number } | null>(null)
-
-  // ── Passo di simulazione (repulsione + molle + gravità + attrito) ────────
-  const step = useCallback(() => {
-    const nodes = simRef.current
-    for (const n of nodes) { (n as any).fx_force = 0; (n as any).fy_force = 0 }
-
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const a = nodes[i], b = nodes[j]
-        const dx = b.x - a.x, dy = b.y - a.y
-        const d2 = dx * dx + dy * dy || 0.01
-        const f = REPULSIONE / d2
-        const d = Math.sqrt(d2)
-        ;(a as any).fx_force -= (f * dx) / d; (a as any).fy_force -= (f * dy) / d
-        ;(b as any).fx_force += (f * dx) / d; (b as any).fy_force += (f * dy) / d
-      }
-    }
-
-    for (const [i, j] of edgesIdxRef.current) {
-      const a = nodes[i], b = nodes[j]
-      const dx = b.x - a.x, dy = b.y - a.y
-      const d = Math.hypot(dx, dy) || 0.01
-      const f = MOLLA * (d - RIPOSO)
-      ;(a as any).fx_force += (f * dx) / d; (a as any).fy_force += (f * dy) / d
-      ;(b as any).fx_force -= (f * dx) / d; (b as any).fy_force -= (f * dy) / d
-    }
-
-    const boundary = boundaryRef.current
-    let energia = 0
-    for (const n of nodes) {
-      // Contenimento circolare morbido: solo oltre il raggio, richiamo verso
-      // il centro proporzionale all'eccesso — dentro il cerchio non fa nulla,
-      // quindi non appiattisce la forma organica della disposizione.
-      const dist = Math.hypot(n.x, n.y)
-      if (dist > boundary) {
-        const eccesso = dist - boundary
-        const richiamo = eccesso * 0.03
-        ;(n as any).fx_force -= (n.x / dist) * richiamo
-        ;(n as any).fy_force -= (n.y / dist) * richiamo
-      }
-      ;(n as any).fx_force += -n.x * GRAVITA
-      ;(n as any).fy_force += -n.y * GRAVITA
-      if (n.fx !== null && n.fy !== null) { n.x = n.fx; n.y = n.fy; n.vx = 0; n.vy = 0; continue }
-      n.vx = (n.vx + (n as any).fx_force) * ATTRITO
-      n.vy = (n.vy + (n as any).fy_force) * ATTRITO
-
-      // Clamp di velocità: mantiene il movimento sempre lento/leggero E fa da
-      // rete di sicurezza contro un'eventuale divergenza numerica (prima causa
-      // dello schermo che diventava nero con molti nodi).
-      const velocita = Math.hypot(n.vx, n.vy)
-      if (velocita > MAX_VELOCITA) { n.vx = (n.vx / velocita) * MAX_VELOCITA; n.vy = (n.vy / velocita) * MAX_VELOCITA }
-      if (!Number.isFinite(n.vx) || !Number.isFinite(n.vy)) { n.vx = 0; n.vy = 0 }
-
-      n.x += n.vx; n.y += n.vy
-      if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) { n.x = 0; n.y = 0 }
-      energia += n.vx * n.vx + n.vy * n.vy
-    }
-    // Media per nodo, non somma totale: con 160 nodi una soglia assoluta non
-    // verrebbe mai raggiunta (anche un residuo minimo per nodo, sommato su
-    // tutti, resta sopra soglia) e il loop non si fermerebbe mai.
-    return nodes.length > 0 ? energia / nodes.length : 0
-  }, [])
 
   // ── Disegno ────────────────────────────────────────────────────────────────
   const draw = useCallback(() => {
@@ -145,7 +76,6 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     for (const [i, j] of edgesIdxRef.current) {
       const a = simRef.current[i], b = simRef.current[j]
       if (!a || !b) continue
-      if (!Number.isFinite(a.x) || !Number.isFinite(a.y) || !Number.isFinite(b.x) || !Number.isFinite(b.y)) continue
       const touchesHover = hovered && (a.id === hovered || b.id === hovered)
       const [ax, ay] = toScreen(a.x, a.y)
       const [bx, by] = toScreen(b.x, b.y)
@@ -165,7 +95,6 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       const dim = hovered && !isHovered && !isNeighbor
       const [x, y] = toScreen(n.x, n.y)
       const r = nodeRadius(n.grado) * Math.min(1.4, Math.max(0.7, view.scale))
-      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(r) || r <= 0) continue
       const baseAlpha = Math.min(1, 0.32 + Math.sqrt(n.grado) * 0.1)
 
       ctx.beginPath()
@@ -187,47 +116,18 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     }
   }, [size, theme])
 
-  const loop = useCallback(() => {
-    const energia = step()
-    draw()
-    if (energia < QUIETE_ENERGIA) {
-      quietFramesRef.current++
-      if (quietFramesRef.current > QUIETE_FRAME) { rafRef.current = null; return } // ferma il loop: niente rAF perpetuo
-    } else {
-      quietFramesRef.current = 0
-    }
-    rafRef.current = requestAnimationFrame(loop)
-  }, [step, draw])
-
-  // IMPORTANTE: deve dipendere da `loop` (che a sua volta dipende da `draw`,
-  // che dipende da size/theme). Con deps vuote questa funzione resta legata
-  // per sempre al primissimo `draw` (creato quando size era ancora {w:0,h:0}):
-  // clearRect(0,0,0,0) non pulisce nulla → i nodi trascinati lasciavano una
-  // scia, perché ogni riavvio del loop durante il drag ridisegnava sopra il
-  // frame precedente senza mai cancellarlo.
-  const startLoop = useCallback(() => {
-    quietFramesRef.current = 0
-    if (rafRef.current === null) rafRef.current = requestAnimationFrame(loop)
-  }, [loop])
-
-  // ── Inizializza la simulazione quando cambiano i dati ─────────────────────
+  // ── Posiziona i nodi quando cambiano i dati (nessuna fisica: statico) ─────
   useEffect(() => {
     const n = Math.max(1, nodi.length)
     // Disposizione "a girasole" (Fibonacci): riempie un disco in modo già
     // uniforme fin dal primo frame, invece di un anello sottile — i nodi ci
-    // sono tutti da subito, ordinati, e devono solo assestarsi con un piccolo
-    // movimento anziché "esplodere" verso le posizioni finali.
+    // sono tutti da subito, ordinati, senza bisogno di alcuna animazione.
     const angoloAureo = Math.PI * (3 - Math.sqrt(5))
     const raggioDisco = boundaryRef.current * 0.92
     simRef.current = nodi.map((node, i) => {
       const r = raggioDisco * Math.sqrt((i + 0.5) / n)
       const angolo = i * angoloAureo
-      return {
-        ...node,
-        x: Math.cos(angolo) * r,
-        y: Math.sin(angolo) * r,
-        vx: 0, vy: 0, fx: null, fy: null,
-      }
+      return { ...node, x: Math.cos(angolo) * r, y: Math.sin(angolo) * r }
     })
     const indexById = new Map(nodi.map((n, i) => [n.id, i]))
     edgesIdxRef.current = archi
@@ -243,9 +143,8 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     }
     neighborsRef.current = neighbors
 
-    quietFramesRef.current = 0
-    startLoop()
-  }, [nodi, archi, startLoop])
+    draw()
+  }, [nodi, archi, draw])
 
   // ── Ridimensionamento del canvas (ResizeObserver + devicePixelRatio) ──────
   useEffect(() => {
@@ -254,10 +153,8 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     const observer = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect
       setSize({ w: width, h: height })
-      // Il cerchio di contenimento resta entro il lato corto, con margine ai
-      // lati (non riempie tutto lo schermo, come richiesto). Ignora misure
-      // transitorie a ~0 (durante il primo layout) che collasserebbero tutti
-      // i nodi nell'origine.
+      // Il cerchio entro cui stanno i nodi resta nel lato corto, con margine
+      // ai lati. Ignora misure transitorie a ~0 (durante il primo layout).
       if (Math.min(width, height) > 40) boundaryRef.current = Math.min(width, height) * 0.4
       if (viewRef.current.tx === 0 && viewRef.current.ty === 0) {
         viewRef.current = { scale: 1, tx: width / 2, ty: height / 2 }
@@ -277,14 +174,10 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     canvas.style.height = `${size.h}px`
     const ctx = canvas.getContext('2d')
     ctx?.scale(dpr, dpr)
-    draw() // ridisegna subito col nuovo canvas: la simulazione potrebbe essere ferma
+    draw()
   }, [size, draw])
 
-  useEffect(() => {
-    draw() // ridisegna subito su cambio tema anche a simulazione ferma
-  }, [draw])
-
-  useEffect(() => () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current) }, [])
+  useEffect(() => { draw() }, [draw])
 
   // ── Hit-test: nodo più vicino al punto (coordinate CSS del canvas) ────────
   const hitTest = useCallback((clientX: number, clientY: number): SimNode | null => {
@@ -311,12 +204,13 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       const canvas = canvasRef.current!
       const rect = canvas.getBoundingClientRect()
       const view = viewRef.current
-      const simX = (e.clientX - rect.left - view.tx) / view.scale
-      const simY = (e.clientY - rect.top - view.ty) / view.scale
       const node = simRef.current.find(n => n.id === dragRef.current!.nodeId)
-      if (node) { node.fx = simX; node.fy = simY }
+      if (node) {
+        node.x = (e.clientX - rect.left - view.tx) / view.scale
+        node.y = (e.clientY - rect.top - view.ty) / view.scale
+      }
       dragRef.current.moved = true
-      startLoop()
+      draw()
       return
     }
     if (dragRef.current?.mode === 'pan') {
@@ -335,7 +229,6 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   const onMouseDown = (e: React.MouseEvent) => {
     const hit = hitTest(e.clientX, e.clientY)
     if (hit) {
-      hit.fx = hit.x; hit.fy = hit.y
       dragRef.current = { mode: 'node', nodeId: hit.id, lastX: e.clientX, lastY: e.clientY, moved: false }
     } else {
       dragRef.current = { mode: 'pan', lastX: e.clientX, lastY: e.clientY, moved: false }
@@ -343,11 +236,8 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   }
 
   const onMouseUp = () => {
-    if (dragRef.current?.mode === 'node') {
-      const node = simRef.current.find(n => n.id === dragRef.current!.nodeId)
-      if (node && !dragRef.current.moved) onNodeClick(node.id) // click senza trascinare = domanda
-      if (node) { node.fx = null; node.fy = null }
-      startLoop()
+    if (dragRef.current?.mode === 'node' && !dragRef.current.moved) {
+      onNodeClick(dragRef.current.nodeId!) // click senza trascinare = domanda
     }
     dragRef.current = null
   }
@@ -371,7 +261,6 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     const t = e.touches[0]
     const hit = hitTest(t.clientX, t.clientY)
     if (hit) {
-      hit.fx = hit.x; hit.fy = hit.y
       dragRef.current = { mode: 'node', nodeId: hit.id, lastX: t.clientX, lastY: t.clientY, moved: false }
     } else {
       dragRef.current = { mode: 'pan', lastX: t.clientX, lastY: t.clientY, moved: false }
@@ -395,12 +284,13 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       const canvas = canvasRef.current!
       const rect = canvas.getBoundingClientRect()
       const view = viewRef.current
-      const simX = (t.clientX - rect.left - view.tx) / view.scale
-      const simY = (t.clientY - rect.top - view.ty) / view.scale
       const node = simRef.current.find(n => n.id === dragRef.current!.nodeId)
-      if (node) { node.fx = simX; node.fy = simY }
+      if (node) {
+        node.x = (t.clientX - rect.left - view.tx) / view.scale
+        node.y = (t.clientY - rect.top - view.ty) / view.scale
+      }
       dragRef.current.moved = true
-      startLoop()
+      draw()
     } else if (dragRef.current?.mode === 'pan') {
       const dx = t.clientX - dragRef.current.lastX, dy = t.clientY - dragRef.current.lastY
       viewRef.current = { ...viewRef.current, tx: viewRef.current.tx + dx, ty: viewRef.current.ty + dy }
@@ -411,11 +301,8 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   }
 
   const onTouchEnd = () => {
-    if (dragRef.current?.mode === 'node') {
-      const node = simRef.current.find(n => n.id === dragRef.current!.nodeId)
-      if (node && !dragRef.current.moved) onNodeClick(node.id) // tap senza trascinare = domanda
-      if (node) { node.fx = null; node.fy = null }
-      startLoop()
+    if (dragRef.current?.mode === 'node' && !dragRef.current.moved) {
+      onNodeClick(dragRef.current.nodeId!) // tap senza trascinare = domanda
     }
     dragRef.current = null
   }
