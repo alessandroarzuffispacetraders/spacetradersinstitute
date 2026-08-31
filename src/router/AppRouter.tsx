@@ -25,6 +25,7 @@ import StudentLivePlayer from '../pages/student/StudentLivePlayer'
 import StudentCalendario from '../pages/student/StudentCalendario'
 import StudentProgressi from '../pages/student/StudentProgressi'
 import StudentJournal from '../pages/student/StudentJournal'
+import StudentSpaceQuant from '../pages/student/StudentSpaceQuant'
 
 // Shared
 import ChatPage from '../pages/shared/ChatPage'
@@ -87,6 +88,7 @@ function PrivateRoutes() {
           <Route path="/student/live/:liveId" element={<StudentLivePlayer />} />
           <Route path="/student/calendario" element={<StudentCalendario />} />
           <Route path="/student/journal" element={<StudentJournal />} />
+          <Route path="/student/spacequant" element={<StudentSpaceQuant />} />
         </Route>
 
         {/* Coach — solo ruolo coach */}

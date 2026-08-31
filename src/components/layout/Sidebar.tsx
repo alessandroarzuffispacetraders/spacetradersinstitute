@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
   Brain, Radio, TrendingUp, ExternalLink, Users, ClipboardList,
-  AlertTriangle, CalendarDays, FileText, Package, BarChart3,
+  AlertTriangle, CalendarDays, FileText, Package, BarChart3, Network,
   LogOut, Sun, Moon, Compass, SlidersHorizontal, Lock, type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
@@ -19,7 +19,7 @@ import { useNews, NewsDot } from '../../context/NewsContext'
 const ICON_MAP: Record<string, LucideIcon> = {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
   Brain, Radio, TrendingUp, ExternalLink, Users, ClipboardList,
-  AlertTriangle, CalendarDays, FileText, Package, BarChart3,
+  AlertTriangle, CalendarDays, FileText, Package, BarChart3, Network,
 }
 
 function NavIcon({ name, dot = false, locked = false }: { name: string; dot?: boolean; locked?: boolean }) {
