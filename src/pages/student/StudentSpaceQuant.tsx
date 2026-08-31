@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState, Fragment } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { ArrowUp, ChevronLeft, Loader2, Network } from 'lucide-react'
+import { ArrowUp, ChevronDown, ChevronLeft, ChevronUp, Loader2, MessageCircle, Network } from 'lucide-react'
 import { useUI } from '../../context/UIContext'
 import KnowledgeGraph from '../../components/spacequant/KnowledgeGraph'
 import {
   useSpaceQuantGraph, useSpaceQuantQuota, useSpaceQuantAccess, askSpaceQuant, type ChatTurn,
 } from '../../lib/spacequant'
+
+// Mostrato SOLO finché non è stata fatta ancora nessuna domanda vera (mai
+// inviato all'assistente, mai incluso nella cronologia reale) — serve solo a
+// far vedere subito come si presenta uno scambio, con le citazioni cliccabili.
+const ESEMPIO_CONVERSAZIONE: ChatTurn[] = [
+  { ruolo: 'utente', testo: "Cos'è l'R-multiple?" },
+  {
+    ruolo: 'assistente',
+    testo: "L'R-multiple è l'unità con cui la piattaforma misura ogni risultato: 1R corrisponde a quanto rischiavi su quell'operazione. Se entri a 100 e metti lo stop a 98, rischi 2 punti — quello è 1R. Se esci a 104, hai fatto +2R.\n\nSi usa al posto del denaro perché dipende solo dall'idea, non da capitale, percentuale rischiata o valuta del conto: due persone con la stessa strategia vedono cifre diverse in euro, ma lo stesso identico numero in R. Vedi [[Il motore di backtest]] e [[La valuta del conto]].",
+  },
+]
 
 // Trasforma [[Titolo]] in badge cliccabili (precompila una nuova domanda),
 // il resto resta testo semplice — niente dipendenza markdown per questa v1.
@@ -37,11 +48,12 @@ export default function StudentSpaceQuant() {
   const { quotaRestante, setQuotaRestante } = useSpaceQuantQuota()
 
   const [cronologia, setCronologia] = useState<ChatTurn[]>([])
-  const [ultimaRisposta, setUltimaRisposta] = useState<string | null>(null)
+  const [chatEspansa, setChatEspansa] = useState(false)
   const [input, setInput] = useState('')
   const [inviando, setInviando] = useState(false)
   const [erroreChat, setErroreChat] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const messaggiFineRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setHideBottomNav(true)
@@ -49,9 +61,19 @@ export default function StudentSpaceQuant() {
     return () => { setHideBottomNav(false); setHideDownloadPrompt(false) }
   }, [setHideBottomNav, setHideDownloadPrompt])
 
+  // Nessuna domanda vera fatta ancora: mostra l'esempio (mai inviato
+  // all'assistente, mai nella cronologia reale che va all'API).
+  const messaggi = cronologia.length > 0 ? cronologia : ESEMPIO_CONVERSAZIONE
+  const isEsempio = cronologia.length === 0
+
+  useEffect(() => {
+    if (chatEspansa) messaggiFineRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messaggi.length, chatEspansa])
+
   const handleNodeClick = (titolo: string) => {
+    setChatEspansa(true) // il grafo è un menu di domande: cliccare un nodo apre direttamente la chat
     setInput(`Spiegami: ${titolo}`)
-    inputRef.current?.focus()
+    setTimeout(() => inputRef.current?.focus(), 50) // dopo l'animazione di apertura
   }
 
   const esaurita = quotaRestante === 0
@@ -79,7 +101,6 @@ export default function StudentSpaceQuant() {
     }
 
     setCronologia(c => [...c, { ruolo: 'utente', testo: domanda }, { ruolo: 'assistente', testo: res.result.risposta }])
-    setUltimaRisposta(res.result.risposta)
     setQuotaRestante(res.result.quotaRestante)
   }
 
@@ -122,11 +143,12 @@ export default function StudentSpaceQuant() {
           </button>
           <Network size={20} style={{ color: 'var(--ist-accent-text)' }} />
           <h1 className="font-semibold text-[15px]" style={{ color: 'var(--ist-text)' }}>SpaceQuant</h1>
-          <span className="ml-auto text-[12px]" style={{ color: 'var(--ist-text-dim)' }}>
-            {quotaRestante === null ? '' : `Ti restano ${quotaRestante} domande questo mese`}
-          </span>
         </div>
 
+        {/* Il grafo occupa sempre lo spazio rimanente (flex-1): quando la chat
+            sotto si espande, questo spazio si riduce da solo — nessun calcolo
+            manuale di percentuali. Con la chat aperta il grafo praticamente
+            sparisce, così non resta "come sfondo" mentre si chatta. */}
         <div className="flex-1 min-h-0 relative">
           {grafoLoading ? (
             <div className="absolute inset-0 flex items-center justify-center">
@@ -151,39 +173,107 @@ export default function StudentSpaceQuant() {
           )}
         </div>
 
-        {/* Composer stretto e centrato — non a tutta larghezza — per restare
-            minimale su desktop invece di dominare la parte bassa dello schermo. */}
-        <div className="flex-shrink-0 w-full max-w-xl mx-auto px-4" style={{ maxHeight: '40%' }}>
-          {ultimaRisposta && (
-            <div className="pt-3 overflow-y-auto text-[13.5px] leading-relaxed" style={{ color: 'var(--ist-text)', maxHeight: 'calc(40vh - 56px)' }}>
-              {renderWithCitations(ultimaRisposta, handleNodeClick)}
-            </div>
-          )}
+        {/* Pannello a scomparsa ("bottom sheet"): collassato è solo una
+            maniglia con un invito a scrivere (grafo interamente visibile
+            sopra); espanso copre quasi tutto lo schermo con sfondo pieno e la
+            conversazione vera e propria — non il grafo "come sfondo". */}
+        <div
+          className="flex-shrink-0 w-full flex flex-col overflow-hidden transition-[height] duration-300 ease-out"
+          style={{
+            height: chatEspansa ? '78vh' : '60px',
+            background: 'var(--ist-nav-bg)',
+            borderTop: '1px solid var(--ist-w8)',
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            boxShadow: chatEspansa ? '0 -8px 30px rgba(0,0,0,0.25)' : 'none',
+          }}
+        >
+          {chatEspansa ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setChatEspansa(false)}
+                className="relative flex items-center gap-2 px-4 pt-2.5 pb-2 flex-shrink-0 w-full text-left"
+                aria-label="Riduci la chat"
+              >
+                <span className="w-9 h-1 rounded-full absolute left-1/2 -translate-x-1/2 top-1.5" style={{ background: 'var(--ist-w20)' }} />
+                <MessageCircle size={16} style={{ color: 'var(--ist-accent-text)' }} />
+                <span className="font-semibold text-[13.5px]" style={{ color: 'var(--ist-text)' }}>Chiedi all'assistente</span>
+                <span className="ml-auto flex items-center gap-2 text-[11.5px]" style={{ color: 'var(--ist-text-dim)' }}>
+                  {quotaRestante !== null && `${quotaRestante} domande rimaste`}
+                  <ChevronDown size={16} />
+                </span>
+              </button>
 
-          {erroreChat && (
-            <p className="pt-2 text-[12.5px]" style={{ color: '#e34948' }}>{erroreChat}</p>
-          )}
+              <div className="flex-1 min-h-0 overflow-y-auto px-4 flex flex-col gap-3.5">
+                {isEsempio && (
+                  <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--ist-text-dim)' }}>
+                    Esempio
+                  </p>
+                )}
+                {messaggi.map((m, i) => (
+                  <div key={i} className={m.ruolo === 'utente' ? 'self-end max-w-[85%]' : 'max-w-[92%]'}>
+                    <p
+                      className="text-[10.5px] font-medium mb-0.5 px-1"
+                      style={{ color: 'var(--ist-text-dim)' }}
+                    >
+                      {m.ruolo === 'utente' ? 'Tu' : 'Assistente'}
+                    </p>
+                    <div
+                      className="px-3.5 py-2.5 rounded-2xl text-[13.5px] leading-relaxed"
+                      style={
+                        m.ruolo === 'utente'
+                          ? { background: 'var(--ist-w8)', color: 'var(--ist-text)' }
+                          : { color: 'var(--ist-text)' }
+                      }
+                    >
+                      {m.ruolo === 'utente' ? m.testo : renderWithCitations(m.testo, handleNodeClick)}
+                    </div>
+                  </div>
+                ))}
+                <div ref={messaggiFineRef} />
+              </div>
 
-          <form onSubmit={handleSubmit} className="flex items-center gap-1.5 py-3">
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              disabled={esaurita}
-              placeholder={esaurita ? 'Quota mensile esaurita' : 'Scrivi una domanda…'}
-              className="flex-1 min-w-0 px-3.5 py-2 rounded-full text-[13.5px] outline-none disabled:opacity-50"
-              style={{ background: 'var(--ist-w8)', border: '1px solid var(--ist-border)', color: 'var(--ist-text)' }}
-            />
+              {erroreChat && (
+                <p className="px-4 pt-1 text-[12.5px] flex-shrink-0" style={{ color: '#e34948' }}>{erroreChat}</p>
+              )}
+
+              <form onSubmit={handleSubmit} className="flex-shrink-0 flex items-center gap-1.5 px-4 py-3">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  disabled={esaurita}
+                  placeholder={esaurita ? 'Quota mensile esaurita' : 'Scrivi una domanda…'}
+                  className="flex-1 min-w-0 px-3.5 py-2 rounded-full text-[13.5px] outline-none disabled:opacity-50"
+                  style={{ background: 'var(--ist-w8)', border: '1px solid var(--ist-border)', color: 'var(--ist-text)' }}
+                />
+                <button
+                  type="submit"
+                  disabled={!input.trim() || inviando || esaurita}
+                  className="w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-40"
+                  style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)' }}
+                >
+                  {inviando ? <Loader2 className="animate-spin" size={15} /> : <ArrowUp size={15} />}
+                </button>
+              </form>
+            </>
+          ) : (
             <button
-              type="submit"
-              disabled={!input.trim() || inviando || esaurita}
-              className="w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-40"
-              style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 100%)' }}
+              type="button"
+              onClick={() => setChatEspansa(true)}
+              className="relative flex items-center gap-2 px-4 h-full w-full text-left"
             >
-              {inviando ? <Loader2 className="animate-spin" size={15} /> : <ArrowUp size={15} />}
+              <span className="w-9 h-1 rounded-full absolute left-1/2 -translate-x-1/2 top-2" style={{ background: 'var(--ist-w20)' }} />
+              <MessageCircle size={16} style={{ color: 'var(--ist-accent-text)' }} />
+              <span className="text-[13.5px]" style={{ color: 'var(--ist-text-dim)' }}>Chiedi qualcosa sul modello quantitativo…</span>
+              <span className="ml-auto flex items-center gap-2 text-[11.5px]" style={{ color: 'var(--ist-text-dim)' }}>
+                {quotaRestante !== null && `${quotaRestante} domande`}
+                <ChevronUp size={16} />
+              </span>
             </button>
-          </form>
+          )}
         </div>
       </div>
     </div>
