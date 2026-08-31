@@ -2,10 +2,15 @@ import { useEffect, useRef, useState, Fragment } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { ArrowUp, ChevronDown, ChevronLeft, ChevronUp, Loader2, MessageCircle, Network } from 'lucide-react'
 import { useUI } from '../../context/UIContext'
+import { useStableSafeAreaBottom } from '../../lib/useStableSafeAreaBottom'
 import KnowledgeGraph from '../../components/spacequant/KnowledgeGraph'
 import {
   useSpaceQuantGraph, useSpaceQuantQuota, useSpaceQuantAccess, askSpaceQuant, type ChatTurn,
 } from '../../lib/spacequant'
+
+// Altezza minima del pannello chiuso (solo maniglia) — anche limite inferiore
+// del trascinamento manuale.
+const MIN_SHEET_HEIGHT = 60
 
 // Mostrato SOLO finché non è stata fatta ancora nessuna domanda vera (mai
 // inviato all'assistente, mai incluso nella cronologia reale) — serve solo a
@@ -54,6 +59,79 @@ export default function StudentSpaceQuant() {
   const [erroreChat, setErroreChat] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const messaggiFineRef = useRef<HTMLDivElement>(null)
+  const safeBottom = useStableSafeAreaBottom()
+
+  // Altezza del pannello impostata trascinando la maniglia — null = usa
+  // l'altezza di default dei due stati (60px chiusa / 78vh aperta, quella dei
+  // click). Con questa si può trascinare a qualunque altezza intermedia, fino
+  // quasi a coprire tutta la tab, non solo saltare tra i due stati fissi.
+  const [chatHeight, setChatHeight] = useState<number | null>(null)
+  const colonnaRef = useRef<HTMLDivElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ startY: number; startHeight: number; lastHeight: number; moved: boolean } | null>(null)
+  const dragListenersRef = useRef<{ move: (e: PointerEvent) => void; up: () => void } | null>(null)
+  const suppressClickRef = useRef(false)
+
+  // Il tracking del trascinamento vive su `window`, non su setPointerCapture
+  // del singolo bottone: superata la soglia di apertura la maniglia collassata
+  // viene smontata e sostituita dall'intestazione espansa (rami JSX diversi),
+  // il che spezzerebbe la cattura del puntatore a metà gesto.
+  const trascina = (clientY: number) => {
+    const drag = dragRef.current
+    if (!drag) return
+    const deltaY = drag.startY - clientY
+    if (!drag.moved && Math.abs(deltaY) < 4) return
+    drag.moved = true
+    const colonnaH = colonnaRef.current?.getBoundingClientRect().height ?? window.innerHeight
+    const headerH = headerRef.current?.getBoundingClientRect().height ?? 0
+    const maxHeight = Math.max(MIN_SHEET_HEIGHT, colonnaH - headerH - 8)
+    const nuovaAltezza = Math.min(maxHeight, Math.max(MIN_SHEET_HEIGHT, drag.startHeight + deltaY))
+    drag.lastHeight = nuovaAltezza
+    setChatHeight(nuovaAltezza)
+    if (!chatEspansa && nuovaAltezza > MIN_SHEET_HEIGHT + 40) setChatEspansa(true)
+  }
+
+  const fineTrascinamento = () => {
+    if (dragListenersRef.current) {
+      window.removeEventListener('pointermove', dragListenersRef.current.move)
+      window.removeEventListener('pointerup', dragListenersRef.current.up)
+      window.removeEventListener('pointercancel', dragListenersRef.current.up)
+      dragListenersRef.current = null
+    }
+    const drag = dragRef.current
+    dragRef.current = null
+    if (!drag?.moved) return // nessun trascinamento reale: lascia fare al click (toggle invariato)
+    suppressClickRef.current = true
+    if (drag.lastHeight < MIN_SHEET_HEIGHT + 50) { setChatEspansa(false); setChatHeight(null) }
+  }
+
+  const iniziaTrascinamento = (e: React.PointerEvent) => {
+    const startHeight = sheetRef.current?.getBoundingClientRect().height
+      ?? (chatEspansa ? window.innerHeight * 0.78 : MIN_SHEET_HEIGHT)
+    dragRef.current = { startY: e.clientY, startHeight, lastHeight: startHeight, moved: false }
+    const move = (ev: PointerEvent) => trascina(ev.clientY)
+    const up = () => fineTrascinamento()
+    dragListenersRef.current = { move, up }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+  }
+
+  useEffect(() => () => {
+    if (dragListenersRef.current) {
+      window.removeEventListener('pointermove', dragListenersRef.current.move)
+      window.removeEventListener('pointerup', dragListenersRef.current.up)
+      window.removeEventListener('pointercancel', dragListenersRef.current.up)
+    }
+  }, [])
+
+  const alterna = () => {
+    if (suppressClickRef.current) { suppressClickRef.current = false; return }
+    setChatHeight(null)
+    setChatEspansa(v => !v)
+  }
+  const inTrascinamento = !!dragRef.current?.moved
 
   useEffect(() => {
     setHideBottomNav(true)
@@ -126,10 +204,12 @@ export default function StudentSpaceQuant() {
       style={{ background: 'var(--ist-nav-bg)' }}
     >
       <div
+        ref={colonnaRef}
         className="flex flex-col h-full lg:pl-[108px]"
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
         <div
+          ref={headerRef}
           className="flex items-center gap-2 px-4 py-3 flex-shrink-0"
           style={{ borderBottom: '1px solid var(--ist-w8)' }}
         >
@@ -178,23 +258,27 @@ export default function StudentSpaceQuant() {
             sopra); espanso copre quasi tutto lo schermo con sfondo pieno e la
             conversazione vera e propria — non il grafo "come sfondo". */}
         <div
-          className="flex-shrink-0 w-full flex flex-col overflow-hidden transition-[height] duration-300 ease-out"
+          ref={sheetRef}
+          className="flex-shrink-0 w-full flex flex-col overflow-hidden"
           style={{
-            height: chatEspansa ? '78vh' : '60px',
+            height: chatHeight !== null ? `${chatHeight}px` : (chatEspansa ? '78vh' : `${MIN_SHEET_HEIGHT}px`),
             background: 'var(--ist-nav-bg)',
             borderTop: '1px solid var(--ist-w8)',
             borderTopLeftRadius: 20,
             borderTopRightRadius: 20,
             boxShadow: chatEspansa ? '0 -8px 30px rgba(0,0,0,0.25)' : 'none',
+            transition: inTrascinamento ? 'none' : 'height 300ms ease-out',
           }}
         >
           {chatEspansa ? (
             <>
               <button
                 type="button"
-                onClick={() => setChatEspansa(false)}
-                className="relative flex items-center gap-2 px-4 pt-2.5 pb-2 flex-shrink-0 w-full text-left"
-                aria-label="Riduci la chat"
+                onClick={alterna}
+                onPointerDown={iniziaTrascinamento}
+                style={{ touchAction: 'none' }}
+                className="relative flex items-center gap-2 px-4 pt-2.5 pb-2 flex-shrink-0 w-full text-left cursor-grab active:cursor-grabbing"
+                aria-label="Trascina o tocca per ridurre la chat"
               >
                 <span className="w-9 h-1 rounded-full absolute left-1/2 -translate-x-1/2 top-1.5" style={{ background: 'var(--ist-w20)' }} />
                 <MessageCircle size={16} style={{ color: 'var(--ist-accent-text)' }} />
@@ -238,7 +322,11 @@ export default function StudentSpaceQuant() {
                 <p className="px-4 pt-1 text-[12.5px] flex-shrink-0" style={{ color: '#e34948' }}>{erroreChat}</p>
               )}
 
-              <form onSubmit={handleSubmit} className="flex-shrink-0 flex items-center gap-1.5 px-4 py-3">
+              <form
+                onSubmit={handleSubmit}
+                className="flex-shrink-0 flex items-center gap-1.5 px-4 pt-3"
+                style={{ paddingBottom: 12 + safeBottom }}
+              >
                 <input
                   ref={inputRef}
                   type="text"
@@ -262,8 +350,10 @@ export default function StudentSpaceQuant() {
           ) : (
             <button
               type="button"
-              onClick={() => setChatEspansa(true)}
-              className="relative flex items-center gap-2 px-4 h-full w-full text-left"
+              onClick={alterna}
+              onPointerDown={iniziaTrascinamento}
+              style={{ touchAction: 'none' }}
+              className="relative flex items-center gap-2 px-4 h-full w-full text-left cursor-grab active:cursor-grabbing"
             >
               <span className="w-9 h-1 rounded-full absolute left-1/2 -translate-x-1/2 top-2" style={{ background: 'var(--ist-w20)' }} />
               <MessageCircle size={16} style={{ color: 'var(--ist-accent-text)' }} />
