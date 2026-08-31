@@ -13,24 +13,102 @@ function nodeRadius(grado: number): number {
   return 1.5 + Math.sqrt(grado) * 1.1
 }
 
-// FERMO PER ORA (richiesta esplicita): niente simulazione a forze né
-// requestAnimationFrame — un giro di instabilità della fisica con 160 nodi
-// portava a un artefatto di disegno (frame vecchi non ripuliti che si
-// accumulavano fino a rendere tutto nero). Il layout iniziale a disco piace
-// già così com'è; qui sotto solo posizionamento statico + disegno on-demand
-// (un ridisegno per evento: resize, hover, drag, zoom — mai un loop continuo).
-// Quando si vorrà rianimarlo, reintrodurre uno step fisico chiamato da un
-// unico requestAnimationFrame la cui identità NON cambi mai (es. leggendo la
-// logica corrente da un ref aggiornato a parte), per evitare la classe di bug
-// vista qui: un giro di animazione avviato con una chiusura "vecchia" (draw
-// legato a una dimensione del canvas superata) continua a girare da solo e
-// pulisce/disegna con misure sbagliate finché una nuova richiesta non lo
-// rimpiazza.
 interface SimNode extends GraphNode {
   x: number; y: number
 }
 
 interface View { scale: number; tx: number; ty: number }
+
+// Layout iniziale: una vera passata fisica (non solo geometrica), calcolata
+// TUTTA IN UN COLPO SOLO prima del primo disegno — nessuna animazione
+// visibile, i nodi ci sono già assestati fin dal primo frame. È quello che dà
+// la forma "meno cerchio perfetto" (i collegamenti reali tirano i nodi
+// collegati più vicini, creando rigonfiamenti) invece del disco geometrico
+// puro di prima. Costanti già note come stabili per ~150-200 nodi.
+const REPULSIONE = 220
+const MOLLA = 0.02
+const RIPOSO = 40
+const GRAVITA = 0.003
+const ATTRITO = 0.80
+const MAX_VELOCITA = 3 // solo per il precalcolo offline, non per l'animazione a schermo
+const LAYOUT_ITERAZIONI = 260
+
+function calcolaLayout(nodi: GraphNode[], archi: GraphEdge[], boundary: number): SimNode[] {
+  const n = Math.max(1, nodi.length)
+  const angoloAureo = Math.PI * (3 - Math.sqrt(5))
+  const raggioDisco = boundary * 0.9
+  const nodes: (SimNode & { vx: number; vy: number })[] = nodi.map((node, i) => {
+    const r = raggioDisco * Math.sqrt((i + 0.5) / n)
+    const angolo = i * angoloAureo
+    return { ...node, x: Math.cos(angolo) * r, y: Math.sin(angolo) * r, vx: 0, vy: 0 }
+  })
+  const indexById = new Map(nodi.map((n, i) => [n.id, i]))
+  const edgesIdx = archi
+    .map(e => [indexById.get(e.da), indexById.get(e.a)] as [number | undefined, number | undefined])
+    .filter((p): p is [number, number] => p[0] !== undefined && p[1] !== undefined)
+
+  const fx = new Float64Array(nodes.length)
+  const fy = new Float64Array(nodes.length)
+
+  for (let iter = 0; iter < LAYOUT_ITERAZIONI; iter++) {
+    fx.fill(0); fy.fill(0)
+
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j]
+        const dx = b.x - a.x, dy = b.y - a.y
+        const d2 = dx * dx + dy * dy || 0.01
+        const f = REPULSIONE / d2
+        const d = Math.sqrt(d2)
+        fx[i] -= (f * dx) / d; fy[i] -= (f * dy) / d
+        fx[j] += (f * dx) / d; fy[j] += (f * dy) / d
+      }
+    }
+
+    for (const [i, j] of edgesIdx) {
+      const a = nodes[i], b = nodes[j]
+      const dx = b.x - a.x, dy = b.y - a.y
+      const d = Math.hypot(dx, dy) || 0.01
+      const f = MOLLA * (d - RIPOSO)
+      fx[i] += (f * dx) / d; fy[i] += (f * dy) / d
+      fx[j] -= (f * dx) / d; fy[j] -= (f * dy) / d
+    }
+
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i]
+      let fxi = fx[i] - n.x * GRAVITA
+      let fyi = fy[i] - n.y * GRAVITA
+      const dist = Math.hypot(n.x, n.y)
+      if (dist > boundary) {
+        const richiamo = (dist - boundary) * 0.05
+        fxi -= (n.x / dist) * richiamo
+        fyi -= (n.y / dist) * richiamo
+      }
+      n.vx = (n.vx + fxi) * ATTRITO
+      n.vy = (n.vy + fyi) * ATTRITO
+      const v = Math.hypot(n.vx, n.vy)
+      if (v > MAX_VELOCITA) { n.vx = (n.vx / v) * MAX_VELOCITA; n.vy = (n.vy / v) * MAX_VELOCITA }
+      if (!Number.isFinite(n.vx) || !Number.isFinite(n.vy)) { n.vx = 0; n.vy = 0 }
+      n.x += n.vx; n.y += n.vy
+      if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) { n.x = 0; n.y = 0 }
+    }
+  }
+
+  return nodes.map((n): SimNode => ({ id: n.id, cartella: n.cartella, grado: n.grado, x: n.x, y: n.y }))
+}
+
+// ── Animazione "a tocco": leggerissima, sempre a durata fissa e mai a catena ──
+// Ogni tanto un nodo scelto a caso si sposta di pochissimo; i vicini diretti
+// (e un po' i vicini dei vicini) lo seguono in proporzione per mantenere la
+// distanza, poi TUTTO torna esattamente alla posizione di partenza — un
+// "polso" che passa e si esaurisce, mai un accumulo o una deriva nel tempo.
+// Durata fissa (nessuna soglia di energia): evita la classe di bug già vista
+// (un loop continuo che può restare agganciato a una versione vecchia del
+// disegno). Tocca solo una manciata di nodi alla volta, mai tutti e 160.
+const RIPPLE_DURATA_MS = 1100
+const RIPPLE_FALLOFF = [1, 0.4, 0.14] // per distanza nel grafo 0 (il nodo stesso), 1, 2
+
+interface RippleFrame { node: SimNode; ox: number; oy: number; dx: number; dy: number }
 
 interface Props {
   nodi: GraphNode[]
@@ -43,25 +121,27 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
+  const sizeRef = useRef(size)
+  sizeRef.current = size
 
   const simRef = useRef<SimNode[]>([])
   const edgesIdxRef = useRef<[number, number][]>([])
   const neighborsRef = useRef<Map<string, Set<string>>>(new Map())
   const viewRef = useRef<View>({ scale: 1, tx: 0, ty: 0 })
   const hoveredRef = useRef<string | null>(null)
-  // Raggio del disco entro cui si dispongono i nodi — lascia margine ai lati
-  // invece di riempire tutto lo schermo. Aggiornato ad ogni resize, con un
-  // default ragionevole prima della prima misura reale.
   const boundaryRef = useRef(260)
+  const rippleRef = useRef<{ frames: RippleFrame[]; start: number } | null>(null)
+  const rippleTimerRef = useRef<number | null>(null)
 
   const dragRef = useRef<{ mode: 'node' | 'pan' | 'pinch'; nodeId?: string; lastX: number; lastY: number; moved: boolean; pinchDist?: number } | null>(null)
 
-  // ── Disegno ────────────────────────────────────────────────────────────────
+  // ── Disegno — dipende SOLO dal tema: la dimensione si legge da un ref, mai
+  // da una chiusura che può restare agganciata a una misura superata. ────────
   const draw = useCallback(() => {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!ctx || !canvas) return
-    const { w, h } = size
+    const { w, h } = sizeRef.current
     const view = viewRef.current
     const hovered = hoveredRef.current
     const activeNeighbors = hovered ? neighborsRef.current.get(hovered) : null
@@ -71,8 +151,6 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
 
     const toScreen = (x: number, y: number) => [x * view.scale + view.tx, y * view.scale + view.ty]
 
-    // Archi — bassissima opacità di base (come in Obsidian: quasi invisibili
-    // finché non tocchi un nodo), si accendono solo per il nodo in hover.
     for (const [i, j] of edgesIdxRef.current) {
       const a = simRef.current[i], b = simRef.current[j]
       if (!a || !b) continue
@@ -87,7 +165,6 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       ctx.stroke()
     }
 
-    // Nodi — piccoli e monocromatici, più opachi quanto più sono connessi.
     const zoomedIn = view.scale > 1.6
     for (const n of simRef.current) {
       const isHovered = n.id === hovered
@@ -107,28 +184,89 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
         ctx.stroke()
       }
 
-      // Etichette: sempre sui nodi ad alto grado, tutte quando si è ingranditi.
       if (isHovered || zoomedIn || n.grado >= 10) {
         ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif'
         ctx.fillStyle = `rgba(${ink.dot},${dim ? 0.25 : 0.85})`
         ctx.fillText(n.id, x + r + 4, y + 4)
       }
     }
-  }, [size, theme])
+  }, [theme])
 
-  // ── Posiziona i nodi quando cambiano i dati (nessuna fisica: statico) ─────
+  // drawRef: usato dal ciclo del "tocco" così l'animazione chiama sempre la
+  // versione più fresca di draw, mai una chiusura catturata all'avvio.
+  const drawRef = useRef(draw)
+  drawRef.current = draw
+
+  // ── Ciclo del "tocco": durata fissa, tocca solo il nodo scelto + vicini ───
+  const rippleTick = useCallback(() => {
+    const r = rippleRef.current
+    if (!r) return
+    const t = Math.min(1, (performance.now() - r.start) / RIPPLE_DURATA_MS)
+    const k = Math.sin(t * Math.PI) // 0 → 1 → 0: va e ritorna esattamente all'origine
+    for (const f of r.frames) {
+      f.node.x = f.ox + f.dx * k
+      f.node.y = f.oy + f.dy * k
+    }
+    drawRef.current()
+    if (t < 1) {
+      requestAnimationFrame(rippleTick)
+    } else {
+      rippleRef.current = null
+    }
+  }, [])
+
+  const startRipple = useCallback(() => {
+    const nodes = simRef.current
+    if (nodes.length < 2 || rippleRef.current) return
+    const origin = nodes[Math.floor(Math.random() * nodes.length)]
+
+    // Distanza nel grafo dall'origine, fino a 2 salti (BFS breve).
+    const depth = new Map<string, number>([[origin.id, 0]])
+    const coda = [origin.id]
+    while (coda.length) {
+      const cur = coda.shift()!
+      const d = depth.get(cur)!
+      if (d >= RIPPLE_FALLOFF.length - 1) continue
+      for (const vicino of neighborsRef.current.get(cur) ?? []) {
+        if (!depth.has(vicino)) { depth.set(vicino, d + 1); coda.push(vicino) }
+      }
+    }
+
+    const angolo = Math.random() * Math.PI * 2
+    const ampiezza = 4 + Math.random() * 6 // spostamento minimo, "leggerissimo"
+    const dx = Math.cos(angolo) * ampiezza, dy = Math.sin(angolo) * ampiezza
+
+    const frames: RippleFrame[] = []
+    for (const n of nodes) {
+      const d = depth.get(n.id)
+      if (d === undefined) continue
+      const f = RIPPLE_FALLOFF[d] ?? 0
+      if (f === 0) continue
+      frames.push({ node: n, ox: n.x, oy: n.y, dx: dx * f, dy: dy * f })
+    }
+    if (frames.length === 0) return
+
+    rippleRef.current = { frames, start: performance.now() }
+    requestAnimationFrame(rippleTick)
+  }, [rippleTick])
+
+  // Programma il prossimo "tocco" a un intervallo casuale — mai un ritmo
+  // meccanico, mai più di un'animazione alla volta.
   useEffect(() => {
-    const n = Math.max(1, nodi.length)
-    // Disposizione "a girasole" (Fibonacci): riempie un disco in modo già
-    // uniforme fin dal primo frame, invece di un anello sottile — i nodi ci
-    // sono tutti da subito, ordinati, senza bisogno di alcuna animazione.
-    const angoloAureo = Math.PI * (3 - Math.sqrt(5))
-    const raggioDisco = boundaryRef.current * 0.92
-    simRef.current = nodi.map((node, i) => {
-      const r = raggioDisco * Math.sqrt((i + 0.5) / n)
-      const angolo = i * angoloAureo
-      return { ...node, x: Math.cos(angolo) * r, y: Math.sin(angolo) * r }
-    })
+    const programma = () => {
+      const attesa = 2200 + Math.random() * 3800
+      rippleTimerRef.current = window.setTimeout(() => { startRipple(); programma() }, attesa)
+    }
+    programma()
+    return () => { if (rippleTimerRef.current !== null) clearTimeout(rippleTimerRef.current) }
+  }, [startRipple])
+
+  // ── Calcola il layout (fisica una tantum, non un'animazione) quando i dati
+  // cambiano, poi disegna il risultato già assestato. ───────────────────────
+  useEffect(() => {
+    rippleRef.current = null // un cambio dati interrompe un eventuale tocco in corso
+    simRef.current = calcolaLayout(nodi, archi, boundaryRef.current)
+
     const indexById = new Map(nodi.map((n, i) => [n.id, i]))
     edgesIdxRef.current = archi
       .map(e => [indexById.get(e.da), indexById.get(e.a)] as [number | undefined, number | undefined])
@@ -153,8 +291,6 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     const observer = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect
       setSize({ w: width, h: height })
-      // Il cerchio entro cui stanno i nodi resta nel lato corto, con margine
-      // ai lati. Ignora misure transitorie a ~0 (durante il primo layout).
       if (Math.min(width, height) > 40) boundaryRef.current = Math.min(width, height) * 0.4
       if (viewRef.current.tx === 0 && viewRef.current.ty === 0) {
         viewRef.current = { scale: 1, tx: width / 2, ty: height / 2 }
@@ -191,7 +327,7 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     let best: SimNode | null = null
     let bestD = Infinity
     for (const n of simRef.current) {
-      const r = nodeRadius(n.grado) + 6 / view.scale // margine di tolleranza al tocco
+      const r = nodeRadius(n.grado) + 6 / view.scale
       const d = Math.hypot(n.x - simX, n.y - simY)
       if (d <= r && d < bestD) { best = n; bestD = d }
     }
@@ -229,6 +365,7 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   const onMouseDown = (e: React.MouseEvent) => {
     const hit = hitTest(e.clientX, e.clientY)
     if (hit) {
+      rippleRef.current = null // non far competere il tocco con il trascinamento manuale
       dragRef.current = { mode: 'node', nodeId: hit.id, lastX: e.clientX, lastY: e.clientY, moved: false }
     } else {
       dragRef.current = { mode: 'pan', lastX: e.clientX, lastY: e.clientY, moved: false }
@@ -261,6 +398,7 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     const t = e.touches[0]
     const hit = hitTest(t.clientX, t.clientY)
     if (hit) {
+      rippleRef.current = null
       dragRef.current = { mode: 'node', nodeId: hit.id, lastX: t.clientX, lastY: t.clientY, moved: false }
     } else {
       dragRef.current = { mode: 'pan', lastX: t.clientX, lastY: t.clientY, moved: false }
