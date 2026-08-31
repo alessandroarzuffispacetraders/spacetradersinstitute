@@ -259,7 +259,6 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       ctx.stroke()
     }
 
-    const zoomedIn = view.scale > 1.6
     for (const n of simRef.current) {
       const isHovered = n.id === hovered
       const isNeighbor = !!activeNeighbors?.has(n.id)
@@ -281,9 +280,11 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
         ctx.stroke()
       }
 
-      if (isHovered || zoomedIn || n.grado >= 10) {
+      // Nome visibile SOLO sul nodo selezionato (hover/tocco) — richiesta
+      // esplicita: niente etichette permanenti sugli hub o allo zoom alto.
+      if (isHovered) {
         ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif'
-        ctx.fillStyle = `rgba(${ink.dot},${dim ? 0.25 : 0.85})`
+        ctx.fillStyle = `rgba(${ink.dot},0.85)`
         ctx.fillText(n.id, x + r + 4, y + 4)
       }
     }
