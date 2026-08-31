@@ -1,9 +1,10 @@
+import type { ElementType } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
   Brain, Radio, TrendingUp, ExternalLink, Users, ClipboardList,
-  AlertTriangle, CalendarDays, FileText, Package, BarChart3, Network,
-  LogOut, Sun, Moon, Compass, SlidersHorizontal, Lock, type LucideIcon,
+  AlertTriangle, CalendarDays, FileText, Package, BarChart3,
+  LogOut, Sun, Moon, Compass, SlidersHorizontal, Lock,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
@@ -15,12 +16,15 @@ import { isPathLockedForFree } from '../../lib/freeTier'
 import { useSpaceQuantAccess } from '../../lib/spacequant'
 import ISTLogo from '../ui/ISTLogo'
 import UserAvatar from '../ui/UserAvatar'
+import QuantBrainIcon from '../icons/QuantBrainIcon'
 import { useNews, NewsDot } from '../../context/NewsContext'
 
-const ICON_MAP: Record<string, LucideIcon> = {
+// ElementType (non LucideIcon) perché QuantBrainIcon è un'icona custom SVG,
+// non un'icona della libreria Lucide.
+const ICON_MAP: Record<string, ElementType> = {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
   Brain, Radio, TrendingUp, ExternalLink, Users, ClipboardList,
-  AlertTriangle, CalendarDays, FileText, Package, BarChart3, Network,
+  AlertTriangle, CalendarDays, FileText, Package, BarChart3, QuantBrain: QuantBrainIcon,
 }
 
 function NavIcon({ name, dot = false, locked = false }: { name: string; dot?: boolean; locked?: boolean }) {

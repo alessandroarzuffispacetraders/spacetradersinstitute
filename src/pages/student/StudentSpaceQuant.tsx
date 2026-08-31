@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, Fragment } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { ArrowUp, ChevronDown, ChevronLeft, ChevronUp, Loader2, MessageCircle, Network } from 'lucide-react'
+import { ArrowUp, ChevronDown, ChevronLeft, ChevronUp, Loader2, MessageCircle } from 'lucide-react'
 import { useUI } from '../../context/UIContext'
 import { useStableSafeAreaBottom } from '../../lib/useStableSafeAreaBottom'
+import QuantBrainIcon from '../../components/icons/QuantBrainIcon'
 import KnowledgeGraph from '../../components/spacequant/KnowledgeGraph'
 import {
   useSpaceQuantGraph, useSpaceQuantQuota, useSpaceQuantAccess, askSpaceQuant, type ChatTurn,
@@ -61,10 +62,14 @@ export default function StudentSpaceQuant() {
   const messaggiFineRef = useRef<HTMLDivElement>(null)
   const safeBottom = useStableSafeAreaBottom()
 
-  // Altezza del pannello impostata trascinando la maniglia — null = usa
-  // l'altezza di default dei due stati (60px chiusa / 78vh aperta, quella dei
-  // click). Con questa si può trascinare a qualunque altezza intermedia, fino
-  // quasi a coprire tutta la tab, non solo saltare tra i due stati fissi.
+  // Altezza minima reale: sotto la maniglia riserviamo la safe-area (home
+  // indicator su iOS), altrimenti il testo risulta schiacciato in basso.
+  const alturaChiusa = MIN_SHEET_HEIGHT + safeBottom
+
+  // Altezza del pannello mentre lo si trascina (segue il dito in tempo reale)
+  // — null = usa uno dei due stati fissi (chiusa/aperta). Al rilascio si
+  // aggancia SEMPRE a uno dei due punti di ancoraggio (mai una via di mezzo):
+  // trascinato verso l'alto abbastanza si apre del tutto, altrimenti si chiude.
   const [chatHeight, setChatHeight] = useState<number | null>(null)
   const colonnaRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
@@ -85,11 +90,11 @@ export default function StudentSpaceQuant() {
     drag.moved = true
     const colonnaH = colonnaRef.current?.getBoundingClientRect().height ?? window.innerHeight
     const headerH = headerRef.current?.getBoundingClientRect().height ?? 0
-    const maxHeight = Math.max(MIN_SHEET_HEIGHT, colonnaH - headerH - 8)
-    const nuovaAltezza = Math.min(maxHeight, Math.max(MIN_SHEET_HEIGHT, drag.startHeight + deltaY))
+    const maxHeight = Math.max(alturaChiusa, colonnaH - headerH - 8)
+    const nuovaAltezza = Math.min(maxHeight, Math.max(alturaChiusa, drag.startHeight + deltaY))
     drag.lastHeight = nuovaAltezza
     setChatHeight(nuovaAltezza)
-    if (!chatEspansa && nuovaAltezza > MIN_SHEET_HEIGHT + 40) setChatEspansa(true)
+    if (!chatEspansa && nuovaAltezza > alturaChiusa + 40) setChatEspansa(true)
   }
 
   const fineTrascinamento = () => {
@@ -103,12 +108,20 @@ export default function StudentSpaceQuant() {
     dragRef.current = null
     if (!drag?.moved) return // nessun trascinamento reale: lascia fare al click (toggle invariato)
     suppressClickRef.current = true
-    if (drag.lastHeight < MIN_SHEET_HEIGHT + 50) { setChatEspansa(false); setChatHeight(null) }
+    // Punto di ancoraggio unico: mai una via di mezzo. Superata la soglia a
+    // metà strada tra chiusa e aperta si va sempre alla stessa altezza aperta
+    // (78vh, quella dei due stati fissi); sotto si richiude — mai ferma
+    // esattamente dove è stato rilasciato il dito.
+    const colonnaH = colonnaRef.current?.getBoundingClientRect().height ?? window.innerHeight
+    const alturaAperta = colonnaH * 0.78
+    const soglia = (alturaChiusa + alturaAperta) / 2
+    setChatHeight(null)
+    setChatEspansa(drag.lastHeight > soglia)
   }
 
   const iniziaTrascinamento = (e: React.PointerEvent) => {
     const startHeight = sheetRef.current?.getBoundingClientRect().height
-      ?? (chatEspansa ? window.innerHeight * 0.78 : MIN_SHEET_HEIGHT)
+      ?? (chatEspansa ? window.innerHeight * 0.78 : alturaChiusa)
     dragRef.current = { startY: e.clientY, startHeight, lastHeight: startHeight, moved: false }
     const move = (ev: PointerEvent) => trascina(ev.clientY)
     const up = () => fineTrascinamento()
@@ -221,8 +234,8 @@ export default function StudentSpaceQuant() {
           >
             <ChevronLeft size={20} strokeWidth={2.5} style={{ color: 'var(--ist-text)' }} />
           </button>
-          <Network size={20} style={{ color: 'var(--ist-accent-text)' }} />
-          <h1 className="font-semibold text-[15px]" style={{ color: 'var(--ist-text)' }}>SpaceQuant</h1>
+          <QuantBrainIcon size={20} style={{ color: 'var(--ist-accent-text)' }} />
+          <h1 className="font-semibold text-[15px]" style={{ color: 'var(--ist-text)' }}>Quant-Brain</h1>
         </div>
 
         {/* Il grafo occupa sempre lo spazio rimanente (flex-1): quando la chat
@@ -261,7 +274,7 @@ export default function StudentSpaceQuant() {
           ref={sheetRef}
           className="flex-shrink-0 w-full flex flex-col overflow-hidden"
           style={{
-            height: chatHeight !== null ? `${chatHeight}px` : (chatEspansa ? '78vh' : `${MIN_SHEET_HEIGHT}px`),
+            height: chatHeight !== null ? `${chatHeight}px` : (chatEspansa ? '78vh' : `${alturaChiusa}px`),
             background: 'var(--ist-nav-bg)',
             borderTop: '1px solid var(--ist-w8)',
             borderTopLeftRadius: 20,
@@ -352,7 +365,7 @@ export default function StudentSpaceQuant() {
               type="button"
               onClick={alterna}
               onPointerDown={iniziaTrascinamento}
-              style={{ touchAction: 'none' }}
+              style={{ touchAction: 'none', paddingBottom: safeBottom }}
               className="relative flex items-center gap-2 px-4 h-full w-full text-left cursor-grab active:cursor-grabbing"
             >
               <span className="w-9 h-1 rounded-full absolute left-1/2 -translate-x-1/2 top-2" style={{ background: 'var(--ist-w20)' }} />

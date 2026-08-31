@@ -24,7 +24,7 @@ const USE_NAV: NavItem[] = [
   { label: 'Live & Replay', shortLabel: 'Live', path: '/student/live', icon: 'Radio' },
   { label: 'Calendario', path: '/student/calendario', icon: 'CalendarDays' },
   { label: 'Progressi', path: '/student/progressi', icon: 'TrendingUp' },
-  { label: 'SpaceQuant', path: '/student/spacequant', icon: 'Network' },
+  { label: 'Quant-Brain', shortLabel: 'Quant', path: '/student/spacequant', icon: 'QuantBrain' },
 ]
 const USE_MOBILE_PRIMARY = ['/student', '/student/corsi', '/student/chat', '/student/live']
 

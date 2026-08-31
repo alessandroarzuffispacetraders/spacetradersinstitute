@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ElementType } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
   Brain, Radio, TrendingUp, ExternalLink, Users, ClipboardList,
-  AlertTriangle, CalendarDays, FileText, Package, BarChart3, Network,
+  AlertTriangle, CalendarDays, FileText, Package, BarChart3,
   MoreHorizontal, X, Sun, Moon, LogOut, Compass, SlidersHorizontal, Lock,
-  type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
@@ -17,12 +16,15 @@ import {
 import { isPathLockedForFree } from '../../lib/freeTier'
 import { useSpaceQuantAccess } from '../../lib/spacequant'
 import UserAvatar from '../ui/UserAvatar'
+import QuantBrainIcon from '../icons/QuantBrainIcon'
 import { useNews, NewsDot } from '../../context/NewsContext'
 
-const ICON_MAP: Record<string, LucideIcon> = {
+// ElementType (non LucideIcon) perché QuantBrainIcon è un'icona custom SVG,
+// non un'icona della libreria Lucide.
+const ICON_MAP: Record<string, ElementType> = {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
   Brain, Radio, TrendingUp, ExternalLink, Users, ClipboardList,
-  AlertTriangle, CalendarDays, FileText, Package, BarChart3, Network,
+  AlertTriangle, CalendarDays, FileText, Package, BarChart3, QuantBrain: QuantBrainIcon,
 }
 
 function NavIcon({ name, size = 20, dot = false, locked = false }: { name: string; size?: number; dot?: boolean; locked?: boolean }) {
@@ -250,9 +252,20 @@ export default function BottomNav() {
   const roles     = normalizeRoles(user.role, user.roles)
   const canManage = hasManagement(roles)
   const mode      = canManage ? navMode : 'use'
-  const { primary, overflow: overflowAll } = getMobileNavConfig(mode, roles)
-  // Beta ristretta: la voce compare solo per chi ha accesso (verificato server-side).
-  const overflow = overflowAll.filter(i => i.path !== '/student/spacequant' || spaceQuantAccess)
+  const { primary: primaryBase, overflow: overflowAll } = getMobileNavConfig(mode, roles)
+
+  // Beta ristretta "Quant-Brain": chi ha accesso la vede al posto di "Live &
+  // Replay" nella barra primaria mobile (Live scende nel menu "Altro"); chi
+  // non ha accesso vede la barra di sempre e Quant-Brain resta invisibile
+  // ovunque, nemmeno in "Altro" (verificato server-side).
+  const quantBrain = overflowAll.find(i => i.path === '/student/spacequant')
+  const scambioAttivo = mode === 'use' && spaceQuantAccess && !!quantBrain
+  const primary = scambioAttivo
+    ? primaryBase.map(i => (i.path === '/student/live' ? quantBrain! : i))
+    : primaryBase
+  const overflow = scambioAttivo
+    ? overflowAll.filter(i => i.path !== '/student/spacequant').concat(primaryBase.find(i => i.path === '/student/live')!)
+    : overflowAll.filter(i => i.path !== '/student/spacequant' || spaceQuantAccess)
   const homePath = primary[0]?.path
   const hasOverflow = overflow.length > 0 || canManage
   const overflowHasNews = overflow.some(i => hasNews(i.path))
