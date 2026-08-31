@@ -312,7 +312,7 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       setSize({ w: width, h: height })
       if (Math.min(width, height) > 40) boundaryRef.current = Math.min(width, height) * 0.4
       if (viewRef.current.tx === 0 && viewRef.current.ty === 0) {
-        viewRef.current = { scale: 1.7, tx: width / 2, ty: height / 2 } // zoom di default più ravvicinato
+        viewRef.current = { scale: 2.5, tx: width / 2, ty: height / 2 } // zoom di default più ravvicinato
       }
     })
     observer.observe(el)
