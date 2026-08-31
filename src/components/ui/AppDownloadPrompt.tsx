@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { X, Download, Smartphone } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
+import { useUI } from '../../context/UIContext'
 
 // Invito a scaricare l'app nativa — mostrato SOLO sul sito web (mai dentro l'app
 // nativa: là è già installata). Al primo ingresso apre un popup una-tantum
@@ -28,8 +29,9 @@ function isAndroidMobileWeb() {
 
 export default function AppDownloadPrompt() {
   const [open, setOpen] = useState(false)
+  const { hideDownloadPrompt } = useUI()
 
-  const hidden = Capacitor.isNativePlatform() || isAndroidMobileWeb()
+  const hidden = Capacitor.isNativePlatform() || isAndroidMobileWeb() || hideDownloadPrompt
 
   // Apertura automatica una-tantum al primo ingresso; poi solo il tasto.
   useEffect(() => {
@@ -39,7 +41,8 @@ export default function AppDownloadPrompt() {
     return () => clearTimeout(t)
   }, [hidden])
 
-  // Dentro l'app nativa (o su Android web, per ora) non deve comparire nulla.
+  // Dentro l'app nativa (o su Android web, o su una pagina full-bleed che lo
+  // nasconde esplicitamente come SpaceQuant) non deve comparire nulla.
   if (hidden) return null
 
   const markSeen = () => { try { localStorage.setItem(LS_SEEN, '1') } catch { /* storage non disponibile */ } }

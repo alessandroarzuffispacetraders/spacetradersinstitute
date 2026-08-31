@@ -6,6 +6,10 @@ const NAV_MODE_KEY = 'ist-nav-mode'
 interface UICtx {
   hideBottomNav: boolean
   setHideBottomNav: (v: boolean) => void
+  // Pagine full-bleed (es. SpaceQuant) che coprono l'angolo dove galleggia
+  // il pulsante "scarica l'app": lo nascondono finché sono montate.
+  hideDownloadPrompt: boolean
+  setHideDownloadPrompt: (v: boolean) => void
   profileOpen: boolean
   setProfileOpen: (v: boolean) => void
   navMode: NavMode
@@ -15,6 +19,8 @@ interface UICtx {
 const UIContext = createContext<UICtx>({
   hideBottomNav: false,
   setHideBottomNav: () => {},
+  hideDownloadPrompt: false,
+  setHideDownloadPrompt: () => {},
   profileOpen: false,
   setProfileOpen: () => {},
   navMode: 'use',
@@ -23,6 +29,7 @@ const UIContext = createContext<UICtx>({
 
 export function UIProvider({ children }: { children: ReactNode }) {
   const [hideBottomNav, setHideBottomNav] = useState(false)
+  const [hideDownloadPrompt, setHideDownloadPrompt] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [navMode, setNavModeState] = useState<NavMode>(() => {
     try {
@@ -38,7 +45,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <UIContext.Provider value={{ hideBottomNav, setHideBottomNav, profileOpen, setProfileOpen, navMode, setNavMode }}>
+    <UIContext.Provider value={{ hideBottomNav, setHideBottomNav, hideDownloadPrompt, setHideDownloadPrompt, profileOpen, setProfileOpen, navMode, setNavMode }}>
       {children}
     </UIContext.Provider>
   )

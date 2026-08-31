@@ -77,6 +77,9 @@ function PrivateRoutes() {
         <Route path="/student/corsi/:categoryId" element={<StudentCategoryDetail />} />
         <Route path="/student/chat" element={<ChatPage />} />
         <Route path="/student/progressi" element={<StudentProgressi />} />
+        {/* Beta ristretta: accesso verificato dentro il componente stesso
+            (solo admin + chi è abilitato in spacequant_access), non dal tier. */}
+        <Route path="/student/spacequant" element={<StudentSpaceQuant />} />
 
         {/* Student — riservate ai paganti: l'utente gratuito vede l'upsell */}
         <Route element={<RequireFullAccess />}>
@@ -88,7 +91,6 @@ function PrivateRoutes() {
           <Route path="/student/live/:liveId" element={<StudentLivePlayer />} />
           <Route path="/student/calendario" element={<StudentCalendario />} />
           <Route path="/student/journal" element={<StudentJournal />} />
-          <Route path="/student/spacequant" element={<StudentSpaceQuant />} />
         </Route>
 
         {/* Coach — solo ruolo coach */}

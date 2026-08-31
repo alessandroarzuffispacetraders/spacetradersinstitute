@@ -29,7 +29,6 @@ export const FREE_LOCKED_PREFIXES = [
   '/student/calendario',
   '/student/diario',
   '/student/journal',
-  '/student/spacequant',
 ]
 
 export function isPathLockedForFree(

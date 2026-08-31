@@ -27,6 +27,7 @@ export interface ChatError {
 export function useSpaceQuantGraph() {
   const [nodi, setNodi] = useState<GraphNode[]>([])
   const [archi, setArchi] = useState<GraphEdge[]>([])
+  const [demo, setDemo] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -42,12 +43,29 @@ export function useSpaceQuantGraph() {
       }
       setNodi(data.nodi ?? [])
       setArchi(data.archi ?? [])
+      setDemo(!!data.demo)
       setLoading(false)
     })
     return () => { active = false }
   }, [])
 
-  return { nodi, archi, loading, error }
+  return { nodi, archi, demo, loading, error }
+}
+
+// ─── Accesso alla beta (solo admin + chi è stato abilitato esplicitamente) ────
+
+export function useSpaceQuantAccess() {
+  const [hasAccess, setHasAccess] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let active = true
+    supabase.rpc('spacequant_has_access').then(({ data, error }) => {
+      if (active) setHasAccess(!error && data === true)
+    })
+    return () => { active = false }
+  }, [])
+
+  return hasAccess // null = ancora in caricamento
 }
 
 // ─── Quota residua (letta all'apertura pagina, aggiornata dopo ogni risposta) ─

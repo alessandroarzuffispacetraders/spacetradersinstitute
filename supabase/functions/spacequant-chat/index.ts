@@ -4,7 +4,7 @@
 // Contratto: { risposta, note_citate, quota_restante }. MAI il testo grezzo
 // delle note nella risposta (solo ciò che il modello sceglie di citare/spiegare).
 import Anthropic from 'npm:@anthropic-ai/sdk@0.32.1'
-import { CORS, json, adminClient, requirePayingStudent, HttpError } from '../_shared/http.ts'
+import { CORS, json, adminClient, requireSpaceQuantAccess, HttpError } from '../_shared/http.ts'
 import { getCachedVault, buildSystemText, buildTitleIndex, extractWikilinkTitles } from '../_shared/vault.ts'
 import { SYSTEM_PROMPT } from '../_shared/systemPrompt.ts'
 
@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
 
   try {
     const admin = adminClient()
-    const user = await requirePayingStudent(admin, req)
+    const user = await requireSpaceQuantAccess(admin, req)
 
     const body = await req.json().catch(() => ({}))
     const domanda = typeof body.domanda === 'string' ? body.domanda.trim() : ''

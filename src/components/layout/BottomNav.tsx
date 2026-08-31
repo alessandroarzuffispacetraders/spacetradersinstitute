@@ -15,6 +15,7 @@ import {
   NavItem, NavMode,
 } from '../../router/navConfig'
 import { isPathLockedForFree } from '../../lib/freeTier'
+import { useSpaceQuantAccess } from '../../lib/spacequant'
 import UserAvatar from '../ui/UserAvatar'
 import { useNews, NewsDot } from '../../context/NewsContext'
 
@@ -230,6 +231,7 @@ export default function BottomNav() {
   const { hasNews } = useNews()
   const navigate = useNavigate()
   const [moreOpen, setMoreOpen] = useState(false)
+  const spaceQuantAccess = useSpaceQuantAccess()
 
   // Il tour interattivo apre/chiude il pannello "Altro" tramite eventi.
   useEffect(() => {
@@ -248,7 +250,9 @@ export default function BottomNav() {
   const roles     = normalizeRoles(user.role, user.roles)
   const canManage = hasManagement(roles)
   const mode      = canManage ? navMode : 'use'
-  const { primary, overflow } = getMobileNavConfig(mode, roles)
+  const { primary, overflow: overflowAll } = getMobileNavConfig(mode, roles)
+  // Beta ristretta: la voce compare solo per chi ha accesso (verificato server-side).
+  const overflow = overflowAll.filter(i => i.path !== '/student/spacequant' || spaceQuantAccess)
   const homePath = primary[0]?.path
   const hasOverflow = overflow.length > 0 || canManage
   const overflowHasNews = overflow.some(i => hasNews(i.path))

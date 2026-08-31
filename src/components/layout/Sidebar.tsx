@@ -12,6 +12,7 @@ import {
   getNavForMode, getHomeForMode, hasManagement, normalizeRoles,
 } from '../../router/navConfig'
 import { isPathLockedForFree } from '../../lib/freeTier'
+import { useSpaceQuantAccess } from '../../lib/spacequant'
 import ISTLogo from '../ui/ISTLogo'
 import UserAvatar from '../ui/UserAvatar'
 import { useNews, NewsDot } from '../../context/NewsContext'
@@ -61,12 +62,14 @@ export default function Sidebar() {
   const { setProfileOpen, navMode, setNavMode } = useUI()
   const { hasNews } = useNews()
   const navigate = useNavigate()
+  const spaceQuantAccess = useSpaceQuantAccess()
   if (!user) return null
 
   const roles     = normalizeRoles(user.role, user.roles)
   const canManage = hasManagement(roles)
   const mode      = canManage ? navMode : 'use'
-  const items     = getNavForMode(mode, roles)
+  // Beta ristretta: la voce compare solo per chi ha accesso (verificato server-side).
+  const items     = getNavForMode(mode, roles).filter(i => i.path !== '/student/spacequant' || spaceQuantAccess)
 
   const switchMode = (target: 'use' | 'manage') => {
     if (target === mode) return

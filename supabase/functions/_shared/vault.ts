@@ -123,6 +123,73 @@ export function buildGraph(files: VaultFile[]): { nodi: GraphNode[]; archi: Grap
   return { nodi, archi }
 }
 
+// Grafo dimostrativo, usato SOLO finché il bucket del vault è vuoto (prima
+// dell'ingestion). Titoli/collegamenti coerenti con lo schema reale delle
+// note (stesse 8 cartelle, stesso stile di collegamento denso) così l'anteprima
+// sembra autentica; sparisce da solo non appena le note vere vengono caricate.
+const DEMO_EDGES: GraphEdge[] = [
+  { da: 'R-multiple', a: 'Il motore di backtest' },
+  { da: 'R-multiple', a: 'Lotto e rischio' },
+  { da: 'R-multiple', a: 'Capire un backtest' },
+  { da: 'R-multiple', a: 'La valuta del conto' },
+  { da: 'R-multiple', a: 'Specifiche di mercato' },
+  { da: 'La valuta del conto', a: 'Specifiche di mercato' },
+  { da: 'La valuta del conto', a: 'Lotto e rischio' },
+  { da: 'Il motore di backtest', a: 'Capire un backtest' },
+  { da: 'Specifiche di mercato', a: 'I numeri in valuta non tornano' },
+  { da: 'La valuta del conto', a: 'I numeri in valuta non tornano' },
+  { da: 'Il Vault, 5 verifiche', a: 'Creare una Strategia' },
+  { da: 'Creare una Strategia', a: 'Validare i parametri' },
+  { da: 'Validare i parametri', a: 'Overfitting' },
+  { da: 'Validare i parametri', a: 'Overfitting sui parametri' },
+  { da: 'Export MQL5', a: 'Creare una Strategia' },
+  { da: 'Il Vault, 5 verifiche', a: 'Il motore di backtest' },
+  { da: 'Overfitting', a: 'Overfitting sui parametri' },
+  { da: 'Overfitting', a: 'Edge statistico' },
+  { da: 'Edge statistico', a: 'R-multiple' },
+  { da: 'MAE e MFE', a: 'Il motore di backtest' },
+  { da: 'MAE e MFE', a: 'Drawdown massimo' },
+  { da: 'Drawdown massimo', a: 'Profit Factor' },
+  { da: 'Profit Factor', a: 'Win Rate' },
+  { da: 'Profit Factor', a: 'R-multiple medio' },
+  { da: 'Sharpe Ratio', a: 'Profit Factor' },
+  { da: 'R-multiple medio', a: 'R-multiple' },
+  { da: 'Win Rate', a: 'La Strategia non entra mai' },
+  { da: 'Dashboard Strategie', a: 'Report Backtest' },
+  { da: 'Report Backtest', a: 'Confronto Strategie' },
+  { da: 'Report Backtest', a: 'Profit Factor' },
+  { da: 'Dashboard Strategie', a: 'Il Vault, 5 verifiche' },
+  { da: 'La Strategia non entra mai', a: 'Creare una Strategia' },
+  { da: 'Inizia da qui', a: 'R-multiple' },
+  { da: 'Inizia da qui', a: 'Il Vault, 5 verifiche' },
+  { da: 'Inizia da qui', a: 'Dashboard Strategie' },
+]
+
+const DEMO_FOLDERS: Record<string, string> = {
+  'R-multiple': 'Capire', 'Specifiche di mercato': 'Capire', 'La valuta del conto': 'Capire',
+  'Il motore di backtest': 'Capire', 'Capire un backtest': 'Capire', 'Lotto e rischio': 'Capire',
+  'Il Vault, 5 verifiche': 'Come fare', 'Export MQL5': 'Come fare',
+  'Creare una Strategia': 'Come fare', 'Validare i parametri': 'Come fare',
+  'Overfitting': 'Concetti', 'Edge statistico': 'Concetti',
+  'MAE e MFE': 'Glossario', 'Drawdown massimo': 'Glossario',
+  'Profit Factor': 'Metriche', 'Sharpe Ratio': 'Metriche', 'Win Rate': 'Metriche', 'R-multiple medio': 'Metriche',
+  'Dashboard Strategie': 'Pagine', 'Report Backtest': 'Pagine', 'Confronto Strategie': 'Pagine',
+  'La Strategia non entra mai': 'Problemi', 'I numeri in valuta non tornano': 'Problemi', 'Overfitting sui parametri': 'Problemi',
+  'Inizia da qui': 'Indice',
+}
+
+export function buildDemoGraph(): { nodi: GraphNode[]; archi: GraphEdge[] } {
+  const grado = new Map<string, number>()
+  for (const e of DEMO_EDGES) {
+    grado.set(e.da, (grado.get(e.da) ?? 0) + 1)
+    grado.set(e.a, (grado.get(e.a) ?? 0) + 1)
+  }
+  const nodi: GraphNode[] = Object.entries(DEMO_FOLDERS).map(([id, cartella]) => ({
+    id, cartella, grado: grado.get(id) ?? 0,
+  }))
+  return { nodi, archi: DEMO_EDGES }
+}
+
 // Concatenazione deterministica dell'intero vault per il blocco system cacheable.
 // MAI restituita al client — solo usata per costruire la richiesta ad Anthropic.
 export function buildSystemText(files: VaultFile[]): string {
