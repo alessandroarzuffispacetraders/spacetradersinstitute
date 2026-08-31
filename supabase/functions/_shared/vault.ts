@@ -124,70 +124,89 @@ export function buildGraph(files: VaultFile[]): { nodi: GraphNode[]; archi: Grap
 }
 
 // Grafo dimostrativo, usato SOLO finché il bucket del vault è vuoto (prima
-// dell'ingestion). Titoli/collegamenti coerenti con lo schema reale delle
-// note (stesse 8 cartelle, stesso stile di collegamento denso) così l'anteprima
-// sembra autentica; sparisce da solo non appena le note vere vengono caricate.
-const DEMO_EDGES: GraphEdge[] = [
-  { da: 'R-multiple', a: 'Il motore di backtest' },
-  { da: 'R-multiple', a: 'Lotto e rischio' },
-  { da: 'R-multiple', a: 'Capire un backtest' },
-  { da: 'R-multiple', a: 'La valuta del conto' },
-  { da: 'R-multiple', a: 'Specifiche di mercato' },
-  { da: 'La valuta del conto', a: 'Specifiche di mercato' },
-  { da: 'La valuta del conto', a: 'Lotto e rischio' },
-  { da: 'Il motore di backtest', a: 'Capire un backtest' },
-  { da: 'Specifiche di mercato', a: 'I numeri in valuta non tornano' },
-  { da: 'La valuta del conto', a: 'I numeri in valuta non tornano' },
-  { da: 'Il Vault, 5 verifiche', a: 'Creare una Strategia' },
-  { da: 'Creare una Strategia', a: 'Validare i parametri' },
-  { da: 'Validare i parametri', a: 'Overfitting' },
-  { da: 'Validare i parametri', a: 'Overfitting sui parametri' },
-  { da: 'Export MQL5', a: 'Creare una Strategia' },
-  { da: 'Il Vault, 5 verifiche', a: 'Il motore di backtest' },
-  { da: 'Overfitting', a: 'Overfitting sui parametri' },
-  { da: 'Overfitting', a: 'Edge statistico' },
-  { da: 'Edge statistico', a: 'R-multiple' },
-  { da: 'MAE e MFE', a: 'Il motore di backtest' },
-  { da: 'MAE e MFE', a: 'Drawdown massimo' },
-  { da: 'Drawdown massimo', a: 'Profit Factor' },
-  { da: 'Profit Factor', a: 'Win Rate' },
-  { da: 'Profit Factor', a: 'R-multiple medio' },
-  { da: 'Sharpe Ratio', a: 'Profit Factor' },
-  { da: 'R-multiple medio', a: 'R-multiple' },
-  { da: 'Win Rate', a: 'La Strategia non entra mai' },
-  { da: 'Dashboard Strategie', a: 'Report Backtest' },
-  { da: 'Report Backtest', a: 'Confronto Strategie' },
-  { da: 'Report Backtest', a: 'Profit Factor' },
-  { da: 'Dashboard Strategie', a: 'Il Vault, 5 verifiche' },
-  { da: 'La Strategia non entra mai', a: 'Creare una Strategia' },
-  { da: 'Inizia da qui', a: 'R-multiple' },
-  { da: 'Inizia da qui', a: 'Il Vault, 5 verifiche' },
-  { da: 'Inizia da qui', a: 'Dashboard Strategie' },
-]
+// dell'ingestion) — sparisce da solo non appena le note vere vengono caricate.
+// Generato proceduralmente (tanti nodi, come richiesto) con un collegamento a
+// "attaccamento preferenziale": ogni nuovo nodo si aggancia a nodi già molto
+// connessi con più probabilità — è lo stesso meccanismo che produce la
+// struttura a hub tipica dei grafi Obsidian reali (pochi nodi molto centrali,
+// tanti periferici), non un reticolo uniforme che sembrerebbe finto.
 
-const DEMO_FOLDERS: Record<string, string> = {
-  'R-multiple': 'Capire', 'Specifiche di mercato': 'Capire', 'La valuta del conto': 'Capire',
-  'Il motore di backtest': 'Capire', 'Capire un backtest': 'Capire', 'Lotto e rischio': 'Capire',
-  'Il Vault, 5 verifiche': 'Come fare', 'Export MQL5': 'Come fare',
-  'Creare una Strategia': 'Come fare', 'Validare i parametri': 'Come fare',
-  'Overfitting': 'Concetti', 'Edge statistico': 'Concetti',
-  'MAE e MFE': 'Glossario', 'Drawdown massimo': 'Glossario',
-  'Profit Factor': 'Metriche', 'Sharpe Ratio': 'Metriche', 'Win Rate': 'Metriche', 'R-multiple medio': 'Metriche',
-  'Dashboard Strategie': 'Pagine', 'Report Backtest': 'Pagine', 'Confronto Strategie': 'Pagine',
-  'La Strategia non entra mai': 'Problemi', 'I numeri in valuta non tornano': 'Problemi', 'Overfitting sui parametri': 'Problemi',
-  'Inizia da qui': 'Indice',
+// PRNG deterministico (mulberry32): stesso identico grafo ad ogni richiesta
+// finché il codice non cambia, non rigenerato/rimescolato ad ogni reload.
+function mulberry32(seed: number) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6d2b79f5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
 }
 
+const DEMO_CONCEPTS = [
+  'R-multiple', 'Specifiche di mercato', 'La valuta del conto', 'Il motore di backtest',
+  'Capire un backtest', 'Lotto e rischio', 'Il Vault, 5 verifiche', 'Export MQL5',
+  'Creare una Strategia', 'Validare i parametri', 'La Strategia non entra mai',
+  'I numeri in valuta non tornano', 'MAE e MFE', 'Dashboard Strategie', 'Report Backtest',
+  'Confronto Strategie', 'Inizia da qui', 'Profit Factor', 'Sharpe Ratio', 'Sortino Ratio',
+  'Drawdown massimo', 'Volatilità', 'Slippage', 'Spread', 'Correlazione', 'Overfitting',
+  'Edge statistico', 'Money management', 'Position sizing', 'Timeframe', 'Walk-forward',
+  'Monte Carlo', 'Curva di equity', 'Expectancy', 'Win Rate', 'Payoff Ratio',
+  'Kelly Criterion', 'Value at Risk', 'Beta di mercato', 'Regime di mercato',
+  'Autocorrelazione', 'Stazionarietà', 'Rumore di mercato', 'Bias di sopravvivenza',
+  'Data snooping', 'Robustezza', 'Sensitivity Analysis', 'Rolling Window',
+  'Cross-validation', 'Out-of-sample', 'In-sample', 'Grid Search',
+  'Ottimizzazione parametri', 'Curve fitting', 'Trend following', 'Mean reversion',
+  'Breakout', 'Momentum', 'Volume Profile', 'Order Flow', 'Liquidità', 'Market Impact',
+  'Commissioni', 'Costi di transazione', 'Latenza di esecuzione', 'Tick data',
+  'Bar aggregation', 'Renko', 'Heikin Ashi', 'Expert Advisor', 'MQL5',
+  'Tester Strategie', 'Ottimizzatore genetico',
+]
+const DEMO_MODIFIERS = [': errori comuni', ' — esempio pratico', ', checklist', ': quando fidarsi', ' e falsi segnali', ': un caso reale']
+const DEMO_FOLDER_NAMES = ['Capire', 'Come fare', 'Concetti', 'Glossario', 'Metriche', 'Pagine', 'Problemi', 'Indice']
+const DEMO_NODE_COUNT = 160
+
 export function buildDemoGraph(): { nodi: GraphNode[]; archi: GraphEdge[] } {
-  const grado = new Map<string, number>()
-  for (const e of DEMO_EDGES) {
-    grado.set(e.da, (grado.get(e.da) ?? 0) + 1)
-    grado.set(e.a, (grado.get(e.a) ?? 0) + 1)
+  const rand = mulberry32(42)
+
+  const titles: string[] = []
+  const seen = new Set<string>()
+  let guard = 0
+  while (titles.length < DEMO_NODE_COUNT && guard < DEMO_NODE_COUNT * 6) {
+    guard++
+    const base = DEMO_CONCEPTS[Math.floor(rand() * DEMO_CONCEPTS.length)]
+    const title = titles.length < DEMO_CONCEPTS.length
+      ? DEMO_CONCEPTS[titles.length] // prima passata: tutti i concetti base, senza ripetizioni
+      : base + DEMO_MODIFIERS[Math.floor(rand() * DEMO_MODIFIERS.length)]
+    if (seen.has(title)) continue
+    seen.add(title); titles.push(title)
   }
-  const nodi: GraphNode[] = Object.entries(DEMO_FOLDERS).map(([id, cartella]) => ({
-    id, cartella, grado: grado.get(id) ?? 0,
+
+  const archi: GraphEdge[] = []
+  const grado = new Map<string, number>()
+  const bump = (t: string) => grado.set(t, (grado.get(t) ?? 0) + 1)
+
+  for (let i = 1; i < titles.length; i++) {
+    const target = titles[i]
+    const linkCount = 1 + Math.floor(rand() * 3) // 1-3 collegamenti a nodi già esistenti
+    const pool = titles.slice(0, i)
+    const weights = pool.map(t => (grado.get(t) ?? 0) + 1) // +1: anche i nodi isolati hanno una chance
+    const totalWeight = weights.reduce((a, b) => a + b, 0)
+    const chosen = new Set<number>()
+    for (let k = 0; k < linkCount && chosen.size < pool.length; k++) {
+      let r = rand() * totalWeight
+      let idx = 0
+      for (; idx < weights.length - 1; idx++) { r -= weights[idx]; if (r <= 0) break }
+      if (chosen.has(idx)) continue
+      chosen.add(idx)
+      archi.push({ da: target, a: pool[idx] })
+      bump(target); bump(pool[idx])
+    }
+  }
+
+  const nodi: GraphNode[] = titles.map((id, i) => ({
+    id, cartella: DEMO_FOLDER_NAMES[i % DEMO_FOLDER_NAMES.length], grado: grado.get(id) ?? 0,
   }))
-  return { nodi, archi: DEMO_EDGES }
+  return { nodi, archi }
 }
 
 // Concatenazione deterministica dell'intero vault per il blocco system cacheable.

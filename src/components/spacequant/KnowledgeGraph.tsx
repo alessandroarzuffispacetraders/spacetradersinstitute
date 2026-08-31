@@ -2,24 +2,15 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useTheme } from '../../context/ThemeContext'
 import type { GraphNode, GraphEdge } from '../../lib/spacequant'
 
-// Palette categoriale validata (dataviz skill, references/palette.md) — 8 slot
-// fissi, uno per cartella del vault. Il grafo mostra tutte le 8 categorie
-// insieme (caso "scatter/pairs all"): alcune coppie non superano da sole i
-// controlli di distinguibilità CVD, per questo la legenda resta SEMPRE visibile
-// (colore + testo, mai solo colore) e l'hover isola nodo+vicini invece di
-// affidarsi alla sola tonalità per riconoscere una categoria.
-const FOLDER_ORDER = ['Capire', 'Come fare', 'Concetti', 'Glossario', 'Metriche', 'Pagine', 'Problemi', 'Indice']
-const LIGHT_HEX = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948']
-const DARK_HEX = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767']
-
-function folderColor(folder: string, theme: 'light' | 'dark'): string {
-  const idx = FOLDER_ORDER.indexOf(folder)
-  const arr = theme === 'dark' ? DARK_HEX : LIGHT_HEX
-  return idx >= 0 ? arr[idx] : arr[arr.length - 1]
+// Monocromatico, in linea coi token dell'app (niente colore per cartella:
+// richiesta esplicita, il grafo deve restare "leggero" come in Obsidian).
+const INK = {
+  dark:  { dot: '255,255,255', line: 'rgba(255,255,255,0.055)', lineHover: 'rgba(255,255,255,0.4)', ring: '#ffffff' },
+  light: { dot: '15,25,35',    line: 'rgba(15,25,35,0.07)',     lineHover: 'rgba(15,25,35,0.4)',    ring: '#0b0b0b' },
 }
 
 function nodeRadius(grado: number): number {
-  return 4 + Math.sqrt(grado) * 2
+  return 1.5 + Math.sqrt(grado) * 1.1
 }
 
 interface SimNode extends GraphNode {
@@ -57,70 +48,9 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   const hoveredRef = useRef<string | null>(null)
   const rafRef = useRef<number | null>(null)
   const quietFramesRef = useRef(0)
-  const themeRef = useRef(theme)
-  themeRef.current = theme
 
   // Drag/pan state (mutabile, non serve un re-render ad ogni pixel)
   const dragRef = useRef<{ mode: 'node' | 'pan' | 'pinch'; nodeId?: string; lastX: number; lastY: number; moved: boolean; pinchDist?: number } | null>(null)
-
-  // ── Inizializza la simulazione quando cambiano i dati ─────────────────────
-  useEffect(() => {
-    const n = nodi.length
-    const raggioIniziale = Math.max(120, Math.sqrt(n) * 40)
-    simRef.current = nodi.map((node, i) => {
-      const angolo = (i / Math.max(1, n)) * Math.PI * 2
-      return {
-        ...node,
-        x: Math.cos(angolo) * raggioIniziale,
-        y: Math.sin(angolo) * raggioIniziale,
-        vx: 0, vy: 0, fx: null, fy: null,
-      }
-    })
-    const indexById = new Map(nodi.map((n, i) => [n.id, i]))
-    edgesIdxRef.current = archi
-      .map(e => [indexById.get(e.da), indexById.get(e.a)] as [number | undefined, number | undefined])
-      .filter((pair): pair is [number, number] => pair[0] !== undefined && pair[1] !== undefined)
-
-    const neighbors = new Map<string, Set<string>>()
-    for (const e of archi) {
-      if (!neighbors.has(e.da)) neighbors.set(e.da, new Set())
-      if (!neighbors.has(e.a)) neighbors.set(e.a, new Set())
-      neighbors.get(e.da)!.add(e.a)
-      neighbors.get(e.a)!.add(e.da)
-    }
-    neighborsRef.current = neighbors
-
-    quietFramesRef.current = 0
-    startLoop()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodi, archi])
-
-  // ── Ridimensionamento del canvas (ResizeObserver + devicePixelRatio) ──────
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const observer = new ResizeObserver((entries) => {
-      const { width, height } = entries[0].contentRect
-      setSize({ w: width, h: height })
-      if (viewRef.current.tx === 0 && viewRef.current.ty === 0) {
-        viewRef.current = { scale: 1, tx: width / 2, ty: height / 2 }
-      }
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || size.w === 0) return
-    const dpr = window.devicePixelRatio || 1
-    canvas.width = size.w * dpr
-    canvas.height = size.h * dpr
-    canvas.style.width = `${size.w}px`
-    canvas.style.height = `${size.h}px`
-    const ctx = canvas.getContext('2d')
-    ctx?.scale(dpr, dpr)
-  }, [size])
 
   // ── Passo di simulazione (repulsione + molle + gravità + attrito) ────────
   const step = useCallback(() => {
@@ -170,29 +100,29 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     const view = viewRef.current
     const hovered = hoveredRef.current
     const activeNeighbors = hovered ? neighborsRef.current.get(hovered) : null
+    const ink = INK[theme]
 
     ctx.clearRect(0, 0, w, h)
 
     const toScreen = (x: number, y: number) => [x * view.scale + view.tx, y * view.scale + view.ty]
 
-    // Archi
+    // Archi — bassissima opacità di base (come in Obsidian: quasi invisibili
+    // finché non tocchi un nodo), si accendono solo per il nodo in hover.
     for (const [i, j] of edgesIdxRef.current) {
       const a = simRef.current[i], b = simRef.current[j]
       if (!a || !b) continue
-      const dim = hovered && a.id !== hovered && b.id !== hovered
+      const touchesHover = hovered && (a.id === hovered || b.id === hovered)
       const [ax, ay] = toScreen(a.x, a.y)
       const [bx, by] = toScreen(b.x, b.y)
       ctx.beginPath()
       ctx.moveTo(ax, ay)
       ctx.lineTo(bx, by)
-      ctx.strokeStyle = theme === 'dark'
-        ? (dim ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.16)')
-        : (dim ? 'rgba(11,11,11,0.05)' : 'rgba(11,11,11,0.14)')
-      ctx.lineWidth = 1
+      ctx.strokeStyle = touchesHover ? ink.lineHover : ink.line
+      ctx.lineWidth = touchesHover ? 1 : 0.6
       ctx.stroke()
     }
 
-    // Nodi
+    // Nodi — piccoli e monocromatici, più opachi quanto più sono connessi.
     const zoomedIn = view.scale > 1.6
     for (const n of simRef.current) {
       const isHovered = n.id === hovered
@@ -200,26 +130,23 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       const dim = hovered && !isHovered && !isNeighbor
       const [x, y] = toScreen(n.x, n.y)
       const r = nodeRadius(n.grado) * Math.min(1.4, Math.max(0.7, view.scale))
+      const baseAlpha = Math.min(1, 0.32 + Math.sqrt(n.grado) * 0.1)
 
       ctx.beginPath()
       ctx.arc(x, y, r, 0, Math.PI * 2)
-      ctx.fillStyle = folderColor(n.cartella, theme)
-      ctx.globalAlpha = dim ? 0.25 : 1
+      ctx.fillStyle = `rgba(${ink.dot},${dim ? baseAlpha * 0.25 : baseAlpha})`
       ctx.fill()
       if (isHovered) {
-        ctx.lineWidth = 2
-        ctx.strokeStyle = theme === 'dark' ? '#ffffff' : '#0b0b0b'
+        ctx.lineWidth = 1.5
+        ctx.strokeStyle = ink.ring
         ctx.stroke()
       }
-      ctx.globalAlpha = 1
 
       // Etichette: sempre sui nodi ad alto grado, tutte quando si è ingranditi.
       if (isHovered || zoomedIn || n.grado >= 10) {
         ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif'
-        ctx.fillStyle = theme === 'dark' ? 'rgba(255,255,255,0.92)' : 'rgba(11,11,11,0.88)'
-        ctx.globalAlpha = dim ? 0.3 : 1
+        ctx.fillStyle = `rgba(${ink.dot},${dim ? 0.25 : 0.85})`
         ctx.fillText(n.id, x + r + 4, y + 4)
-        ctx.globalAlpha = 1
       }
     }
   }, [size, theme])
@@ -236,14 +163,78 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     rafRef.current = requestAnimationFrame(loop)
   }, [step, draw])
 
+  // IMPORTANTE: deve dipendere da `loop` (che a sua volta dipende da `draw`,
+  // che dipende da size/theme). Con deps vuote questa funzione resta legata
+  // per sempre al primissimo `draw` (creato quando size era ancora {w:0,h:0}):
+  // clearRect(0,0,0,0) non pulisce nulla → i nodi trascinati lasciavano una
+  // scia, perché ogni riavvio del loop durante il drag ridisegnava sopra il
+  // frame precedente senza mai cancellarlo.
   const startLoop = useCallback(() => {
     quietFramesRef.current = 0
     if (rafRef.current === null) rafRef.current = requestAnimationFrame(loop)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loop])
+
+  // ── Inizializza la simulazione quando cambiano i dati ─────────────────────
+  useEffect(() => {
+    const n = nodi.length
+    const raggioIniziale = Math.max(120, Math.sqrt(n) * 40)
+    simRef.current = nodi.map((node, i) => {
+      const angolo = (i / Math.max(1, n)) * Math.PI * 2
+      return {
+        ...node,
+        x: Math.cos(angolo) * raggioIniziale,
+        y: Math.sin(angolo) * raggioIniziale,
+        vx: 0, vy: 0, fx: null, fy: null,
+      }
+    })
+    const indexById = new Map(nodi.map((n, i) => [n.id, i]))
+    edgesIdxRef.current = archi
+      .map(e => [indexById.get(e.da), indexById.get(e.a)] as [number | undefined, number | undefined])
+      .filter((pair): pair is [number, number] => pair[0] !== undefined && pair[1] !== undefined)
+
+    const neighbors = new Map<string, Set<string>>()
+    for (const e of archi) {
+      if (!neighbors.has(e.da)) neighbors.set(e.da, new Set())
+      if (!neighbors.has(e.a)) neighbors.set(e.a, new Set())
+      neighbors.get(e.da)!.add(e.a)
+      neighbors.get(e.a)!.add(e.da)
+    }
+    neighborsRef.current = neighbors
+
+    quietFramesRef.current = 0
+    startLoop()
+  }, [nodi, archi, startLoop])
+
+  // ── Ridimensionamento del canvas (ResizeObserver + devicePixelRatio) ──────
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect
+      setSize({ w: width, h: height })
+      if (viewRef.current.tx === 0 && viewRef.current.ty === 0) {
+        viewRef.current = { scale: 1, tx: width / 2, ty: height / 2 }
+      }
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [])
 
   useEffect(() => {
-    draw() // ridisegna subito su resize/cambio tema anche a simulazione ferma
+    const canvas = canvasRef.current
+    if (!canvas || size.w === 0) return
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = size.w * dpr
+    canvas.height = size.h * dpr
+    canvas.style.width = `${size.w}px`
+    canvas.style.height = `${size.h}px`
+    const ctx = canvas.getContext('2d')
+    ctx?.scale(dpr, dpr)
+    draw() // ridisegna subito col nuovo canvas: la simulazione potrebbe essere ferma
+  }, [size, draw])
+
+  useEffect(() => {
+    draw() // ridisegna subito su cambio tema anche a simulazione ferma
   }, [draw])
 
   useEffect(() => () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current) }, [])
@@ -396,20 +387,6 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
       />
-      {/* Legenda — sempre visibile, colore + testo (mai solo colore): alcune
-          coppie della palette non sono distinguibili in isolamento da chi ha
-          daltonismo, il testo è la fonte di verità per l'identità categoria. */}
-      <div
-        className="absolute bottom-3 left-3 right-3 flex flex-wrap gap-x-3 gap-y-1.5 px-3 py-2 rounded-xl text-[11px]"
-        style={{ background: 'var(--ist-nav-bg)', border: '1px solid var(--ist-border)', color: 'var(--ist-text-dim)' }}
-      >
-        {FOLDER_ORDER.map(folder => (
-          <span key={folder} className="inline-flex items-center gap-1.5">
-            <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: folderColor(folder, theme) }} />
-            {folder}
-          </span>
-        ))}
-      </div>
     </div>
   )
 }
