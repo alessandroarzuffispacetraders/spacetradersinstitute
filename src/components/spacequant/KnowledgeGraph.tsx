@@ -97,40 +97,79 @@ function calcolaLayout(nodi: GraphNode[], archi: GraphEdge[], boundary: number):
   return nodes.map((n): SimNode => ({ id: n.id, cartella: n.cartella, grado: n.grado, x: n.x, y: n.y }))
 }
 
-// ── Animazione "a tocco": leggerissima, sempre a durata fissa e mai a catena ──
+// ── Animazione "a tocco": leggerissima, a "effetto catena" (non un blocco
+// rigido) ──────────────────────────────────────────────────────────────────
 // Ogni tanto un nodo scelto a caso si sposta di poco e RESTA lì (nessun
-// ritorno alla posizione di partenza): chi gli sta vicino sullo SCHERMO (non
-// chi è collegato nel grafo — è un effetto di spostamento fisico, come un
-// girino che sposta l'acqua attorno a sé) viene trascinato in proporzione
-// alla distanza, con una piccola variazione individuale di angolo/ampiezza
-// così l'effetto non sembri meccanico. Durata fissa (nessuna soglia di
-// energia): evita la classe di bug già vista (un loop continuo che può
-// restare agganciato a una versione vecchia del disegno). Tocca solo i nodi
-// entro un raggio limitato, mai tutti e 160.
+// ritorno alla posizione di partenza). Chi gli sta vicino sullo SCHERMO (non
+// chi è collegato nel grafo) lo segue con DUE attenuazioni insieme:
+// - di AMPIEZZA (più lontano = si sposta meno, come prima),
+// - di TEMPO (più lontano = inizia a muoversi più tardi, come un'onda che si
+//   propaga a velocità finita, non un blocco che si sposta tutto insieme).
+// È la stessa identica meccanica usata anche per il trascinamento manuale
+// (vedi dragStoriaRef più sotto), così i due si comportano allo stesso modo.
+// Durata variabile per nodo ma sempre finita (nessuna soglia di energia):
+// evita la classe di bug già vista (un loop continuo che può restare
+// agganciato a una versione vecchia del disegno). Tocca solo i nodi entro un
+// raggio limitato, mai tutti e 160.
 const RIPPLE_DURATA_MS = 1400
 const RIPPLE_RAGGIO = 75 // distanza sullo schermo entro cui si sente lo spostamento
+const ONDA_VELOCITA = 190 // px/secondo: a che velocità l'effetto raggiunge i vicini più lontani
 
 function easeOutCubic(t: number): number { return 1 - Math.pow(1 - t, 3) }
 
-// Sposta di (dx,dy) i nodi entro RIPPLE_RAGGIO da (originX,originY), con
-// un'attenuazione che decresce dolcemente con la distanza — è la "spinta"
-// che uno spostamento (automatico o un trascinamento manuale) esercita sui
-// nodi spazialmente vicini, indipendentemente da eventuali collegamenti nel
-// grafo. Usata sia dal "tocco" automatico sia dal trascinamento, così i due
-// si comportano allo stesso identico modo.
-function applicaSpostamentoVicini(nodes: SimNode[], originX: number, originY: number, dx: number, dy: number, escludi: SimNode) {
-  if (dx === 0 && dy === 0) return
+// Posizione di un punto che avanza (con decelerazione) da (ox,oy) a (tx,ty)
+// in RIPPLE_DURATA_MS, valutata a un istante "trascorsoMs" — se negativo (il
+// punto non è ancora "partito", per un vicino il cui ritardo non è ancora
+// passato) resta fermo all'inizio; se oltre la durata resta fermo alla fine.
+function posizioneEased(ox: number, oy: number, tx: number, ty: number, trascorsoMs: number) {
+  const t = Math.min(1, Math.max(0, trascorsoMs) / RIPPLE_DURATA_MS)
+  const k = easeOutCubic(t)
+  return { x: ox + (tx - ox) * k, y: oy + (ty - oy) * k }
+}
+
+// Posizione interpolata di un punto in movimento REALE (non calcolabile in
+// anticipo come l'animazione automatica) a partire dal suo storico recente —
+// usata per il trascinamento manuale: ogni vicino "insegue" la posizione che
+// il nodo trascinato aveva un po' di tempo fa, non quella attuale.
+function posizioneStorica(storia: { x: number; y: number; t: number }[], t: number) {
+  if (storia.length === 0) return { x: 0, y: 0 }
+  if (t <= storia[0].t) return { x: storia[0].x, y: storia[0].y }
+  const ultimo = storia[storia.length - 1]
+  if (t >= ultimo.t) return { x: ultimo.x, y: ultimo.y }
+  for (let i = 1; i < storia.length; i++) {
+    if (storia[i].t >= t) {
+      const a = storia[i - 1], b = storia[i]
+      const frac = (t - a.t) / (b.t - a.t || 1)
+      return { x: a.x + (b.x - a.x) * frac, y: a.y + (b.y - a.y) * frac }
+    }
+  }
+  return { x: ultimo.x, y: ultimo.y }
+}
+
+interface VicinoCatena { node: SimNode; offsetX: number; offsetY: number; ritardoMs: number; falloff: number }
+
+// Calcola i nodi entro RIPPLE_RAGGIO da (originX,originY) — con ritardo e
+// attenuazione dell'ampiezza proporzionali alla distanza — pronti per essere
+// "trascinati" dietro l'origine man mano che si muove. Usata sia dal "tocco"
+// automatico sia dall'inizio di un trascinamento manuale.
+function trovaViciniCatena(nodes: SimNode[], originX: number, originY: number, escludi: SimNode): VicinoCatena[] {
+  const vicini: VicinoCatena[] = []
   for (const n of nodes) {
     if (n === escludi) continue
     const d = Math.hypot(n.x - originX, n.y - originY)
     if (d > RIPPLE_RAGGIO) continue
-    const falloff = Math.pow(1 - d / RIPPLE_RAGGIO, 1.5)
-    n.x += dx * falloff
-    n.y += dy * falloff
+    vicini.push({
+      node: n,
+      offsetX: n.x - originX,
+      offsetY: n.y - originY,
+      ritardoMs: (d / ONDA_VELOCITA) * 1000,
+      falloff: Math.pow(1 - d / RIPPLE_RAGGIO, 1.3),
+    })
   }
+  return vicini
 }
 
-interface RippleState { node: SimNode; ox: number; oy: number; tx: number; ty: number; start: number }
+interface RippleState { node: SimNode; ox: number; oy: number; tx: number; ty: number; start: number; vicini: VicinoCatena[]; maxRitardoMs: number }
 
 interface Props {
   nodi: GraphNode[]
@@ -156,6 +195,12 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   const rippleTimerRef = useRef<number | null>(null)
 
   const dragRef = useRef<{ mode: 'node' | 'pan' | 'pinch'; nodeId?: string; lastX: number; lastY: number; moved: boolean; pinchDist?: number } | null>(null)
+  // Storico delle posizioni del nodo trascinato (per far "inseguire" i vicini
+  // con ritardo, invece che spostarli in blocco nello stesso istante) + la
+  // lista dei vicini coinvolti, calcolata una volta all'inizio del trascinamento.
+  const dragOrigineRef = useRef({ x: 0, y: 0 })
+  const dragStoriaRef = useRef<{ x: number; y: number; t: number }[]>([])
+  const dragViciniRef = useRef<VicinoCatena[]>([])
 
   // ── Disegno — dipende SOLO dal tema: la dimensione si legge da un ref, mai
   // da una chiusura che può restare agganciata a una misura superata. ────────
@@ -223,25 +268,26 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   drawRef.current = draw
 
   // ── Ciclo del "tocco": il nodo scelto avanza (con decelerazione) verso una
-  // meta vicina; ad ogni fotogramma lo spostamento INCREMENTALE di quel
-  // passo si propaga ai nodi spazialmente vicini — lo stesso identico
-  // meccanismo usato per il trascinamento manuale (vedi applicaSpostamento-
-  // Vicini più sotto), quindi il "tocco" automatico e il trascinamento
-  // dell'utente si comportano allo stesso modo, come richiesto. Alla fine
-  // dell'animazione tutto resta esattamente dov'è arrivato: nessun ritorno.
+  // meta vicina; ogni vicino segue la STESSA traiettoria ma valutata con il
+  // proprio ritardo (e alla propria ampiezza ridotta) — il risultato è
+  // un'onda che si propaga verso l'esterno, non un blocco che si sposta
+  // tutto insieme. L'animazione continua finché anche il vicino più
+  // ritardato non ha finito la propria corsa; poi tutto resta esattamente
+  // dov'è arrivato, nessun ritorno.
   const rippleTick = useCallback(() => {
     const r = rippleRef.current
     if (!r) return
-    const t = Math.min(1, (performance.now() - r.start) / RIPPLE_DURATA_MS)
-    const k = easeOutCubic(t)
-    const targetX = r.ox + (r.tx - r.ox) * k
-    const targetY = r.oy + (r.ty - r.oy) * k
-    const dx = targetX - r.node.x, dy = targetY - r.node.y
-    applicaSpostamentoVicini(simRef.current, r.node.x, r.node.y, dx, dy, r.node)
-    r.node.x = targetX
-    r.node.y = targetY
+    const trascorso = performance.now() - r.start
+    const origPos = posizioneEased(r.ox, r.oy, r.tx, r.ty, trascorso)
+    r.node.x = origPos.x
+    r.node.y = origPos.y
+    for (const v of r.vicini) {
+      const p = posizioneEased(r.ox, r.oy, r.tx, r.ty, trascorso - v.ritardoMs)
+      v.node.x = (r.ox + v.offsetX) + (p.x - r.ox) * v.falloff
+      v.node.y = (r.oy + v.offsetY) + (p.y - r.oy) * v.falloff
+    }
     drawRef.current()
-    if (t < 1) {
+    if (trascorso < RIPPLE_DURATA_MS + r.maxRitardoMs) {
       requestAnimationFrame(rippleTick)
     } else {
       rippleRef.current = null
@@ -265,7 +311,10 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       tx *= scale; ty *= scale
     }
 
-    rippleRef.current = { node: origin, ox: origin.x, oy: origin.y, tx, ty, start: performance.now() }
+    const vicini = trovaViciniCatena(nodes, origin.x, origin.y, origin)
+    const maxRitardoMs = vicini.reduce((m, v) => Math.max(m, v.ritardoMs), 0)
+
+    rippleRef.current = { node: origin, ox: origin.x, oy: origin.y, tx, ty, start: performance.now(), vicini, maxRitardoMs }
     requestAnimationFrame(rippleTick)
   }, [rippleTick])
 
@@ -353,6 +402,24 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     return best
   }, [])
 
+  // Aggiorna il nodo trascinato e fa "inseguire" i vicini con ritardo — stessa
+  // meccanica del "tocco" automatico (vedi trovaViciniCatena/posizioneStorica),
+  // così il trascinamento manuale si comporta esattamente allo stesso modo.
+  const aggiornaTrascinamento = useCallback((node: SimNode, nuovaX: number, nuovaY: number) => {
+    const ora = performance.now()
+    dragStoriaRef.current.push({ x: nuovaX, y: nuovaY, t: ora })
+    while (dragStoriaRef.current.length > 2 && ora - dragStoriaRef.current[0].t > 700) dragStoriaRef.current.shift()
+
+    const origine = dragOrigineRef.current
+    for (const v of dragViciniRef.current) {
+      const p = posizioneStorica(dragStoriaRef.current, ora - v.ritardoMs)
+      v.node.x = (origine.x + v.offsetX) + (p.x - origine.x) * v.falloff
+      v.node.y = (origine.y + v.offsetY) + (p.y - origine.y) * v.falloff
+    }
+    node.x = nuovaX
+    node.y = nuovaY
+  }, [])
+
   // ── Interazione mouse ──────────────────────────────────────────────────────
   const onMouseMove = (e: React.MouseEvent) => {
     if (dragRef.current?.mode === 'node') {
@@ -363,10 +430,7 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       if (node) {
         const nuovaX = (e.clientX - rect.left - view.tx) / view.scale
         const nuovaY = (e.clientY - rect.top - view.ty) / view.scale
-        // Trascinare un nodo spinge quelli spazialmente vicini, come lo
-        // spostamento automatico "a tocco" — stesso identico meccanismo.
-        applicaSpostamentoVicini(simRef.current, node.x, node.y, nuovaX - node.x, nuovaY - node.y, node)
-        node.x = nuovaX; node.y = nuovaY
+        aggiornaTrascinamento(node, nuovaX, nuovaY)
       }
       dragRef.current.moved = true
       draw()
@@ -389,6 +453,9 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     const hit = hitTest(e.clientX, e.clientY)
     if (hit) {
       rippleRef.current = null // non far competere il tocco con il trascinamento manuale
+      dragOrigineRef.current = { x: hit.x, y: hit.y }
+      dragStoriaRef.current = [{ x: hit.x, y: hit.y, t: performance.now() }]
+      dragViciniRef.current = trovaViciniCatena(simRef.current, hit.x, hit.y, hit)
       dragRef.current = { mode: 'node', nodeId: hit.id, lastX: e.clientX, lastY: e.clientY, moved: false }
     } else {
       dragRef.current = { mode: 'pan', lastX: e.clientX, lastY: e.clientY, moved: false }
@@ -422,6 +489,9 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     const hit = hitTest(t.clientX, t.clientY)
     if (hit) {
       rippleRef.current = null
+      dragOrigineRef.current = { x: hit.x, y: hit.y }
+      dragStoriaRef.current = [{ x: hit.x, y: hit.y, t: performance.now() }]
+      dragViciniRef.current = trovaViciniCatena(simRef.current, hit.x, hit.y, hit)
       dragRef.current = { mode: 'node', nodeId: hit.id, lastX: t.clientX, lastY: t.clientY, moved: false }
     } else {
       dragRef.current = { mode: 'pan', lastX: t.clientX, lastY: t.clientY, moved: false }
@@ -449,8 +519,7 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       if (node) {
         const nuovaX = (t.clientX - rect.left - view.tx) / view.scale
         const nuovaY = (t.clientY - rect.top - view.ty) / view.scale
-        applicaSpostamentoVicini(simRef.current, node.x, node.y, nuovaX - node.x, nuovaY - node.y, node)
-        node.x = nuovaX; node.y = nuovaY
+        aggiornaTrascinamento(node, nuovaX, nuovaY)
       }
       dragRef.current.moved = true
       draw()
