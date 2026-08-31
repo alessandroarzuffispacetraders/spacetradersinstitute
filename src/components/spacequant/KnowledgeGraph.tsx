@@ -5,8 +5,8 @@ import type { GraphNode, GraphEdge } from '../../lib/spacequant'
 // Monocromatico, in linea coi token dell'app (niente colore per cartella:
 // richiesta esplicita, il grafo deve restare "leggero" come in Obsidian).
 const INK = {
-  dark:  { dot: '255,255,255', line: 'rgba(255,255,255,0.055)', lineHover: 'rgba(255,255,255,0.4)', ring: '#ffffff' },
-  light: { dot: '15,25,35',    line: 'rgba(15,25,35,0.07)',     lineHover: 'rgba(15,25,35,0.4)',    ring: '#0b0b0b' },
+  dark:  { dot: '255,255,255', line: 'rgba(255,255,255,0.09)', lineHover: 'rgba(255,255,255,0.4)', ring: '#ffffff' },
+  light: { dot: '15,25,35',    line: 'rgba(15,25,35,0.11)',    lineHover: 'rgba(15,25,35,0.4)',    ring: '#0b0b0b' },
 }
 
 function nodeRadius(grado: number): number {
@@ -98,17 +98,39 @@ function calcolaLayout(nodi: GraphNode[], archi: GraphEdge[], boundary: number):
 }
 
 // ── Animazione "a tocco": leggerissima, sempre a durata fissa e mai a catena ──
-// Ogni tanto un nodo scelto a caso si sposta di pochissimo; i vicini diretti
-// (e un po' i vicini dei vicini) lo seguono in proporzione per mantenere la
-// distanza, poi TUTTO torna esattamente alla posizione di partenza — un
-// "polso" che passa e si esaurisce, mai un accumulo o una deriva nel tempo.
-// Durata fissa (nessuna soglia di energia): evita la classe di bug già vista
-// (un loop continuo che può restare agganciato a una versione vecchia del
-// disegno). Tocca solo una manciata di nodi alla volta, mai tutti e 160.
-const RIPPLE_DURATA_MS = 1100
-const RIPPLE_FALLOFF = [1, 0.4, 0.14] // per distanza nel grafo 0 (il nodo stesso), 1, 2
+// Ogni tanto un nodo scelto a caso si sposta di poco e RESTA lì (nessun
+// ritorno alla posizione di partenza): chi gli sta vicino sullo SCHERMO (non
+// chi è collegato nel grafo — è un effetto di spostamento fisico, come un
+// girino che sposta l'acqua attorno a sé) viene trascinato in proporzione
+// alla distanza, con una piccola variazione individuale di angolo/ampiezza
+// così l'effetto non sembri meccanico. Durata fissa (nessuna soglia di
+// energia): evita la classe di bug già vista (un loop continuo che può
+// restare agganciato a una versione vecchia del disegno). Tocca solo i nodi
+// entro un raggio limitato, mai tutti e 160.
+const RIPPLE_DURATA_MS = 1400
+const RIPPLE_RAGGIO = 75 // distanza sullo schermo entro cui si sente lo spostamento
 
-interface RippleFrame { node: SimNode; ox: number; oy: number; dx: number; dy: number }
+function easeOutCubic(t: number): number { return 1 - Math.pow(1 - t, 3) }
+
+// Sposta di (dx,dy) i nodi entro RIPPLE_RAGGIO da (originX,originY), con
+// un'attenuazione che decresce dolcemente con la distanza — è la "spinta"
+// che uno spostamento (automatico o un trascinamento manuale) esercita sui
+// nodi spazialmente vicini, indipendentemente da eventuali collegamenti nel
+// grafo. Usata sia dal "tocco" automatico sia dal trascinamento, così i due
+// si comportano allo stesso identico modo.
+function applicaSpostamentoVicini(nodes: SimNode[], originX: number, originY: number, dx: number, dy: number, escludi: SimNode) {
+  if (dx === 0 && dy === 0) return
+  for (const n of nodes) {
+    if (n === escludi) continue
+    const d = Math.hypot(n.x - originX, n.y - originY)
+    if (d > RIPPLE_RAGGIO) continue
+    const falloff = Math.pow(1 - d / RIPPLE_RAGGIO, 1.5)
+    n.x += dx * falloff
+    n.y += dy * falloff
+  }
+}
+
+interface RippleState { node: SimNode; ox: number; oy: number; tx: number; ty: number; start: number }
 
 interface Props {
   nodi: GraphNode[]
@@ -130,7 +152,7 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   const viewRef = useRef<View>({ scale: 1, tx: 0, ty: 0 })
   const hoveredRef = useRef<string | null>(null)
   const boundaryRef = useRef(260)
-  const rippleRef = useRef<{ frames: RippleFrame[]; start: number } | null>(null)
+  const rippleRef = useRef<RippleState | null>(null)
   const rippleTimerRef = useRef<number | null>(null)
 
   const dragRef = useRef<{ mode: 'node' | 'pan' | 'pinch'; nodeId?: string; lastX: number; lastY: number; moved: boolean; pinchDist?: number } | null>(null)
@@ -197,16 +219,24 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   const drawRef = useRef(draw)
   drawRef.current = draw
 
-  // ── Ciclo del "tocco": durata fissa, tocca solo il nodo scelto + vicini ───
+  // ── Ciclo del "tocco": il nodo scelto avanza (con decelerazione) verso una
+  // meta vicina; ad ogni fotogramma lo spostamento INCREMENTALE di quel
+  // passo si propaga ai nodi spazialmente vicini — lo stesso identico
+  // meccanismo usato per il trascinamento manuale (vedi applicaSpostamento-
+  // Vicini più sotto), quindi il "tocco" automatico e il trascinamento
+  // dell'utente si comportano allo stesso modo, come richiesto. Alla fine
+  // dell'animazione tutto resta esattamente dov'è arrivato: nessun ritorno.
   const rippleTick = useCallback(() => {
     const r = rippleRef.current
     if (!r) return
     const t = Math.min(1, (performance.now() - r.start) / RIPPLE_DURATA_MS)
-    const k = Math.sin(t * Math.PI) // 0 → 1 → 0: va e ritorna esattamente all'origine
-    for (const f of r.frames) {
-      f.node.x = f.ox + f.dx * k
-      f.node.y = f.oy + f.dy * k
-    }
+    const k = easeOutCubic(t)
+    const targetX = r.ox + (r.tx - r.ox) * k
+    const targetY = r.oy + (r.ty - r.oy) * k
+    const dx = targetX - r.node.x, dy = targetY - r.node.y
+    applicaSpostamentoVicini(simRef.current, r.node.x, r.node.y, dx, dy, r.node)
+    r.node.x = targetX
+    r.node.y = targetY
     drawRef.current()
     if (t < 1) {
       requestAnimationFrame(rippleTick)
@@ -220,33 +250,19 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     if (nodes.length < 2 || rippleRef.current) return
     const origin = nodes[Math.floor(Math.random() * nodes.length)]
 
-    // Distanza nel grafo dall'origine, fino a 2 salti (BFS breve).
-    const depth = new Map<string, number>([[origin.id, 0]])
-    const coda = [origin.id]
-    while (coda.length) {
-      const cur = coda.shift()!
-      const d = depth.get(cur)!
-      if (d >= RIPPLE_FALLOFF.length - 1) continue
-      for (const vicino of neighborsRef.current.get(cur) ?? []) {
-        if (!depth.has(vicino)) { depth.set(vicino, d + 1); coda.push(vicino) }
-      }
-    }
-
     const angolo = Math.random() * Math.PI * 2
-    const ampiezza = 4 + Math.random() * 6 // spostamento minimo, "leggerissimo"
-    const dx = Math.cos(angolo) * ampiezza, dy = Math.sin(angolo) * ampiezza
-
-    const frames: RippleFrame[] = []
-    for (const n of nodes) {
-      const d = depth.get(n.id)
-      if (d === undefined) continue
-      const f = RIPPLE_FALLOFF[d] ?? 0
-      if (f === 0) continue
-      frames.push({ node: n, ox: n.x, oy: n.y, dx: dx * f, dy: dy * f })
+    const ampiezza = 10 + Math.random() * 14 // spostamento piccolo ma permanente
+    let tx = origin.x + Math.cos(angolo) * ampiezza
+    let ty = origin.y + Math.sin(angolo) * ampiezza
+    // Resta entro il cerchio di contenimento, altrimenti nel tempo (molti
+    // "tocchi" permanenti) il layout potrebbe derivare fuori dall'area visibile.
+    const distCentro = Math.hypot(tx, ty)
+    if (distCentro > boundaryRef.current) {
+      const scale = boundaryRef.current / distCentro
+      tx *= scale; ty *= scale
     }
-    if (frames.length === 0) return
 
-    rippleRef.current = { frames, start: performance.now() }
+    rippleRef.current = { node: origin, ox: origin.x, oy: origin.y, tx, ty, start: performance.now() }
     requestAnimationFrame(rippleTick)
   }, [rippleTick])
 
@@ -342,8 +358,12 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       const view = viewRef.current
       const node = simRef.current.find(n => n.id === dragRef.current!.nodeId)
       if (node) {
-        node.x = (e.clientX - rect.left - view.tx) / view.scale
-        node.y = (e.clientY - rect.top - view.ty) / view.scale
+        const nuovaX = (e.clientX - rect.left - view.tx) / view.scale
+        const nuovaY = (e.clientY - rect.top - view.ty) / view.scale
+        // Trascinare un nodo spinge quelli spazialmente vicini, come lo
+        // spostamento automatico "a tocco" — stesso identico meccanismo.
+        applicaSpostamentoVicini(simRef.current, node.x, node.y, nuovaX - node.x, nuovaY - node.y, node)
+        node.x = nuovaX; node.y = nuovaY
       }
       dragRef.current.moved = true
       draw()
@@ -424,8 +444,10 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       const view = viewRef.current
       const node = simRef.current.find(n => n.id === dragRef.current!.nodeId)
       if (node) {
-        node.x = (t.clientX - rect.left - view.tx) / view.scale
-        node.y = (t.clientY - rect.top - view.ty) / view.scale
+        const nuovaX = (t.clientX - rect.left - view.tx) / view.scale
+        const nuovaY = (t.clientY - rect.top - view.ty) / view.scale
+        applicaSpostamentoVicini(simRef.current, node.x, node.y, nuovaX - node.x, nuovaY - node.y, node)
+        node.x = nuovaX; node.y = nuovaY
       }
       dragRef.current.moved = true
       draw()

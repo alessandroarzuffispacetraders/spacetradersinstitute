@@ -187,7 +187,7 @@ export function buildDemoGraph(): { nodi: GraphNode[]; archi: GraphEdge[] } {
 
   for (let i = 1; i < titles.length; i++) {
     const target = titles[i]
-    const linkCount = 1 + Math.floor(rand() * 3) // 1-3 collegamenti a nodi già esistenti
+    const linkCount = 2 + Math.floor(rand() * 4) // 2-5 collegamenti a nodi già esistenti (era 1-3, sembrava scarno)
     const pool = titles.slice(0, i)
     const weights = pool.map(t => (grado.get(t) ?? 0) + 1) // +1: anche i nodi isolati hanno una chance
     const totalWeight = weights.reduce((a, b) => a + b, 0)
@@ -201,6 +201,18 @@ export function buildDemoGraph(): { nodi: GraphNode[]; archi: GraphEdge[] } {
       archi.push({ da: target, a: pool[idx] })
       bump(target); bump(pool[idx])
     }
+  }
+
+  // Passata bonus di collegamenti "trasversali" fra nodi qualunque (non solo
+  // in ordine di crescita): senza questa, il grafo resta quasi un albero —
+  // aggiunge gli incroci di sfondo tipici di un vero grafo Obsidian.
+  const collegamentiBonus = Math.floor(titles.length * 0.7)
+  for (let k = 0; k < collegamentiBonus; k++) {
+    const i = Math.floor(rand() * titles.length)
+    const j = Math.floor(rand() * titles.length)
+    if (i === j) continue
+    archi.push({ da: titles[i], a: titles[j] })
+    bump(titles[i]); bump(titles[j])
   }
 
   const nodi: GraphNode[] = titles.map((id, i) => ({
