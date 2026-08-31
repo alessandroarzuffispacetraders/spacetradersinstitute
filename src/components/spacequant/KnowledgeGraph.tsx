@@ -115,15 +115,33 @@ const RIPPLE_DURATA_MS = 1400
 const RIPPLE_RAGGIO = 75 // distanza sullo schermo entro cui si sente lo spostamento
 const ONDA_VELOCITA = 190 // px/secondo: a che velocità l'effetto raggiunge i vicini più lontani
 
-function easeOutCubic(t: number): number { return 1 - Math.pow(1 - t, 3) }
+// Decelerazione con un lievissimo assestamento elastico (supera di un
+// soffio il bersaglio e torna) invece di un avvicinamento puramente
+// matematico — è quel piccolo "respiro" finale che fa sembrare organico un
+// movimento, non calcolato al millimetro.
+function easeOrganica(t: number): number {
+  const c1 = 0.55, c3 = c1 + 1
+  const x = t - 1
+  return 1 + c3 * x * x * x + c1 * x * x
+}
 
-// Posizione di un punto che avanza (con decelerazione) da (ox,oy) a (tx,ty)
-// in RIPPLE_DURATA_MS, valutata a un istante "trascorsoMs" — se negativo (il
-// punto non è ancora "partito", per un vicino il cui ritardo non è ancora
-// passato) resta fermo all'inizio; se oltre la durata resta fermo alla fine.
+// Ruota un vettore di un piccolo angolo — usata per far deviare leggermente
+// ogni vicino dalla direzione ESATTA dell'origine, come farebbe l'acqua
+// spostata da qualcosa che si muove (non tutto scorre in file parallele
+// perfette).
+function ruotaVettore(dx: number, dy: number, angolo: number) {
+  const c = Math.cos(angolo), s = Math.sin(angolo)
+  return { x: dx * c - dy * s, y: dx * s + dy * c }
+}
+
+// Posizione di un punto che avanza da (ox,oy) a (tx,ty) in RIPPLE_DURATA_MS,
+// valutata a un istante "trascorsoMs" — se negativo (il punto non è ancora
+// "partito", per un vicino il cui ritardo non è ancora passato) resta fermo
+// all'inizio; se oltre la durata resta fermo alla fine (con il piccolo
+// assestamento elastico già rientrato).
 function posizioneEased(ox: number, oy: number, tx: number, ty: number, trascorsoMs: number) {
   const t = Math.min(1, Math.max(0, trascorsoMs) / RIPPLE_DURATA_MS)
-  const k = easeOutCubic(t)
+  const k = easeOrganica(t)
   return { x: ox + (tx - ox) * k, y: oy + (ty - oy) * k }
 }
 
@@ -146,24 +164,33 @@ function posizioneStorica(storia: { x: number; y: number; t: number }[], t: numb
   return { x: ultimo.x, y: ultimo.y }
 }
 
-interface VicinoCatena { node: SimNode; offsetX: number; offsetY: number; ritardoMs: number; falloff: number }
+interface VicinoCatena {
+  node: SimNode; offsetX: number; offsetY: number
+  ritardoMs: number; falloff: number; angolo: number
+}
 
 // Calcola i nodi entro RIPPLE_RAGGIO da (originX,originY) — con ritardo e
-// attenuazione dell'ampiezza proporzionali alla distanza — pronti per essere
-// "trascinati" dietro l'origine man mano che si muove. Usata sia dal "tocco"
-// automatico sia dall'inizio di un trascinamento manuale.
+// attenuazione dell'ampiezza proporzionali alla distanza, PIÙ una piccola
+// variazione individuale casuale (calcolata una sola volta, non ad ogni
+// fotogramma) su ritardo/ampiezza/direzione — senza, ogni vicino segue
+// esattamente la stessa curva e la stessa direzione dell'origine, e il
+// risultato sembra un blocco che si restringe invece che un movimento
+// organico. Usata sia dal "tocco" automatico sia dall'inizio di un
+// trascinamento manuale.
 function trovaViciniCatena(nodes: SimNode[], originX: number, originY: number, escludi: SimNode): VicinoCatena[] {
   const vicini: VicinoCatena[] = []
   for (const n of nodes) {
     if (n === escludi) continue
     const d = Math.hypot(n.x - originX, n.y - originY)
     if (d > RIPPLE_RAGGIO) continue
+    const variazione = 0.8 + Math.random() * 0.4 // ±20%, non tutti sincronizzati al millisecondo
     vicini.push({
       node: n,
       offsetX: n.x - originX,
       offsetY: n.y - originY,
-      ritardoMs: (d / ONDA_VELOCITA) * 1000,
-      falloff: Math.pow(1 - d / RIPPLE_RAGGIO, 1.3),
+      ritardoMs: (d / ONDA_VELOCITA) * 1000 * variazione,
+      falloff: Math.pow(1 - d / RIPPLE_RAGGIO, 1.3) * (0.85 + Math.random() * 0.3),
+      angolo: (Math.random() - 0.5) * 0.8, // rad — devia un po' dalla direzione esatta dell'origine
     })
   }
   return vicini
@@ -283,8 +310,9 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     r.node.y = origPos.y
     for (const v of r.vicini) {
       const p = posizioneEased(r.ox, r.oy, r.tx, r.ty, trascorso - v.ritardoMs)
-      v.node.x = (r.ox + v.offsetX) + (p.x - r.ox) * v.falloff
-      v.node.y = (r.oy + v.offsetY) + (p.y - r.oy) * v.falloff
+      const spost = ruotaVettore(p.x - r.ox, p.y - r.oy, v.angolo)
+      v.node.x = (r.ox + v.offsetX) + spost.x * v.falloff
+      v.node.y = (r.oy + v.offsetY) + spost.y * v.falloff
     }
     drawRef.current()
     if (trascorso < RIPPLE_DURATA_MS + r.maxRitardoMs) {
@@ -413,8 +441,9 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     const origine = dragOrigineRef.current
     for (const v of dragViciniRef.current) {
       const p = posizioneStorica(dragStoriaRef.current, ora - v.ritardoMs)
-      v.node.x = (origine.x + v.offsetX) + (p.x - origine.x) * v.falloff
-      v.node.y = (origine.y + v.offsetY) + (p.y - origine.y) * v.falloff
+      const spost = ruotaVettore(p.x - origine.x, p.y - origine.y, v.angolo)
+      v.node.x = (origine.x + v.offsetX) + spost.x * v.falloff
+      v.node.y = (origine.y + v.offsetY) + spost.y * v.falloff
     }
     node.x = nuovaX
     node.y = nuovaY
