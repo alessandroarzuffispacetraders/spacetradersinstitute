@@ -34,12 +34,29 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
 
 const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
 
+// Supabase Storage rifiuta come "Invalid key" qualunque carattere accentato
+// nella chiave dell'oggetto (verificato: "Replicabilità dal vivo.md" fallisce
+// anche già in forma NFC — non è un problema di normalizzazione Unicode, la
+// chiave deve proprio essere ASCII). La spelling corretta con accento non si
+// perde: resta nel titolo H1 dentro il file, che _shared/vault.ts usa per
+// recuperarla (vedi lì) — qui serve solo una chiave valida per il bucket.
+function chiaveAscii(s) {
+  // Scompone gli accenti (NFD: "a" + segno diacritico separato) e scarta i
+  // segni diacritici per codice numerico (range Unicode "Combining Diacritical
+  // Marks", 0x0300-0x036f) invece che con una classe di caratteri letterale
+  // nel sorgente — più robusto, niente caratteri combinanti "invisibili" da
+  // portarsi dietro nel file.
+  return Array.from(s.normalize('NFD'))
+    .filter((ch) => { const c = ch.codePointAt(0); return !(c >= 0x0300 && c <= 0x036f) })
+    .join('')
+}
+
 function walk(dir, prefix = '') {
   const paths = []
   for (const entry of readdirSync(dir)) {
     if (entry.startsWith('.')) continue // .DS_Store e simili
-    const full = join(dir, entry)
-    const relPath = prefix ? `${prefix}/${entry}` : entry
+    const full = join(dir, entry) // percorso reale sul filesystem: NON toccare
+    const relPath = chiaveAscii(prefix ? `${prefix}/${entry}` : entry)
     if (statSync(full).isDirectory()) {
       paths.push(...walk(full, relPath))
     } else if (entry.endsWith('.md')) {

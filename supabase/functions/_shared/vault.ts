@@ -57,6 +57,16 @@ async function listMarkdownPaths(admin: SupabaseClient, prefix = ''): Promise<st
   return paths
 }
 
+// Confronto "grezzo" per titolo/nome-file: ignora maiuscole/minuscole e accenti.
+// Serve solo a verificare che l'H1 del corpo sia "la stessa cosa" del nome
+// file prima di usarlo — mai per decidere se due note SONO la stessa nota.
+function grezzo(s: string): string {
+  return Array.from(s.normalize('NFD'))
+    .filter((ch) => { const c = ch.codePointAt(0)!; return !(c >= 0x0300 && c <= 0x036f) })
+    .join('')
+    .toLowerCase()
+}
+
 export async function loadVaultFiles(admin: SupabaseClient): Promise<VaultFile[]> {
   const paths = (await listMarkdownPaths(admin)).sort() // ordine deterministico → prefisso di cache stabile
 
@@ -67,8 +77,16 @@ export async function loadVaultFiles(admin: SupabaseClient): Promise<VaultFile[]
     const raw = await data.text()
     const { aliases, body } = parseFrontmatter(raw)
     const segments = path.split('/')
-    const title = segments[segments.length - 1].replace(/\.md$/, '')
+    const pathTitle = segments[segments.length - 1].replace(/\.md$/, '')
     const folder = segments.length > 1 ? segments[0] : 'Indice'
+    // Il nome del file nel bucket è ASCII-safe (Supabase Storage rifiuta gli
+    // accenti nelle chiavi degli oggetti — vedi scripts/spacequant-ingest-vault.mjs).
+    // Quando l'H1 del corpo è "la stessa cosa" del nome file salvo accenti,
+    // usiamo l'H1 come titolo: recupera la grafia corretta (es. "Replicabilità"
+    // invece di "Replicabilita") senza toccare le altre note dove nome file e
+    // H1 già combaciano esattamente.
+    const h1 = body.match(/^#\s+(.+?)\s*$/m)?.[1]
+    const title = h1 && grezzo(h1) === grezzo(pathTitle) ? h1 : pathTitle
     files.push({ path, folder, title, aliases, body })
   }
   return files
