@@ -15,6 +15,10 @@ function nodeRadius(grado: number): number {
 
 interface SimNode extends GraphNode {
   x: number; y: number
+  // Posizione "di casa" del layout calcolato una tantum — immutabile dopo il
+  // calcolo iniziale. Serve come bersaglio del richiamo dolce che riporta la
+  // nuvola verso la sua forma originale nel tempo (vedi SETTLE_TAU_SEC).
+  homeX: number; homeY: number
 }
 
 interface View { scale: number; tx: number; ty: number }
@@ -37,7 +41,9 @@ function calcolaLayout(nodi: GraphNode[], archi: GraphEdge[], boundary: number):
   const n = Math.max(1, nodi.length)
   const angoloAureo = Math.PI * (3 - Math.sqrt(5))
   const raggioDisco = boundary * 0.9
-  const nodes: (SimNode & { vx: number; vy: number })[] = nodi.map((node, i) => {
+  // Tipo di lavoro SENZA homeX/homeY: non servono durante le iterazioni
+  // fisiche, solo nel SimNode finale restituito sotto.
+  const nodes: (GraphNode & { x: number; y: number; vx: number; vy: number })[] = nodi.map((node, i) => {
     const r = raggioDisco * Math.sqrt((i + 0.5) / n)
     const angolo = i * angoloAureo
     return { ...node, x: Math.cos(angolo) * r, y: Math.sin(angolo) * r, vx: 0, vy: 0 }
@@ -94,7 +100,7 @@ function calcolaLayout(nodi: GraphNode[], archi: GraphEdge[], boundary: number):
     }
   }
 
-  return nodes.map((n): SimNode => ({ id: n.id, cartella: n.cartella, grado: n.grado, x: n.x, y: n.y }))
+  return nodes.map((n): SimNode => ({ id: n.id, cartella: n.cartella, grado: n.grado, x: n.x, y: n.y, homeX: n.x, homeY: n.y }))
 }
 
 // ── Animazione "a tocco": leggerissima, a "effetto catena" (non un blocco
@@ -114,6 +120,13 @@ function calcolaLayout(nodi: GraphNode[], archi: GraphEdge[], boundary: number):
 const RIPPLE_DURATA_MS = 1400
 const RIPPLE_RAGGIO = 75 // distanza sullo schermo entro cui si sente lo spostamento
 const ONDA_VELOCITA = 190 // px/secondo: a che velocità l'effetto raggiunge i vicini più lontani
+
+// Costante di tempo (secondi) del richiamo dolce verso la posizione "di casa"
+// — vedi rippleTick. Ogni "tocco" resta permanente nel breve periodo (come
+// richiesto), ma senza questo richiamo i tanti tocchi permanenti si sommano e
+// dopo qualche minuto la nuvola risulta visibilmente storta. ~30s = dopo una
+// ventina di secondi gran parte dello spostamento accumulato è già rientrato.
+const SETTLE_TAU_SEC = 30
 
 // Decelerazione con un lievissimo assestamento elastico (supera di un
 // soffio il bersaglio e torna) invece di un avvicinamento puramente
@@ -220,6 +233,11 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   const boundaryRef = useRef(260)
   const rippleRef = useRef<RippleState | null>(null)
   const rippleTimerRef = useRef<number | null>(null)
+  // Ultimo istante in cui è stato applicato il richiamo verso "casa" (vedi
+  // SETTLE_TAU_SEC) — persiste tra un tocco e l'altro apposta: il calcolo del
+  // delta include anche i secondi di pausa tra due tocchi, non solo i
+  // fotogrammi effettivamente animati.
+  const lastSettleTsRef = useRef<number | null>(null)
 
   const dragRef = useRef<{ mode: 'node' | 'pan' | 'pinch'; nodeId?: string; lastX: number; lastY: number; moved: boolean; pinchDist?: number } | null>(null)
   // Storico delle posizioni del nodo trascinato (per far "inseguire" i vicini
@@ -305,7 +323,25 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   const rippleTick = useCallback(() => {
     const r = rippleRef.current
     if (!r) return
-    const trascorso = performance.now() - r.start
+    const ora = performance.now()
+
+    // Richiamo dolcissimo e continuo verso la posizione di casa di OGNI nodo
+    // (non solo quelli coinvolti in questo tocco): impercettibile tocco per
+    // tocco, ma nell'arco di decine di secondi riporta la nuvola vicina alla
+    // sua forma originale invece di lasciarla derivare all'infinito. I nodi
+    // di questo stesso tocco vengono comunque sovrascritti subito dopo con la
+    // loro posizione animata, quindi qui non li si "combatte".
+    const dtSec = (ora - (lastSettleTsRef.current ?? ora)) / 1000
+    lastSettleTsRef.current = ora
+    if (dtSec > 0) {
+      const k = 1 - Math.exp(-dtSec / SETTLE_TAU_SEC)
+      for (const n of simRef.current) {
+        n.x += (n.homeX - n.x) * k
+        n.y += (n.homeY - n.y) * k
+      }
+    }
+
+    const trascorso = ora - r.start
     const origPos = posizioneEased(r.ox, r.oy, r.tx, r.ty, trascorso)
     r.node.x = origPos.x
     r.node.y = origPos.y
@@ -329,7 +365,7 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
     const origin = nodes[Math.floor(Math.random() * nodes.length)]
 
     const angolo = Math.random() * Math.PI * 2
-    const ampiezza = 10 + Math.random() * 14 // spostamento piccolo ma permanente
+    const ampiezza = 4 + Math.random() * 6 // spostamento piccolo (richiesto: meno ampio di prima)
     let tx = origin.x + Math.cos(angolo) * ampiezza
     let ty = origin.y + Math.sin(angolo) * ampiezza
     // Resta entro il cerchio di contenimento, altrimenti nel tempo (molti
@@ -389,9 +425,14 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
       const { width, height } = entries[0].contentRect
       setSize({ w: width, h: height })
       if (Math.min(width, height) > 40) boundaryRef.current = Math.min(width, height) * 0.4
-      if (viewRef.current.tx === 0 && viewRef.current.ty === 0) {
-        viewRef.current = { scale: 2.5, tx: width / 2, ty: height / 2 } // zoom di default più ravvicinato
-      }
+      // Ricentra SEMPRE (non solo al primo montaggio): è quello che tiene il
+      // centro della nuvola visibile nella striscia sopra la chat quando la
+      // tendina sale e l'area del grafo si restringe — altrimenti il centro
+      // resta quello calcolato per l'area alta di partenza e la porzione
+      // visibile sopra la chat risulta vuota. Lo zoom (scale) resta invece
+      // quello attuale dell'utente, tranne al primissimo montaggio.
+      const primoMontaggio = viewRef.current.tx === 0 && viewRef.current.ty === 0
+      viewRef.current = { scale: primoMontaggio ? 2.5 : viewRef.current.scale, tx: width / 2, ty: height / 2 }
     })
     observer.observe(el)
     return () => observer.disconnect()
