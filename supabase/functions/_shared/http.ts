@@ -7,6 +7,10 @@ import { createClient, type SupabaseClient, type User } from 'npm:@supabase/supa
 export const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  // Serve alla chat in streaming: la quota residua viaggia in un header
+  // (non nel corpo, che è testo puro in streaming) — senza questo, fetch()
+  // dal browser non può leggerlo su una risposta cross-origin.
+  'Access-Control-Expose-Headers': 'X-Quota-Restante',
 }
 
 export function json(body: unknown, status = 200) {

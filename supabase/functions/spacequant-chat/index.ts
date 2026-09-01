@@ -1,17 +1,31 @@
-// Chat AI sul manuale SpaceQuant. Il vault intero (~29k token) viene passato
-// come blocco di sistema cacheable ad ogni domanda — niente embedding, niente
-// ricerca: il modello ha tutto il manuale davanti e può triangolare fra le note.
-// Contratto: { risposta, note_citate, quota_restante }. MAI il testo grezzo
-// delle note nella risposta (solo ciò che il modello sceglie di citare/spiegare).
+// Chat AI di Quant-Brain. Il vault intero (~29k token, ora esteso col percorso
+// generale in Processo/) viene passato come blocco di sistema cacheable ad
+// ogni domanda, insieme ai SOLI TITOLI dei videocorsi disponibili — niente
+// embedding, niente ricerca: il modello ha tutto davanti e può triangolare.
+// Risposta in STREAMING (testo puro mentre arriva) invece di un unico JSON:
+// la quota residua viaggia nell'header X-Quota-Restante (nota fin da subito,
+// non serve aspettare la fine della generazione); note_citate/video_citati
+// arrivano in coda al corpo dopo un separatore, essendo derivabili solo dal
+// testo completo. MAI il testo grezzo delle note/descrizioni video nella
+// risposta (solo ciò che il modello sceglie di citare/spiegare).
 import Anthropic from 'npm:@anthropic-ai/sdk@0.32.1'
-import { CORS, json, adminClient, requireSpaceQuantAccess, HttpError } from '../_shared/http.ts'
+import { CORS, adminClient, requireSpaceQuantAccess, HttpError } from '../_shared/http.ts'
 import { getCachedVault, buildSystemText, buildTitleIndex, extractWikilinkTitles } from '../_shared/vault.ts'
+import { loadVideoTitles, buildVideoText, buildVideoIndex, extractVideoTitles } from '../_shared/videos.ts'
 import { SYSTEM_PROMPT } from '../_shared/systemPrompt.ts'
 
 const MAX_DOMANDA_CHARS = 2000
 const MAX_CRONOLOGIA_MSGS = 10
 
+// Separatore fra il testo della risposta (streaming) e i metadati finali
+// (JSON) — una stringa che non comparirebbe mai in una risposta vera.
+const META_SEP = '\n\n§§QUANTBRAIN_META§§\n'
+
 interface ChatTurn { ruolo: 'utente' | 'assistente'; testo: string }
+
+function jsonError(body: unknown, status: number) {
+  return new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS })
@@ -19,12 +33,13 @@ Deno.serve(async (req) => {
   try {
     const admin = adminClient()
     const user = await requireSpaceQuantAccess(admin, req)
+    const token = req.headers.get('Authorization')!.replace('Bearer ', '')
 
     const body = await req.json().catch(() => ({}))
     const domanda = typeof body.domanda === 'string' ? body.domanda.trim() : ''
     const cronologia: ChatTurn[] = Array.isArray(body.cronologia) ? body.cronologia.slice(-MAX_CRONOLOGIA_MSGS) : []
-    if (!domanda) return json({ error: 'Domanda mancante' }, 400)
-    if (domanda.length > MAX_DOMANDA_CHARS) return json({ error: 'Domanda troppo lunga' }, 400)
+    if (!domanda) return jsonError({ error: 'Domanda mancante' }, 400)
+    if (domanda.length > MAX_DOMANDA_CHARS) return jsonError({ error: 'Domanda troppo lunga' }, 400)
 
     // Quota mensile + rate-limit al minuto, verificati e consumati atomicamente
     // lato DB (pg_advisory_xact_lock) PRIMA di spendere sulla chiamata al modello.
@@ -33,12 +48,17 @@ Deno.serve(async (req) => {
     if (consumeErr) throw new Error(`spacequant_try_consume: ${consumeErr.message}`)
     const consume = consumeRows?.[0] as { allowed: boolean; quota_restante: number; motivo: string | null } | undefined
     if (!consume?.allowed) {
-      return json({ error: 'Limite raggiunto', quota_restante: consume?.quota_restante ?? 0, motivo: consume?.motivo }, 429)
+      return jsonError({ error: 'Limite raggiunto', quota_restante: consume?.quota_restante ?? 0, motivo: consume?.motivo }, 429)
     }
 
-    const files = await getCachedVault(admin)
+    const [files, videos] = await Promise.all([
+      getCachedVault(admin),
+      loadVideoTitles(token), // non bloccante: [] se la query fallisce, la chat funziona comunque
+    ])
     const titleIndex = buildTitleIndex(files)
+    const videoIndex = buildVideoIndex(videos)
     const vaultText = buildSystemText(files)
+    const videoText = buildVideoText(videos)
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! })
 
@@ -47,32 +67,54 @@ Deno.serve(async (req) => {
       { role: 'user', content: domanda },
     ]
 
-    const response = await anthropic.messages.create({
+    const systemText = videoText
+      ? `${SYSTEM_PROMPT}\n\n=== MANUALE ===\n${vaultText}\n\n=== VIDEOCORSI DISPONIBILI ===\n${videoText}`
+      : `${SYSTEM_PROMPT}\n\n=== MANUALE ===\n${vaultText}`
+
+    const anthropicStream = anthropic.messages.stream({
       model: 'claude-sonnet-5',
       max_tokens: 3000,
-      system: [
-        {
-          type: 'text',
-          text: `${SYSTEM_PROMPT}\n\n=== MANUALE ===\n${vaultText}`,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
+      system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }],
       messages,
     })
 
-    // Narrowing inline sulla discriminated union (Sonnet 5 gira con thinking
-    // adattivo anche senza richiederlo esplicitamente: possono comparire blocchi
-    // 'thinking' nella risposta, da ignorare e non concatenare al testo).
-    const risposta = response.content
-      .map(b => (b.type === 'text' ? b.text : ''))
-      .filter(Boolean)
-      .join('\n')
+    const encoder = new TextEncoder()
+    const responseBody = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        let risposta = ''
+        try {
+          // Sonnet 5 gira con thinking adattivo anche senza richiederlo
+          // esplicitamente: possono comparire blocchi 'thinking', da ignorare
+          // e non trasmettere mai al client — solo i 'text_delta' sono testo
+          // di risposta vero.
+          for await (const event of anthropicStream) {
+            if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+              risposta += event.delta.text
+              controller.enqueue(encoder.encode(event.delta.text))
+            }
+          }
+          const note_citate = extractWikilinkTitles(risposta, titleIndex)
+          const video_citati = extractVideoTitles(risposta, videoIndex)
+          controller.enqueue(encoder.encode(META_SEP + JSON.stringify({ note_citate, video_citati })))
+        } catch (err) {
+          // Lo stream è già iniziato (status 200 già inviato): l'unico modo
+          // di segnalare un errore a questo punto è dentro al corpo stesso.
+          controller.enqueue(encoder.encode(META_SEP + JSON.stringify({ error: String(err) })))
+        } finally {
+          controller.close()
+        }
+      },
+    })
 
-    const note_citate = extractWikilinkTitles(risposta, titleIndex)
-
-    return json({ risposta, note_citate, quota_restante: consume.quota_restante })
+    return new Response(responseBody, {
+      headers: {
+        ...CORS,
+        'Content-Type': 'text/plain; charset=utf-8',
+        'X-Quota-Restante': String(consume.quota_restante),
+      },
+    })
   } catch (err) {
-    if (err instanceof HttpError) return json({ error: err.message }, err.status)
-    return json({ error: 'Errore interno, riprova.', dettaglio: String(err) }, 500)
+    if (err instanceof HttpError) return jsonError({ error: err.message }, err.status)
+    return jsonError({ error: 'Errore interno, riprova.', dettaglio: String(err) }, 500)
   }
 })

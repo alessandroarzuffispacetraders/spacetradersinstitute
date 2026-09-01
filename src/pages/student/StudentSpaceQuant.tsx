@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, Fragment } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { ArrowUp, ChevronDown, ChevronLeft, ChevronUp, Loader2, MessageCircle } from 'lucide-react'
+import { ArrowUp, ChevronDown, ChevronLeft, ChevronUp, Loader2, MessageCircle, PlayCircle } from 'lucide-react'
 import { useUI } from '../../context/UIContext'
 import { useStableSafeAreaBottom } from '../../lib/useStableSafeAreaBottom'
 import QuantBrainIcon from '../../components/icons/QuantBrainIcon'
 import KnowledgeGraph from '../../components/spacequant/KnowledgeGraph'
 import {
-  useSpaceQuantGraph, useSpaceQuantQuota, useSpaceQuantAccess, askSpaceQuant, type ChatTurn,
+  useSpaceQuantGraph, useSpaceQuantQuota, useSpaceQuantAccess, askSpaceQuant, type ChatTurn, type VideoCitato,
 } from '../../lib/spacequant'
 
 // Altezza minima del pannello chiuso (solo maniglia) — anche limite inferiore
@@ -24,25 +24,55 @@ const ESEMPIO_CONVERSAZIONE: ChatTurn[] = [
   },
 ]
 
-// Trasforma [[Titolo]] in badge cliccabili (precompila una nuova domanda),
-// il resto resta testo semplice — niente dipendenza markdown per questa v1.
-function renderWithCitations(text: string, onCite: (titolo: string) => void) {
-  const parts = text.split(/(\[\[[^\]]+\]\])/g)
+// Trasforma [[Titolo Nota]] e {{Titolo Video}} in badge cliccabili (la nota
+// precompila una nuova domanda, il video apre la lezione), il resto resta
+// testo semplice — niente dipendenza markdown per questa v1. I video citati
+// arrivano SOLO dalla risposta stessa (videoCitati), già validati lato server
+// contro l'elenco che quello studente può davvero vedere: un {{Titolo}} che
+// non risulta lì (allucinato, o video nel frattempo rimosso) resta testo
+// semplice invece di un link rotto.
+function renderWithCitations(
+  text: string,
+  onCiteNota: (titolo: string) => void,
+  videoCitati: VideoCitato[],
+  onCiteVideo: (id: string) => void,
+) {
+  const videoByTitle = new Map(videoCitati.map(v => [v.title.toLowerCase(), v]))
+  const parts = text.split(/(\[\[[^\]]+\]\]|\{\{[^}]+\}\})/g)
   return parts.map((part, i) => {
-    const m = part.match(/^\[\[([^\]]+)\]\]$/)
-    if (!m) return <Fragment key={i}>{part.split('\n').map((line, j) => <Fragment key={j}>{j > 0 && <br />}{line}</Fragment>)}</Fragment>
-    const titolo = m[1].split('|')[0].trim()
-    return (
-      <button
-        key={i}
-        type="button"
-        onClick={() => onCite(titolo)}
-        className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-md text-[13px] font-medium transition-opacity hover:opacity-80"
-        style={{ background: 'rgba(90,154,177,0.15)', color: 'var(--ist-accent-text)' }}
-      >
-        {titolo}
-      </button>
-    )
+    const nota = part.match(/^\[\[([^\]]+)\]\]$/)
+    if (nota) {
+      const titolo = nota[1].split('|')[0].trim()
+      return (
+        <button
+          key={i}
+          type="button"
+          onClick={() => onCiteNota(titolo)}
+          className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-md text-[13px] font-medium transition-opacity hover:opacity-80"
+          style={{ background: 'rgba(90,154,177,0.15)', color: 'var(--ist-accent-text)' }}
+        >
+          {titolo}
+        </button>
+      )
+    }
+    const video = part.match(/^\{\{([^}]+)\}\}$/)
+    if (video) {
+      const v = videoByTitle.get(video[1].trim().toLowerCase())
+      if (!v) return <Fragment key={i}>{video[1].trim()}</Fragment>
+      return (
+        <button
+          key={i}
+          type="button"
+          onClick={() => onCiteVideo(v.id)}
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md text-[13px] font-medium transition-opacity hover:opacity-80"
+          style={{ background: 'rgba(90,154,177,0.15)', color: 'var(--ist-accent-text)' }}
+        >
+          <PlayCircle size={12} />
+          {v.title}
+        </button>
+      )
+    }
+    return <Fragment key={i}>{part.split('\n').map((line, j) => <Fragment key={j}>{j > 0 && <br />}{line}</Fragment>)}</Fragment>
   })
 }
 
@@ -157,14 +187,24 @@ export default function StudentSpaceQuant() {
   const messaggi = cronologia.length > 0 ? cronologia : ESEMPIO_CONVERSAZIONE
   const isEsempio = cronologia.length === 0
 
+  // Anche sulla lunghezza dell'ULTIMO messaggio (non solo sul numero di
+  // messaggi): durante lo streaming il testo cresce dentro lo stesso
+  // messaggio, senza che se ne aggiunga uno nuovo all'array — senza questo la
+  // vista non seguirebbe la risposta mentre si genera. 'auto' invece di
+  // 'smooth': con 'smooth' ogni chunk metterebbe in coda una sua animazione,
+  // risultando a scatti invece che fluido.
   useEffect(() => {
-    if (chatEspansa) messaggiFineRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messaggi.length, chatEspansa])
+    if (chatEspansa) messaggiFineRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
+  }, [messaggi.length, messaggi[messaggi.length - 1]?.testo.length, chatEspansa])
 
   const handleNodeClick = (titolo: string) => {
     setChatEspansa(true) // il grafo è un menu di domande: cliccare un nodo apre direttamente la chat
     setInput(`Spiegami: ${titolo}`)
     setTimeout(() => inputRef.current?.focus(), 50) // dopo l'animazione di apertura
+  }
+
+  const handleVideoClick = (lessonId: string) => {
+    navigate(`/student/corsi/lezione/${lessonId}`)
   }
 
   const esaurita = quotaRestante === 0
@@ -177,11 +217,22 @@ export default function StudentSpaceQuant() {
     setInviando(true)
     setErroreChat(null)
     setInput('')
+    const cronologiaPrecedente = cronologia
+    // Placeholder vuoto subito in cronologia: niente spinner separato, la
+    // risposta si vede crescere direttamente al posto suo mentre arriva.
+    setCronologia(c => [...c, { ruolo: 'utente', testo: domanda }, { ruolo: 'assistente', testo: '' }])
 
-    const res = await askSpaceQuant(domanda, cronologia)
+    const res = await askSpaceQuant(domanda, cronologiaPrecedente, (testoParziale) => {
+      setCronologia(c => {
+        const next = c.slice()
+        next[next.length - 1] = { ruolo: 'assistente', testo: testoParziale }
+        return next
+      })
+    })
     setInviando(false)
 
     if (!res.ok) {
+      setCronologia(c => c.slice(0, -1)) // via il placeholder vuoto, la domanda resta visibile
       setErroreChat(
         res.error.motivo === 'quota_esaurita' ? 'Hai esaurito le domande di questo mese.'
         : res.error.motivo === 'rate_limit' ? 'Troppe domande ravvicinate — aspetta un momento.'
@@ -191,8 +242,12 @@ export default function StudentSpaceQuant() {
       return
     }
 
-    setCronologia(c => [...c, { ruolo: 'utente', testo: domanda }, { ruolo: 'assistente', testo: res.result.risposta }])
-    setQuotaRestante(res.result.quotaRestante)
+    setCronologia(c => {
+      const next = c.slice()
+      next[next.length - 1] = { ruolo: 'assistente', testo: res.result.risposta, videoCitati: res.result.videoCitati }
+      return next
+    })
+    if (!Number.isNaN(res.result.quotaRestante)) setQuotaRestante(res.result.quotaRestante)
   }
 
   // Beta ristretta: mentre l'accesso è in verifica non mostrare nulla (evita
@@ -324,7 +379,7 @@ export default function StudentSpaceQuant() {
                           : { color: 'var(--ist-text)' }
                       }
                     >
-                      {m.ruolo === 'utente' ? m.testo : renderWithCitations(m.testo, handleNodeClick)}
+                      {m.ruolo === 'utente' ? m.testo : renderWithCitations(m.testo, handleNodeClick, m.videoCitati ?? [], handleVideoClick)}
                     </div>
                   </div>
                 ))}

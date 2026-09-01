@@ -1,16 +1,22 @@
 import { useEffect, useState, useCallback } from 'react'
 import { FunctionsHttpError } from '@supabase/supabase-js'
-import { supabase } from './supabase'
+import { supabase, supabaseUrl, supabaseAnonKey } from './supabase'
 
 // ─── Tipi ────────────────────────────────────────────────────────────────────
 
 export interface GraphNode { id: string; cartella: string; grado: number }
 export interface GraphEdge { da: string; a: string }
-export interface ChatTurn { ruolo: 'utente' | 'assistente'; testo: string }
+export interface VideoCitato { id: string; title: string }
+export interface ChatTurn {
+  ruolo: 'utente' | 'assistente'
+  testo: string
+  videoCitati?: VideoCitato[] // solo per le risposte reali, per i link {{Titolo}} nel testo
+}
 
 export interface ChatResult {
   risposta: string
   noteCitate: string[]
+  videoCitati: VideoCitato[]
   quotaRestante: number
 }
 
@@ -85,34 +91,72 @@ export function useSpaceQuantQuota() {
   return { quotaRestante, setQuotaRestante, loading, refresh }
 }
 
-// ─── Invio domanda ────────────────────────────────────────────────────────────
+// ─── Invio domanda (in streaming) ─────────────────────────────────────────────
 
+// Separatore fra il testo della risposta e i metadati finali — DEVE combaciare
+// esattamente con META_SEP in supabase/functions/spacequant-chat/index.ts.
+const META_SEP = '\n\n§§QUANTBRAIN_META§§\n'
+
+// A differenza delle altre chiamate qui sopra, questa NON usa
+// supabase.functions.invoke(): quella attende sempre la risposta completa
+// prima di risolvere, quindi non può mostrare il testo mentre arriva. Un
+// fetch() diretto sull'URL della function, letto come stream, sì.
+// `onParziale` riceve il testo VISIBILE accumulato finora (non solo il nuovo
+// pezzo) ad ogni chunk, così chi chiama può semplicemente sostituire lo stato.
 export async function askSpaceQuant(
   domanda: string,
   cronologia: ChatTurn[],
+  onParziale: (testoParziale: string) => void,
 ): Promise<{ ok: true; result: ChatResult } | { ok: false; error: ChatError }> {
-  const { data, error } = await supabase.functions.invoke('spacequant-chat', {
-    body: { domanda, cronologia },
-  })
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  if (!token) return { ok: false, error: { error: 'Sessione scaduta — ricarica la pagina.' } }
 
-  if (error) {
-    // Su risposta non-2xx (400/403/429/500) `data` è null e il corpo JSON che
-    // abbiamo scritto in spacequant-chat/index.ts va letto da error.context
-    // (la Response grezza) — vedi FunctionsHttpError in @supabase/functions-js.
-    if (error instanceof FunctionsHttpError) {
-      const body = await error.context.json().catch(() => null)
-      if (body?.error) {
-        return {
-          ok: false,
-          error: { error: body.error, motivo: body.motivo ?? null, quotaRestante: body.quota_restante },
-        }
-      }
+  let res: Response
+  try {
+    res = await fetch(`${supabaseUrl}/functions/v1/spacequant-chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
+      body: JSON.stringify({ domanda, cronologia }),
+    })
+  } catch {
+    return { ok: false, error: { error: 'Errore di rete, riprova.' } }
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    return {
+      ok: false,
+      error: { error: body?.error ?? 'Errore di rete, riprova.', motivo: body?.motivo ?? null, quotaRestante: body?.quota_restante },
     }
-    return { ok: false, error: { error: error.message || 'Errore di rete, riprova.' } }
   }
 
-  return {
-    ok: true,
-    result: { risposta: data.risposta, noteCitate: data.note_citate ?? [], quotaRestante: data.quota_restante },
+  const quotaHeader = res.headers.get('X-Quota-Restante')
+  const quotaRestante = quotaHeader !== null ? Number(quotaHeader) : NaN
+
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  let full = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    full += decoder.decode(value, { stream: true })
+    const sepIdx = full.indexOf(META_SEP)
+    onParziale(sepIdx === -1 ? full : full.slice(0, sepIdx))
   }
+
+  const sepIdx = full.indexOf(META_SEP)
+  const risposta = (sepIdx === -1 ? full : full.slice(0, sepIdx)).trim()
+  let noteCitate: string[] = []
+  let videoCitati: VideoCitato[] = []
+  if (sepIdx !== -1) {
+    try {
+      const meta = JSON.parse(full.slice(sepIdx + META_SEP.length))
+      if (meta.error) return { ok: false, error: { error: 'Errore durante la generazione, riprova.' } }
+      noteCitate = meta.note_citate ?? []
+      videoCitati = meta.video_citati ?? []
+    } catch { /* meta malformata: il testo è comunque valido, si perdono solo le citazioni */ }
+  }
+
+  return { ok: true, result: { risposta, noteCitate, videoCitati, quotaRestante } }
 }
