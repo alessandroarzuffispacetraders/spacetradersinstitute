@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState, Fragment } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 import { ArrowUp, ChevronDown, ChevronLeft, ChevronUp, Loader2, MessageCircle, PlayCircle } from 'lucide-react'
 import { useUI } from '../../context/UIContext'
 import { useStableSafeAreaBottom } from '../../lib/useStableSafeAreaBottom'
+import { useVisibleViewport, useNativeKeyboardHeight, nativeKeyboardInset } from '../../lib/useKeyboardViewport'
 import QuantBrainIcon from '../../components/icons/QuantBrainIcon'
 import KnowledgeGraph from '../../components/spacequant/KnowledgeGraph'
 import {
@@ -24,56 +28,74 @@ const ESEMPIO_CONVERSAZIONE: ChatTurn[] = [
   },
 ]
 
-// Trasforma [[Titolo Nota]] e {{Titolo Video}} in badge cliccabili (la nota
-// precompila una nuova domanda, il video apre la lezione), il resto resta
-// testo semplice — niente dipendenza markdown per questa v1. I video citati
+const CITAZIONE_STILE: React.CSSProperties = { background: 'rgba(90,154,177,0.15)', color: 'var(--ist-accent-text)' }
+const CITAZIONE_CLASSE = 'inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-md text-[13px] font-medium transition-opacity hover:opacity-80'
+
+// Converte [[Titolo Nota]] e {{Titolo Video}} in link markdown con uno schema
+// finto (nota:/video:) PRIMA di passare il testo a ReactMarkdown: così le
+// citazioni convivono correttamente con la formattazione vera anche quando
+// annidate (es. **[[Nota]]**) — impossibile con lo split manuale di prima,
+// che trattava tutto il resto come testo semplice (da lì gli asterischi
+// grezzi lasciati a vista). I titoli finiscono nell'URL con encodeURIComponent
+// solo per sicurezza (parentesi/caratteri strani nel titolo non spaccano la
+// sintassi del link); il testo visibile del link resta il titolo originale.
+function preparaMarkdown(text: string): string {
+  return text
+    .replace(/\[\[([^\]]+)\]\]/g, (_, inner: string) => {
+      const titolo = inner.split('|')[0].trim()
+      return `[${titolo}](nota:${encodeURIComponent(titolo)})`
+    })
+    .replace(/\{\{([^}]+)\}\}/g, (_, inner: string) => `[${inner.trim()}](video:${encodeURIComponent(inner.trim())})`)
+}
+
+// Messaggio dell'assistente: markdown vero (grassetto, elenchi, ecc. — prima
+// restavano asterischi/trattini a vista, mai interpretati) + le due citazioni
+// custom sopra, intercettate qui nel renderer del link. I video citati
 // arrivano SOLO dalla risposta stessa (videoCitati), già validati lato server
 // contro l'elenco che quello studente può davvero vedere: un {{Titolo}} che
 // non risulta lì (allucinato, o video nel frattempo rimosso) resta testo
 // semplice invece di un link rotto.
-function renderWithCitations(
-  text: string,
-  onCiteNota: (titolo: string) => void,
-  videoCitati: VideoCitato[],
-  onCiteVideo: (id: string) => void,
-) {
+function MessaggioAssistente({ text, onCiteNota, videoCitati, onCiteVideo }: {
+  text: string
+  onCiteNota: (titolo: string) => void
+  videoCitati: VideoCitato[]
+  onCiteVideo: (id: string) => void
+}) {
   const videoByTitle = new Map(videoCitati.map(v => [v.title.toLowerCase(), v]))
-  const parts = text.split(/(\[\[[^\]]+\]\]|\{\{[^}]+\}\})/g)
-  return parts.map((part, i) => {
-    const nota = part.match(/^\[\[([^\]]+)\]\]$/)
-    if (nota) {
-      const titolo = nota[1].split('|')[0].trim()
-      return (
-        <button
-          key={i}
-          type="button"
-          onClick={() => onCiteNota(titolo)}
-          className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-md text-[13px] font-medium transition-opacity hover:opacity-80"
-          style={{ background: 'rgba(90,154,177,0.15)', color: 'var(--ist-accent-text)' }}
-        >
-          {titolo}
-        </button>
-      )
-    }
-    const video = part.match(/^\{\{([^}]+)\}\}$/)
-    if (video) {
-      const v = videoByTitle.get(video[1].trim().toLowerCase())
-      if (!v) return <Fragment key={i}>{video[1].trim()}</Fragment>
-      return (
-        <button
-          key={i}
-          type="button"
-          onClick={() => onCiteVideo(v.id)}
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md text-[13px] font-medium transition-opacity hover:opacity-80"
-          style={{ background: 'rgba(90,154,177,0.15)', color: 'var(--ist-accent-text)' }}
-        >
-          <PlayCircle size={12} />
-          {v.title}
-        </button>
-      )
-    }
-    return <Fragment key={i}>{part.split('\n').map((line, j) => <Fragment key={j}>{j > 0 && <br />}{line}</Fragment>)}</Fragment>
-  })
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      components={{
+        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+        ul: ({ children }) => <ul className="list-disc pl-5 mb-2 last:mb-0 space-y-0.5">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 last:mb-0 space-y-0.5">{children}</ol>,
+        code: ({ children }) => <code className="px-1 py-0.5 rounded text-[12px]" style={{ background: 'var(--ist-w8)' }}>{children}</code>,
+        a: ({ href, children }) => {
+          if (href?.startsWith('nota:')) {
+            const titolo = decodeURIComponent(href.slice(5))
+            return (
+              <button type="button" onClick={() => onCiteNota(titolo)} className={CITAZIONE_CLASSE} style={CITAZIONE_STILE}>
+                {children}
+              </button>
+            )
+          }
+          if (href?.startsWith('video:')) {
+            const v = videoByTitle.get(decodeURIComponent(href.slice(6)).toLowerCase())
+            if (!v) return <>{children}</>
+            return (
+              <button type="button" onClick={() => onCiteVideo(v.id)} className={`${CITAZIONE_CLASSE} gap-1`} style={CITAZIONE_STILE}>
+                <PlayCircle size={12} />
+                {v.title}
+              </button>
+            )
+          }
+          return <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--ist-accent-text)', textDecoration: 'underline' }}>{children}</a>
+        },
+      }}
+    >
+      {preparaMarkdown(text)}
+    </ReactMarkdown>
+  )
 }
 
 export default function StudentSpaceQuant() {
@@ -91,6 +113,16 @@ export default function StudentSpaceQuant() {
   const inputRef = useRef<HTMLInputElement>(null)
   const messaggiFineRef = useRef<HTMLDivElement>(null)
   const safeBottom = useStableSafeAreaBottom()
+
+  // Stessa identica gestione tastiera della chat normale (ChatPage.tsx), via
+  // gli hook condivisi: il contenitore combacia con l'area visibile quando la
+  // tastiera è aperta su web/PWA (vp.kbOpen), mentre su nativo iOS il webview
+  // non si ridimensiona da solo e va sollevato manualmente (keyboardInset).
+  const vp = useVisibleViewport()
+  const nativeKbHeight = useNativeKeyboardHeight()
+  const nativeKb = nativeKbHeight > 0
+  const keyboardInset = nativeKeyboardInset(nativeKbHeight)
+  const keyboardOpen = (vp?.kbOpen ?? false) || nativeKb
 
   // Altezza minima reale: sotto la maniglia riserviamo la safe-area (home
   // indicator su iOS), altrimenti il testo risulta schiacciato in basso.
@@ -269,7 +301,14 @@ export default function StudentSpaceQuant() {
     // galleggia sopra — così non c'è più uno stacco di colore a sinistra.
     <div
       className="fixed inset-0 z-10 overflow-hidden"
-      style={{ background: 'var(--ist-nav-bg)' }}
+      style={{
+        background: 'var(--ist-nav-bg)',
+        // Stesso meccanismo di ChatPage.tsx: su web/PWA con tastiera aperta
+        // (non su nativo, dove il webview non si ridimensiona) il contenitore
+        // combacia con l'area realmente visibile, altrimenti resterebbe
+        // "sotto" la tastiera invece di restringersi sopra di essa.
+        ...(vp?.kbOpen && !nativeKb ? { top: vp.top, height: vp.height, bottom: 'auto' } : null),
+      }}
     >
       <div
         ref={colonnaRef}
@@ -379,7 +418,9 @@ export default function StudentSpaceQuant() {
                           : { color: 'var(--ist-text)' }
                       }
                     >
-                      {m.ruolo === 'utente' ? m.testo : renderWithCitations(m.testo, handleNodeClick, m.videoCitati ?? [], handleVideoClick)}
+                      {m.ruolo === 'utente' ? m.testo : (
+                        <MessaggioAssistente text={m.testo} onCiteNota={handleNodeClick} videoCitati={m.videoCitati ?? []} onCiteVideo={handleVideoClick} />
+                      )}
                     </div>
                   </div>
                 ))}
@@ -393,7 +434,15 @@ export default function StudentSpaceQuant() {
               <form
                 onSubmit={handleSubmit}
                 className="flex-shrink-0 flex items-center gap-1.5 px-4 pt-3"
-                style={{ paddingBottom: 12 + safeBottom }}
+                style={{
+                  // Stessa formula della chat normale: tastiera chiusa → 12px
+                  // + safe-area; aperta su iOS nativo (webview non si
+                  // ridimensiona da solo) → si solleva di keyboardInset;
+                  // aperta su web/Android (il contenitore è già la giusta
+                  // area visibile) → basta il gap fisso, altrimenti si
+                  // sommerebbe due volte la stessa compensazione.
+                  paddingBottom: keyboardOpen ? (keyboardInset > 0 ? keyboardInset + 12 : 12) : 12 + safeBottom,
+                }}
               >
                 <input
                   ref={inputRef}
