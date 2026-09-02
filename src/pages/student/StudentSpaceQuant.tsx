@@ -124,6 +124,16 @@ export default function StudentSpaceQuant() {
   const keyboardInset = nativeKeyboardInset(nativeKbHeight)
   const keyboardOpen = (vp?.kbOpen ?? false) || nativeKb
 
+  // Altezza "aperta" di riposo: normalmente 78vh (unità nativa del browser,
+  // corretta quando l'area visibile combacia col viewport). Ma con la
+  // tastiera aperta su web/PWA il contenitore radice viene ristretto via JS
+  // a vp.height (vedi sotto), mentre vh resta ancorata al viewport INTERO
+  // (non si accorcia con la tastiera) — il pannello risulterebbe più alto
+  // dell'area visibile e la casella di testo, in fondo, sparirebbe sotto la
+  // tastiera. In quel caso calcoliamo il 78% direttamente da vp.height invece
+  // di lasciarlo a vh.
+  const alturaApertaResa = keyboardOpen && vp ? `${vp.height * 0.78}px` : '78vh'
+
   // Altezza minima reale: sotto la maniglia riserviamo la safe-area (home
   // indicator su iOS), altrimenti il testo risulta schiacciato in basso.
   const alturaChiusa = MIN_SHEET_HEIGHT + safeBottom
@@ -368,7 +378,7 @@ export default function StudentSpaceQuant() {
           ref={sheetRef}
           className="flex-shrink-0 w-full flex flex-col overflow-hidden"
           style={{
-            height: chatHeight !== null ? `${chatHeight}px` : (chatEspansa ? '78vh' : `${alturaChiusa}px`),
+            height: chatHeight !== null ? `${chatHeight}px` : (chatEspansa ? alturaApertaResa : `${alturaChiusa}px`),
             background: 'var(--ist-nav-bg)',
             borderTop: '1px solid var(--ist-w8)',
             borderTopLeftRadius: 20,
