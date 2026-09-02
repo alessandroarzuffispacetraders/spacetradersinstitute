@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { updateUserAuth, deleteUserAccount } from '../../lib/adminUsers'
 import { useAccessSummaries, fetchUserAccessLogs, AccessSummary, AccessLog } from '../../lib/accessLog'
 import { downloadCsv } from '../../lib/csv'
+import QuantBrainIcon from '../../components/icons/QuantBrainIcon'
 
 const STAFF_ROLES: UserRole[] = ['coach', 'mental_coach', 'admin']
 
@@ -470,13 +471,15 @@ function AccessBadge({ summary }: { summary?: AccessSummary }) {
 
 // ── User Row ────────────────────────────────────────────────────────────────
 
-function UserRow({ user, summary, onEdit, onUpdatePerms, onActivate, onPromote }: {
+function UserRow({ user, summary, hasQuantBrain, onEdit, onUpdatePerms, onActivate, onPromote, onToggleQuantBrain }: {
   user: Profile
   summary?: AccessSummary
+  hasQuantBrain: boolean
   onEdit: (u: Profile) => void
   onUpdatePerms: (id: string, perms: UserPermissions) => void
   onActivate: (id: string) => void
   onPromote: (id: string) => void
+  onToggleQuantBrain: (id: string, next: boolean) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [logs, setLogs] = useState<AccessLog[] | null>(null)
@@ -635,6 +638,23 @@ function UserRow({ user, summary, onEdit, onUpdatePerms, onActivate, onPromote }
               />
             </div>
           )}
+
+          {/* Accesso a Quant-Brain: beta ristretta ad admin + chi viene
+              abilitato qui esplicitamente, non legata al piano gratuito/completo. */}
+          {user.role === 'student' && (
+            <div className="p-4 rounded-2xl" style={{ background: 'var(--ist-w5)', border: '1px solid var(--ist-border)' }}>
+              <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2" style={{ color: 'var(--ist-text-dim)' }}>
+                <QuantBrainIcon size={10} /> Accesso beta
+              </p>
+              <PermToggle
+                icon={<QuantBrainIcon size={14} />}
+                label="Quant-Brain"
+                description="Abilita il grafo e la chat AI sul manuale di trading quantitativo"
+                checked={hasQuantBrain}
+                onChange={v => onToggleQuantBrain(user.id, v)}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -649,6 +669,7 @@ export default function AdminUtenti() {
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [editingUser, setEditingUser] = useState<Profile | null>(null)
+  const [quantBrainAccess, setQuantBrainAccess] = useState<Set<string>>(new Set())
   const { summaries } = useAccessSummaries()
 
   useEffect(() => {
@@ -657,12 +678,14 @@ export default function AdminUtenti() {
     Promise.all([
       supabase.from('profiles').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles_private').select('id, phone'),
-    ]).then(([{ data: profs }, { data: priv }]) => {
+      supabase.from('spacequant_access').select('user_id'),
+    ]).then(([{ data: profs }, { data: priv }, { data: qbAccess }]) => {
       if (profs) {
         const phoneById = new Map<string, string | null>()
         for (const p of (priv ?? []) as { id: string; phone: string | null }[]) phoneById.set(p.id, p.phone)
         setUsers((profs as Profile[]).map(u => ({ ...u, phone: phoneById.get(u.id) ?? null })))
       }
+      setQuantBrainAccess(new Set((qbAccess ?? []).map((r: { user_id: string }) => r.user_id)))
       setLoading(false)
     })
   }, [])
@@ -700,6 +723,22 @@ export default function AdminUtenti() {
   const handlePromote = async (id: string) => {
     await supabase.from('profiles').update({ tier: 'full' }).eq('id', id)
     setUsers(prev => prev.map(u => u.id === id ? { ...u, tier: 'full' } : u))
+  }
+
+  // Accesso beta a Quant-Brain: non un piano/tier, una tabella a parte
+  // (spacequant_access) — RLS ammette qualunque scrittura da un admin.
+  const handleToggleQuantBrain = async (id: string, next: boolean) => {
+    if (next) {
+      const { data: { session } } = await supabase.auth.getSession()
+      await supabase.from('spacequant_access').upsert({ user_id: id, granted_by: session?.user.id ?? null })
+    } else {
+      await supabase.from('spacequant_access').delete().eq('user_id', id)
+    }
+    setQuantBrainAccess(prev => {
+      const updated = new Set(prev)
+      if (next) updated.add(id); else updated.delete(id)
+      return updated
+    })
   }
 
   // Esporta gli utenti attualmente filtrati in CSV (nome/email/stato/piano/
@@ -786,10 +825,12 @@ export default function AdminUtenti() {
               key={user.id}
               user={user}
               summary={summaries[user.id]}
+              hasQuantBrain={quantBrainAccess.has(user.id)}
               onEdit={setEditingUser}
               onUpdatePerms={handleUpdatePerms}
               onActivate={handleActivate}
               onPromote={handlePromote}
+              onToggleQuantBrain={handleToggleQuantBrain}
             />
           ))}
           {filtered.length === 0 && (
