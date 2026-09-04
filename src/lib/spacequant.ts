@@ -67,6 +67,39 @@ export function useSpaceQuantGraph() {
   return { nodi, archi, demo, loading, error }
 }
 
+// ─── Cronologia salvata (fatta ricomparire all'apertura della pagina) ────────
+
+// Le ultime N domande/risposte dell'utente, salvate lato server
+// (spacequant_chat_log, si autodistrugge dopo 30 giorni) — prima restavano
+// solo per il controllo admin e sparivano dalla UI ad ogni riapertura pagina.
+// null = ancora in caricamento, [] = nessuna cronologia salvata (o errore).
+const STORICO_LIMITE_SCAMBI = 20
+
+export function useSpaceQuantHistory(): ChatTurn[] | null {
+  const [cronologia, setCronologia] = useState<ChatTurn[] | null>(null)
+
+  useEffect(() => {
+    let active = true
+    supabase
+      .from('spacequant_chat_log')
+      .select('domanda, risposta, video_citati')
+      .order('created_at', { ascending: false })
+      .limit(STORICO_LIMITE_SCAMBI)
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error || !data) { setCronologia([]); return }
+        const turni: ChatTurn[] = [...data].reverse().flatMap(r => [
+          { ruolo: 'utente' as const, testo: r.domanda },
+          { ruolo: 'assistente' as const, testo: r.risposta, videoCitati: (r.video_citati ?? []) as VideoCitato[] },
+        ])
+        setCronologia(turni)
+      })
+    return () => { active = false }
+  }, [])
+
+  return cronologia
+}
+
 // ─── Accesso alla beta (solo admin + chi è stato abilitato esplicitamente) ────
 
 export function useSpaceQuantAccess() {

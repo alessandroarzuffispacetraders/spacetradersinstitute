@@ -10,7 +10,8 @@ import { useVisibleViewport, useNativeKeyboardHeight, nativeKeyboardInset } from
 import QuantBrainIcon from '../../components/icons/QuantBrainIcon'
 import KnowledgeGraph from '../../components/spacequant/KnowledgeGraph'
 import {
-  useSpaceQuantGraph, useSpaceQuantQuota, useSpaceQuantAccess, askSpaceQuant, type ChatTurn, type VideoCitato,
+  useSpaceQuantGraph, useSpaceQuantQuota, useSpaceQuantAccess, useSpaceQuantHistory, askSpaceQuant,
+  type ChatTurn, type VideoCitato,
 } from '../../lib/spacequant'
 
 // Altezza minima del pannello chiuso (solo maniglia) — anche limite inferiore
@@ -104,6 +105,8 @@ export default function StudentSpaceQuant() {
   const hasAccess = useSpaceQuantAccess()
   const { nodi, archi, demo, loading: grafoLoading, error: grafoError } = useSpaceQuantGraph()
   const { quotaRestante, setQuotaRestante } = useSpaceQuantQuota()
+  const cronologiaSalvata = useSpaceQuantHistory()
+  const storicoApplicatoRef = useRef(false)
 
   const [cronologia, setCronologia] = useState<ChatTurn[]>([])
   const [chatEspansa, setChatEspansa] = useState(false)
@@ -223,6 +226,19 @@ export default function StudentSpaceQuant() {
     setHideDownloadPrompt(true)
     return () => { setHideBottomNav(false); setHideDownloadPrompt(false) }
   }, [setHideBottomNav, setHideDownloadPrompt])
+
+  // Applica la cronologia salvata UNA SOLA VOLTA, appena arriva — ma solo se
+  // non è già in corso una conversazione (l'utente potrebbe aver scritto
+  // prima che il caricamento finisse): senza il controllo su c.length,
+  // sovrascriverebbe quello che ha appena mandato.
+  useEffect(() => {
+    if (cronologiaSalvata !== null && !storicoApplicatoRef.current) {
+      storicoApplicatoRef.current = true
+      if (cronologiaSalvata.length > 0) {
+        setCronologia(c => c.length === 0 ? cronologiaSalvata : c)
+      }
+    }
+  }, [cronologiaSalvata])
 
   // Nessuna domanda vera fatta ancora: mostra l'esempio (mai inviato
   // all'assistente, mai nella cronologia reale che va all'API).

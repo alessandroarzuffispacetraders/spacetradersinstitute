@@ -98,11 +98,15 @@ Deno.serve(async (req) => {
           controller.enqueue(encoder.encode(META_SEP + JSON.stringify({ note_citate, video_citati })))
 
           // Log domanda/risposta — si autodistrugge dopo 30 giorni (cron
-          // pg_cron, vedi phase_spacequant_chat_log.sql). Mai far fallire la
-          // risposta già inviata per un errore di logging: solo un warning.
+          // pg_cron, vedi phase_spacequant_chat_log.sql). Include le citazioni
+          // già estratte sopra: senza, ricaricando la cronologia un vecchio
+          // {{Titolo video}} non avrebbe modo di ridiventare un link cliccabile
+          // (vedi useSpaceQuantHistory in src/lib/spacequant.ts). Mai far
+          // fallire la risposta già inviata per un errore di logging: solo un
+          // warning.
           const { error: logErr } = await admin
             .from('spacequant_chat_log')
-            .insert({ user_id: user.id, domanda, risposta })
+            .insert({ user_id: user.id, domanda, risposta, note_citate, video_citati })
           if (logErr) console.error('spacequant_chat_log insert:', logErr.message)
         } catch (err) {
           // Lo stream è già iniziato (status 200 già inviato): l'unico modo
