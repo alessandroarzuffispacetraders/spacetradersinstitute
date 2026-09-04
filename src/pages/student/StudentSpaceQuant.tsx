@@ -239,8 +239,10 @@ export default function StudentSpaceQuant() {
     if (chatEspansa) messaggiFineRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
   }, [messaggi.length, messaggi[messaggi.length - 1]?.testo.length, chatEspansa])
 
-  const handleNodeClick = (titolo: string) => {
-    setChatEspansa(true) // il grafo è un menu di domande: cliccare un nodo apre direttamente la chat
+  // Click su una citazione [[Nota]] dentro un messaggio (il grafo è
+  // puramente decorativo ora, non genera più domande al tocco di un nodo).
+  const handleCitaNota = (titolo: string) => {
+    setChatEspansa(true)
     setInput(`Spiegami: ${titolo}`)
     setTimeout(() => inputRef.current?.focus(), 50) // dopo l'animazione di apertura
   }
@@ -357,7 +359,7 @@ export default function StudentSpaceQuant() {
             </div>
           ) : (
             <>
-              <KnowledgeGraph nodi={nodi} archi={archi} onNodeClick={handleNodeClick} />
+              <KnowledgeGraph nodi={nodi} archi={archi} pensando={inviando} />
               {demo && (
                 <div
                   className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[11px] font-medium"
@@ -429,7 +431,7 @@ export default function StudentSpaceQuant() {
                       }
                     >
                       {m.ruolo === 'utente' ? m.testo : (
-                        <MessaggioAssistente text={m.testo} onCiteNota={handleNodeClick} videoCitati={m.videoCitati ?? []} onCiteVideo={handleVideoClick} />
+                        <MessaggioAssistente text={m.testo} onCiteNota={handleCitaNota} videoCitati={m.videoCitati ?? []} onCiteVideo={handleVideoClick} />
                       )}
                     </div>
                   </div>

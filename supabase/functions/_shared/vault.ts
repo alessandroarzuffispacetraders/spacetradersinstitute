@@ -239,6 +239,52 @@ export function buildDemoGraph(): { nodi: GraphNode[]; archi: GraphEdge[] } {
   return { nodi, archi }
 }
 
+// Nodi puramente decorativi da aggiungere al grafo REALE: nessuna nota dietro,
+// nessun testo mostrato (il client non ha etichette hover né azione al tocco
+// sui nodi — vedi KnowledgeGraph.tsx). Richiesta esplicita: il grafo mostrato
+// non deve rispecchiare 1:1 il sommario del manuale, solo dare l'impressione
+// di una nuvola più fitta. Stesso attaccamento preferenziale di buildDemoGraph
+// (struttura a hub naturale), con qualche aggancio verso il grafo reale così
+// il tutto resta un'unica nuvola invece di due gruppi separati.
+export function buildDecorativeExtras(realTitles: string[], count: number): { nodi: GraphNode[]; archi: GraphEdge[] } {
+  const rand = mulberry32(7)
+  const ids = Array.from({ length: count }, (_, i) => `deco-${i}`)
+  const archi: GraphEdge[] = []
+  const grado = new Map<string, number>()
+  const bump = (t: string) => grado.set(t, (grado.get(t) ?? 0) + 1)
+
+  for (let i = 1; i < ids.length; i++) {
+    const target = ids[i]
+    const linkCount = 1 + Math.floor(rand() * 3)
+    const pool = ids.slice(0, i)
+    const weights = pool.map(t => (grado.get(t) ?? 0) + 1)
+    const totalWeight = weights.reduce((a, b) => a + b, 0)
+    const chosen = new Set<number>()
+    for (let k = 0; k < linkCount && chosen.size < pool.length; k++) {
+      let r = rand() * totalWeight
+      let idx = 0
+      for (; idx < weights.length - 1; idx++) { r -= weights[idx]; if (r <= 0) break }
+      if (chosen.has(idx)) continue
+      chosen.add(idx)
+      archi.push({ da: target, a: pool[idx] })
+      bump(target); bump(pool[idx])
+    }
+  }
+
+  if (realTitles.length > 0) {
+    const collegamentiVersoReale = Math.floor(count * 0.3)
+    for (let k = 0; k < collegamentiVersoReale; k++) {
+      const decoId = ids[Math.floor(rand() * ids.length)]
+      const realTitle = realTitles[Math.floor(rand() * realTitles.length)]
+      archi.push({ da: decoId, a: realTitle })
+      bump(decoId)
+    }
+  }
+
+  const nodi: GraphNode[] = ids.map(id => ({ id, cartella: 'Indice', grado: grado.get(id) ?? 0 }))
+  return { nodi, archi }
+}
+
 // Concatenazione deterministica dell'intero vault per il blocco system cacheable.
 // MAI restituita al client — solo usata per costruire la richiesta ad Anthropic.
 export function buildSystemText(files: VaultFile[]): string {

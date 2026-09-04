@@ -211,13 +211,25 @@ function trovaViciniCatena(nodes: SimNode[], originX: number, originY: number, e
 
 interface RippleState { node: SimNode; ox: number; oy: number; tx: number; ty: number; start: number; vicini: VicinoCatena[]; maxRitardoMs: number }
 
+// Particella "pensiero": corre da un capo all'altro di UN arco a caso, veloce
+// e permanente per tutta la sua corsa (mai a metà, non segue i nodi mentre si
+// muovono). Puramente decorativa: non tocca simRef, solo un overlay in draw().
+interface Particella { edgeIdx: number; start: number; durataMs: number }
+const PARTICELLA_MAX = 6 // "non molti pallini"
+const PARTICELLA_DURATA_MS = 350 // "molto velocemente"
+const PARTICELLA_PROBABILITA_SPAWN = 0.15 // per fotogramma, mentre si pensa
+
 interface Props {
   nodi: GraphNode[]
   archi: GraphEdge[]
-  onNodeClick: (titolo: string) => void
+  // True mentre l'assistente sta generando una risposta: accende le
+  // particelle che corrono lungo i collegamenti (nessun'altra conseguenza sul
+  // grafo). Il grafo è puramente decorativo — niente più azione al tocco di
+  // un nodo (vedi onMouseUp/onTouchEnd).
+  pensando: boolean
 }
 
-export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
+export default function KnowledgeGraph({ nodi, archi, pensando }: Props) {
   const { theme } = useTheme()
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -233,6 +245,9 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   const boundaryRef = useRef(260)
   const rippleRef = useRef<RippleState | null>(null)
   const rippleTimerRef = useRef<number | null>(null)
+  const particelleRef = useRef<Particella[]>([])
+  const pensandoRef = useRef(false)
+  const particelleAnimRef = useRef<number | null>(null)
   // Ultimo istante in cui è stato applicato il richiamo verso "casa" (vedi
   // SETTLE_TAU_SEC) — persiste tra un tocco e l'altro apposta: il calcolo del
   // delta include anche i secondi di pausa tra due tocchi, non solo i
@@ -297,14 +312,22 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
         ctx.strokeStyle = ink.ring
         ctx.stroke()
       }
+    }
 
-      // Nome visibile SOLO sul nodo selezionato (hover/tocco) — richiesta
-      // esplicita: niente etichette permanenti sugli hub o allo zoom alto.
-      if (isHovered) {
-        ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif'
-        ctx.fillStyle = `rgba(${ink.dot},0.85)`
-        ctx.fillText(n.id, x + r + 4, y + 4)
-      }
+    // Particelle "pensiero": piccoli punti che corrono lungo i collegamenti
+    // mentre l'assistente sta rispondendo — vedi particelleTick più sotto. Pure
+    // decorative, non toccano le posizioni dei nodi.
+    for (const p of particelleRef.current) {
+      const edge = edgesIdxRef.current[p.edgeIdx]
+      if (!edge) continue
+      const a = simRef.current[edge[0]], b = simRef.current[edge[1]]
+      if (!a || !b) continue
+      const t = Math.min(1, (performance.now() - p.start) / p.durataMs)
+      const [x, y] = toScreen(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+      ctx.beginPath()
+      ctx.arc(x, y, 2, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(${ink.dot},0.95)`
+      ctx.fill()
     }
   }, [theme])
 
@@ -312,6 +335,50 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   // versione più fresca di draw, mai una chiusura catturata all'avvio.
   const drawRef = useRef(draw)
   drawRef.current = draw
+
+  // ── Ciclo "pensiero": mentre pensando=true, ogni tanto fa partire una
+  // particella su un arco a caso (mai troppe insieme); quando pensando torna
+  // false smette di aggiungerne ma lascia finire quelle già in corsa, poi si
+  // ferma da solo — nessun loop perpetuo. ────────────────────────────────────
+  const particelleTick = useCallback(() => {
+    const ora = performance.now()
+    particelleRef.current = particelleRef.current.filter(p => ora - p.start < p.durataMs)
+    if (
+      pensandoRef.current &&
+      particelleRef.current.length < PARTICELLA_MAX &&
+      edgesIdxRef.current.length > 0 &&
+      Math.random() < PARTICELLA_PROBABILITA_SPAWN
+    ) {
+      particelleRef.current.push({
+        edgeIdx: Math.floor(Math.random() * edgesIdxRef.current.length),
+        start: ora,
+        durataMs: PARTICELLA_DURATA_MS,
+      })
+    }
+    drawRef.current()
+    if (pensandoRef.current || particelleRef.current.length > 0) {
+      particelleAnimRef.current = requestAnimationFrame(particelleTick)
+    } else {
+      particelleAnimRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    pensandoRef.current = pensando
+    if (pensando && particelleAnimRef.current === null) {
+      particelleAnimRef.current = requestAnimationFrame(particelleTick)
+    }
+  }, [pensando, particelleTick])
+
+  // Se il componente si smonta mentre pensando=true (es. si cambia pagina a
+  // risposta non ancora arrivata), pensandoRef resterebbe true per sempre e
+  // il ciclo continuerebbe a richiamarsi via rAF all'infinito — a differenza
+  // del "tocco" (che si esaurisce comunque da solo in pochi secondi), qui
+  // non c'è un limite naturale. Ferma esplicitamente tutto allo smontaggio.
+  useEffect(() => () => {
+    pensandoRef.current = false
+    if (particelleAnimRef.current !== null) cancelAnimationFrame(particelleAnimRef.current)
+  }, [])
 
   // ── Ciclo del "tocco": il nodo scelto avanza (con decelerazione) verso una
   // meta vicina; ogni vicino segue la STESSA traiettoria ma valutata con il
@@ -534,9 +601,9 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   }
 
   const onMouseUp = () => {
-    if (dragRef.current?.mode === 'node' && !dragRef.current.moved) {
-      onNodeClick(dragRef.current.nodeId!) // click senza trascinare = domanda
-    }
+    // Il grafo è puramente decorativo: toccare/cliccare un nodo senza
+    // trascinare non fa più nulla (niente titolo, niente domanda
+    // precompilata) — solo il trascinamento resta interattivo.
     dragRef.current = null
   }
 
@@ -604,9 +671,7 @@ export default function KnowledgeGraph({ nodi, archi, onNodeClick }: Props) {
   }
 
   const onTouchEnd = () => {
-    if (dragRef.current?.mode === 'node' && !dragRef.current.moved) {
-      onNodeClick(dragRef.current.nodeId!) // tap senza trascinare = domanda
-    }
+    // Vedi onMouseUp: il tocco senza trascinare non fa più nulla.
     dragRef.current = null
   }
 
