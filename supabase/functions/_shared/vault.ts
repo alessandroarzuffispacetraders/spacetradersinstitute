@@ -70,8 +70,13 @@ function grezzo(s: string): string {
 export async function loadVaultFiles(admin: SupabaseClient): Promise<VaultFile[]> {
   const paths = (await listMarkdownPaths(admin)).sort() // ordine deterministico → prefisso di cache stabile
 
-  const files: VaultFile[] = []
-  for (const path of paths) {
+  // Download in PARALLELO: erano sequenziali (un file alla volta), che con
+  // 50+ note a cache fredda voleva dire sommare 50+ round-trip in fila —
+  // qualche secondo prima che grafo/chat avessero qualcosa da mostrare.
+  // L'ordine del risultato resta comunque quello di `paths`, indipendente
+  // dall'ordine di arrivo delle risposte: è quello che conta per la
+  // stabilità del prompt cache lato Anthropic.
+  const files = await Promise.all(paths.map(async (path): Promise<VaultFile> => {
     const { data, error } = await admin.storage.from(BUCKET).download(path)
     if (error || !data) throw new Error(`Vault download fallito (${path}): ${error?.message}`)
     const raw = await data.text()
@@ -87,8 +92,8 @@ export async function loadVaultFiles(admin: SupabaseClient): Promise<VaultFile[]
     // H1 già combaciano esattamente.
     const h1 = body.match(/^#\s+(.+?)\s*$/m)?.[1]
     const title = h1 && grezzo(h1) === grezzo(pathTitle) ? h1 : pathTitle
-    files.push({ path, folder, title, aliases, body })
-  }
+    return { path, folder, title, aliases, body }
+  }))
   return files
 }
 
@@ -243,21 +248,30 @@ export function buildDemoGraph(): { nodi: GraphNode[]; archi: GraphEdge[] } {
 // nessun testo mostrato (il client non ha etichette hover né azione al tocco
 // sui nodi — vedi KnowledgeGraph.tsx). Richiesta esplicita: il grafo mostrato
 // non deve rispecchiare 1:1 il sommario del manuale, solo dare l'impressione
-// di una nuvola più fitta. Stesso attaccamento preferenziale di buildDemoGraph
-// (struttura a hub naturale), con qualche aggancio verso il grafo reale così
-// il tutto resta un'unica nuvola invece di due gruppi separati.
+// di una nuvola più fitta.
+//
+// L'attaccamento preferenziale pesca SEMPRE anche dai nodi reali fin dal
+// primo nodo decorativo (non solo con un bonus finale sparso): prima
+// versione creava i decorativi come loro proprio cluster preferenziale,
+// collegato al grafo reale solo con pochi archi sparsi alla fine — con la
+// fisica a repulsione, due gruppi densi con pochi ponti si separano in due
+// "lobi" (l'effetto "8 storto" segnalato). Mescolando fin da subito i due
+// insiemi nel pool di attaccamento, i decorativi si intrecciano nella stessa
+// nuvola invece di formarne una a parte.
 export function buildDecorativeExtras(realTitles: string[], count: number): { nodi: GraphNode[]; archi: GraphEdge[] } {
   const rand = mulberry32(7)
   const ids = Array.from({ length: count }, (_, i) => `deco-${i}`)
   const archi: GraphEdge[] = []
   const grado = new Map<string, number>()
   const bump = (t: string) => grado.set(t, (grado.get(t) ?? 0) + 1)
+  for (const t of realTitles) grado.set(t, 1) // peso di partenza, altrimenti mai scelti dal pool
 
-  for (let i = 1; i < ids.length; i++) {
+  for (let i = 0; i < ids.length; i++) {
     const target = ids[i]
-    const linkCount = 1 + Math.floor(rand() * 3)
-    const pool = ids.slice(0, i)
-    const weights = pool.map(t => (grado.get(t) ?? 0) + 1)
+    const linkCount = 2 + Math.floor(rand() * 3) // 2-4, più del prima: serve più intreccio
+    const pool = [...realTitles, ...ids.slice(0, i)]
+    if (pool.length === 0) continue
+    const weights = pool.map(t => grado.get(t) ?? 1)
     const totalWeight = weights.reduce((a, b) => a + b, 0)
     const chosen = new Set<number>()
     for (let k = 0; k < linkCount && chosen.size < pool.length; k++) {
@@ -268,16 +282,6 @@ export function buildDecorativeExtras(realTitles: string[], count: number): { no
       chosen.add(idx)
       archi.push({ da: target, a: pool[idx] })
       bump(target); bump(pool[idx])
-    }
-  }
-
-  if (realTitles.length > 0) {
-    const collegamentiVersoReale = Math.floor(count * 0.3)
-    for (let k = 0; k < collegamentiVersoReale; k++) {
-      const decoId = ids[Math.floor(rand() * ids.length)]
-      const realTitle = realTitles[Math.floor(rand() * realTitles.length)]
-      archi.push({ da: decoId, a: realTitle })
-      bump(decoId)
     }
   }
 

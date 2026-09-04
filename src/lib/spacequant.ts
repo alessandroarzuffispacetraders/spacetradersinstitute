@@ -30,14 +30,22 @@ export interface ChatError {
 
 // ─── Grafo (fetch una volta, la struttura non cambia durante la sessione) ────
 
+// Cache a livello di modulo: la struttura del grafo non cambia praticamente
+// mai durante una sessione di navigazione, quindi la prima richiesta la
+// popola e ogni rimontaggio successivo (es. si esce e si torna sulla pagina)
+// la mostra all'istante, senza rifare la chiamata di rete — è quello che
+// rende il caricamento "praticamente subito" dalla seconda visita in poi.
+let grafoCache: { nodi: GraphNode[]; archi: GraphEdge[]; demo: boolean } | null = null
+
 export function useSpaceQuantGraph() {
-  const [nodi, setNodi] = useState<GraphNode[]>([])
-  const [archi, setArchi] = useState<GraphEdge[]>([])
-  const [demo, setDemo] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [nodi, setNodi] = useState<GraphNode[]>(grafoCache?.nodi ?? [])
+  const [archi, setArchi] = useState<GraphEdge[]>(grafoCache?.archi ?? [])
+  const [demo, setDemo] = useState(grafoCache?.demo ?? false)
+  const [loading, setLoading] = useState(grafoCache === null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (grafoCache !== null) return // già in cache per questa sessione, niente da rifare
     let active = true
     supabase.functions.invoke('spacequant-grafo', { body: {} }).then(async ({ data, error: err }) => {
       if (!active) return
@@ -47,9 +55,10 @@ export function useSpaceQuantGraph() {
         setLoading(false)
         return
       }
-      setNodi(data.nodi ?? [])
-      setArchi(data.archi ?? [])
-      setDemo(!!data.demo)
+      grafoCache = { nodi: data.nodi ?? [], archi: data.archi ?? [], demo: !!data.demo }
+      setNodi(grafoCache.nodi)
+      setArchi(grafoCache.archi)
+      setDemo(grafoCache.demo)
       setLoading(false)
     })
     return () => { active = false }
