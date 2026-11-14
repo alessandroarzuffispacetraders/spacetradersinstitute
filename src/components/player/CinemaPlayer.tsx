@@ -108,6 +108,12 @@ export default function CinemaPlayer({
   // Dopo uno spostamento ignoriamo i timeupdate "vecchi" finché Vimeo non
   // arriva davvero al nuovo punto (altrimenti la barra salta indietro).
   const seekTarget = useRef<number | null>(null)
+  // Momento dell'ultima pausa: subito dopo può arrivare un ultimo timeupdate
+  // "in ritardo" che non deve far credere che il video sia ripartito.
+  const pausedAt = useRef(0)
+  // Ultimo timeupdate ricevuto: se "sta andando" ma il tempo è fermo da un po'
+  // (e non sta caricando), chiediamo a Vimeo lo stato reale.
+  const lastTickAt = useRef(0)
   const seekTimer = useRef<number>()
 
   // Telefono/tablet: comandi grandi al centro, tocco = mostra/nasconde.
@@ -178,15 +184,23 @@ export default function CinemaPlayer({
     // Quando parte, i comandi restano visibili qualche secondo e poi spariscono
     // (anche su telefono, dove non c'è il movimento del mouse a farlo).
     player.on('play', () => { setPlaying(true); setEnded(false); poke() })
-    player.on('playing', () => setBuffering(false))
-    player.on('pause', (d: TimeData) => { setPlaying(false); if (onProgressRef.current) save(d.seconds) })
+    player.on('playing', () => { setBuffering(false); setPlaying(true); setEnded(false) })
+    player.on('pause', (d: TimeData) => { pausedAt.current = Date.now(); setPlaying(false); if (onProgressRef.current) save(d.seconds) })
     player.on('ended', () => { setPlaying(false); setEnded(true); onEndedRef.current?.() })
+    let prevTick = -1
     player.on('timeupdate', (d: TimeData) => {
       latest = d.seconds
       if (seekTarget.current !== null) {
         if (Math.abs(d.seconds - seekTarget.current) > 1.5) return
         seekTarget.current = null
+        prevTick = d.seconds
       }
+      // Il tempo avanza di poco tra due aggiornamenti = il video sta andando,
+      // qualunque cosa sia successo agli eventi (stato "fermo" mai bloccato).
+      const delta = d.seconds - prevTick
+      prevTick = d.seconds
+      lastTickAt.current = Date.now()
+      if (delta > 0 && delta < 1.5 && !playingRef.current && Date.now() - pausedAt.current > 800) { setPlaying(true); setEnded(false) }
       setTime(d.seconds)
       if (d.duration > 0) setDuration(d.duration)
       if (onProgressRef.current && d.seconds - lastSaved >= SAVE_EVERY_S) save(d.seconds)
@@ -207,6 +221,18 @@ export default function CinemaPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoUrl, startAt])
 
+  // Controllo di coerenza: icona "in riproduzione" ma tempo fermo → stato reale.
+  useEffect(() => {
+    if (!playing || buffering) return
+    lastTickAt.current = Date.now()
+    const iv = window.setInterval(() => {
+      const p = playerRef.current
+      if (!p || Date.now() - lastTickAt.current < 2500) return
+      p.getPaused().then(paused => { if (paused) setPlaying(false) }).catch(() => {})
+    }, 1500)
+    return () => window.clearInterval(iv)
+  }, [playing, buffering])
+
   // ── Azioni ──────────────────────────────────────────────────────────────────
   const play = useCallback(async () => {
     const p = playerRef.current
@@ -220,7 +246,9 @@ export default function CinemaPlayer({
         await p.setMuted(true).catch(() => {})
         setMuted(true)
         setNeedsUnmute(true)
-        p.play().catch(() => {})
+        p.play().catch(() => setPlaying(false))
+      } else {
+        setPlaying(false)
       }
     }
   }, [])
@@ -232,11 +260,12 @@ export default function CinemaPlayer({
     if (!p || !ready) return
     if (ended) { setEnded(false); setPlaying(true); p.setCurrentTime(0).then(() => play()).catch(() => {}); return }
     if (playingRef.current) {
+      pausedAt.current = Date.now()
       setPlaying(false)
       p.pause().catch(() => setPlaying(true))
     } else {
       setPlaying(true)
-      play().then(() => p.getPaused().then(paused => { if (paused) setPlaying(false) }).catch(() => {}))
+      play()
     }
   }, [ready, ended, play])
 
