@@ -4,6 +4,7 @@ import { Loader2, Play, Info, RotateCcw, Sparkles, ArrowRight } from 'lucide-rea
 import PageHeader from '../../components/ui/PageHeader'
 import { useStudentCatalog, getCategoryStats, Category } from '../../lib/content'
 import { useAuth } from '../../context/AuthContext'
+import { useCinemaMode } from '../../context/ThemeContext'
 import { isFreeUser, upsellSuppressed } from '../../lib/freeTier'
 import { useContactAdmin } from '../../lib/upgradeContact'
 import {
@@ -27,6 +28,7 @@ const SINGLE_ROW_MAX = 8
 //     puntate), in righe per fase e nell'ordine del catalogo. Passando col
 //     mouse (o toccando, da telefono) la card si apre con copertina e dettagli.
 export default function StudentCorsi() {
+  useCinemaMode()
   const navigate = useNavigate()
   const { user } = useAuth()
   const { contactAdmin, ready: contactReady } = useContactAdmin()
@@ -70,7 +72,7 @@ export default function StudentCorsi() {
   }
 
   const upsell = isFreeUser(user) && !upsellSuppressed() && (
-    <div className="px-4 lg:px-10 mb-7">
+    <div className="cinema-px mb-7">
       <div
         className="max-w-3xl rounded-2xl p-4 flex items-center gap-3.5"
         style={{ background: 'var(--ist-card-bg-premium)', border: '1px solid var(--ist-card-border-premium)' }}
@@ -103,12 +105,12 @@ export default function StudentCorsi() {
   // Nessuna lezione pubblicata: niente banner, solo un messaggio.
   if (!resume) {
     return (
-      <div className="pb-6">
-        <div className="p-5 lg:p-8 max-w-4xl mx-auto">
+      <div className="cinema-page pb-6">
+        <div className="cinema-px pt-6 lg:pt-8">
           <PageHeader title="Videocorsi" subtitle="Il catalogo delle lezioni" />
         </div>
         {upsell}
-        <div className="px-4 lg:px-10">
+        <div className="cinema-px">
           <div
             className="max-w-3xl rounded-3xl p-10 text-center"
             style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)' }}
@@ -126,7 +128,7 @@ export default function StudentCorsi() {
   const heroLesson = hero.lesson
 
   return (
-    <div className="pb-8">
+    <div className="cinema-page pb-8">
       <Billboard
         imageUrl={heroLesson.coverUrl}
         vimeoId={heroLesson.vimeoId}
@@ -169,6 +171,28 @@ export default function StudentCorsi() {
       <div className="mt-2 lg:mt-0">
         {upsell}
 
+        {/* Le serie (categorie) come locandine, nell'ordine del catalogo: prima
+            cosa dopo il banner. Su telefono un carosello con le vicine in penombra. */}
+        {seriesRows.map((row, r) => (
+          <MediaRow
+            key={`${row.phase}-${r}`}
+            eyebrow={seriesRows.length > 1 ? `Fase ${PHASES.indexOf(row.phase) + 1 || r + 1}` : undefined}
+            title={seriesRows.length > 1 ? row.phase : 'Il tuo percorso'}
+            itemClassName="w-[64vw] sm:w-[40vw] md:w-[30vw] lg:w-[220px] xl:w-[240px]"
+            variant="carousel"
+            initialIndex={r === 0 && currentIndex > 0 && currentIndex < row.items.length ? currentIndex : undefined}
+          >
+            {row.items.map(({ cat, index }) => (
+              <SeriesCard
+                key={cat.id}
+                category={cat}
+                isCurrent={index === currentIndex}
+                onOpen={() => openCategory(cat.id)}
+                onPlay={openLesson}
+              />
+            ))}
+          </MediaRow>
+        ))}
         {continuing.length > 0 && (
           <MediaRow title="Continua a guardare">
             {continuing.map(e => (
@@ -182,25 +206,6 @@ export default function StudentCorsi() {
           </MediaRow>
         )}
 
-        {/* Le serie (categorie), nell'ordine del catalogo, una riga per fase */}
-        {seriesRows.map((row, r) => (
-          <MediaRow
-            key={`${row.phase}-${r}`}
-            eyebrow={seriesRows.length > 1 ? `Fase ${PHASES.indexOf(row.phase) + 1 || r + 1}` : undefined}
-            title={seriesRows.length > 1 ? row.phase : 'Il tuo percorso'}
-            itemClassName="w-[78vw] sm:w-[46vw] md:w-[34vw] lg:w-[320px] xl:w-[340px]"
-          >
-            {row.items.map(({ cat, index }) => (
-              <SeriesCard
-                key={cat.id}
-                category={cat}
-                isCurrent={index === currentIndex}
-                onOpen={() => openCategory(cat.id)}
-                onPlay={openLesson}
-              />
-            ))}
-          </MediaRow>
-        ))}
       </div>
     </div>
   )

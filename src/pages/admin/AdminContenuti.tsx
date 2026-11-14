@@ -182,6 +182,15 @@ function MoveBtns({ onUp, onDown, isFirst, isLast }: {
   )
 }
 
+// Locandina AI verticale della serie (categoria): il titolo lo scrive l'app.
+function categoryPosterSubject(cat: Category): CoverSubject {
+  return {
+    kind: 'category', id: cat.id, title: cat.title,
+    coverUrl: cat.posterUrl, keyword: null, status: cat.posterStatus,
+    accent: cat.accent, icon: phaseIcon(cat.phase),
+  }
+}
+
 function lessonCoverSubject(lesson: Lesson, category: Category, number: number): CoverSubject {
   return {
     kind: 'lesson', id: lesson.id, title: lesson.title,
@@ -508,8 +517,9 @@ function LessonRow({ lesson, courseId, category, number, isLast, isFirst, admin,
 
 // ─── Courses Tab ─────────────────────────────────────────────────────────────
 
-function CoursesTab({ admin, openModal, openCover }: {
+function CoursesTab({ admin, openModal, openCover, openPoster }: {
   admin: AdminApi; openModal: (s: ModalState) => void; openCover: (lessonId: string) => void
+  openPoster: (categoryId: string) => void
 }) {
   const cats = admin.categories
   const [expanded, setExpanded] = useState<ExpandState>({ categories: new Set(), courses: new Set() })
@@ -553,7 +563,7 @@ function CoursesTab({ admin, openModal, openCover }: {
                 onUp={() => admin.moveCategory(cat.id, 'up')}
                 onDown={() => admin.moveCategory(cat.id, 'down')}
               />
-              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: cat.accent, boxShadow: `0 0 6px ${cat.accent}60` }} />
+              <CoverChip subject={categoryPosterSubject(cat)} onClick={() => openPoster(cat.id)} width={30} />
               <button onClick={() => toggleCat(cat.id)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
                 <span className="font-bold text-sm truncate" style={{ color: 'var(--ist-text)' }}>{cat.title}</span>
               </button>
@@ -576,6 +586,7 @@ function CoursesTab({ admin, openModal, openCover }: {
                   label={cat.isFree ? 'A pagamento' : 'Gratis'}
                   onClick={() => admin.setFree(cat.id, !cat.isFree)}
                 />
+                <ActionBtn icon={<WandSparkles size={11} strokeWidth={2} />} label="Locandina" onClick={() => openPoster(cat.id)} />
                 <CoverBtn cat={cat} admin={admin} />
                 <ActionBtn icon={<Edit2 size={11} strokeWidth={2} />} label="Modifica" onClick={() => openModal({ kind: 'category', mode: 'edit', id: cat.id, entity: cat })} />
                 <ActionBtn
@@ -683,23 +694,29 @@ function CoursesTab({ admin, openModal, openCover }: {
 }
 
 
-// ─── Copertine AI mancanti (lezioni + replay) ───────────────────────────────
+// ─── Copertine AI mancanti (locandine delle serie + lezioni + replay) ───────
 
 function MissingCoversBar({ onProgressReload }: { onProgressReload: () => void }) {
   const [state, setState] = useState<
     | { phase: 'idle' }
     | { phase: 'checking' }
     | { phase: 'running'; done: number; total: number; failed: number }
-    | { phase: 'finished'; total: number; failed: number }
+    | { phase: 'finished'; total: number; failed: number; notice?: string }
     | { phase: 'message'; text: string; error?: boolean }
   >({ phase: 'idle' })
 
   const run = async () => {
     setState({ phase: 'checking' })
-    const { items, error } = await listMissingCovers()
+    const { items, error, notice } = await listMissingCovers()
     if (error) { setState({ phase: 'message', text: error, error: true }); return }
-    if (items.length === 0) { setState({ phase: 'message', text: 'Tutte le lezioni e i replay hanno già la copertina.' }); return }
-    if (!confirm(`Generare ${items.length} copertine (lezioni e replay)? Ci vorrà qualche minuto: tieni aperta questa pagina finché non finisce.`)) {
+    if (items.length === 0) {
+      setState({ phase: 'message', text: notice ?? 'Tutte le serie, le lezioni e i replay hanno già la loro grafica.', error: !!notice })
+      return
+    }
+    const posters = items.filter(i => i.kind === 'category').length
+    const covers = items.length - posters
+    const what = [posters ? `${posters} locandine delle serie` : '', covers ? `${covers} copertine (lezioni e replay)` : ''].filter(Boolean).join(' e ')
+    if (!confirm(`Generare ${what}? Ci vorrà qualche minuto: tieni aperta questa pagina finché non finisce.`)) {
       setState({ phase: 'idle' }); return
     }
     const res = await generateMissingCovers(items, (done, total, failed) => {
@@ -707,7 +724,7 @@ function MissingCoversBar({ onProgressReload }: { onProgressReload: () => void }
       if (done > 0 && done % 4 === 0) onProgressReload()
     })
     onProgressReload()
-    setState({ phase: 'finished', total: items.length, failed: res.failed })
+    setState({ phase: 'finished', total: items.length, failed: res.failed, notice })
   }
 
   const busy = state.phase === 'checking' || state.phase === 'running'
@@ -733,8 +750,8 @@ function MissingCoversBar({ onProgressReload }: { onProgressReload: () => void }
         ) : (
           <p className="text-[11px]" style={{ color: state.phase === 'message' && state.error ? '#FF6B7A' : 'var(--ist-text-muted)' }}>
             {state.phase === 'message' ? state.text
-              : state.phase === 'finished' ? `Fatto: ${state.total - state.failed} copertine create${state.failed ? `, ${state.failed} non riuscite (riprova dalla singola lezione)` : ''}.`
-              : 'Le nuove lezioni la ricevono da sole. Qui crei quelle che mancano a lezioni e replay già esistenti.'}
+              : state.phase === 'finished' ? `Fatto: ${state.total - state.failed} grafiche create${state.failed ? `, ${state.failed} non riuscite (riprova dalla singola serie o lezione)` : ''}.${state.notice ? ` ${state.notice}` : ''}`
+              : 'Nuove serie e lezioni le ricevono da sole. Qui crei quelle che mancano: prima le locandine delle serie, poi le copertine di lezioni e replay.'}
           </p>
         )}
       </div>
@@ -762,6 +779,8 @@ export default function AdminContenuti() {
   const [modal, setModal] = useState<ModalState | null>(null)
   const [coverLessonId, setCoverLessonId] = useState<string | null>(null)
   const coverCtx = coverLessonId ? findLessonContext(admin.categories, coverLessonId) : null
+  const [posterCatId, setPosterCatId] = useState<string | null>(null)
+  const posterCat = posterCatId ? admin.categories.find(c => c.id === posterCatId) ?? null : null
 
   const totalCats    = admin.categories.length
   const totalCourses = admin.categories.reduce((s, c) => s + c.courses.length, 0)
@@ -854,7 +873,7 @@ export default function AdminContenuti() {
       {tab === 'corsi' && (
         admin.loading
           ? <div className="flex items-center justify-center py-24"><Loader2 size={24} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} /></div>
-          : <CoursesTab admin={admin} openModal={setModal} openCover={setCoverLessonId} />
+          : <CoursesTab admin={admin} openModal={setModal} openCover={setCoverLessonId} openPoster={setPosterCatId} />
       )}
       {tab === 'live' && <LiveManager api={liveAdmin} defaultHost={user?.name} />}
 
@@ -862,6 +881,14 @@ export default function AdminContenuti() {
         <CoverEditorModal
           subject={lessonCoverSubject(coverCtx.lesson, coverCtx.category, coverCtx.number)}
           onClose={() => setCoverLessonId(null)}
+          onChanged={() => { void admin.reload() }}
+        />
+      )}
+
+      {posterCat && (
+        <CoverEditorModal
+          subject={categoryPosterSubject(posterCat)}
+          onClose={() => setPosterCatId(null)}
           onChanged={() => { void admin.reload() }}
         />
       )}

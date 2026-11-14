@@ -300,14 +300,33 @@ html.is-android *::after {
 :root { --ist-media-accent: #7CBBD0; --ist-media-ring: rgba(255,255,255,0.85); }
 .light { --ist-media-ring: rgba(15,25,35,0.7); }
 
+/* Margini laterali delle pagine cinema. Su desktop la pagina si estende SOTTO
+   la barra laterale flottante (108px = 16 + 76 + 16): sfondi, banner e righe
+   arrivano al bordo dello schermo, mentre testi e card restano allineati come
+   prima (108px + 2.5rem). */
+:root { --g-l: 1rem; --g-r: 1rem; --stage-l: 0px; --stage-r: 0px; }
+@media (min-width: 1024px) {
+  :root { --g-l: 2.5rem; --g-r: 2.5rem; }
+}
+.cinema-page { background: #05070d; min-height: 100vh; }
+@media (min-width: 1024px) {
+  .cinema-page {
+    margin-left: -108px;
+    --g-l: calc(108px + 2.5rem);
+    --stage-l: calc(108px + 1.5rem);
+    --stage-r: 1.5rem;
+  }
+}
+.cinema-px { padding-left: var(--g-l); padding-right: var(--g-r); }
+.cinema-stage { padding-left: var(--stage-l); padding-right: var(--stage-r); }
+@media (min-width: 1024px) { .cinema-stage { padding-top: 1.25rem; padding-bottom: 1.25rem; } }
+
 .media-scroller {
   scroll-snap-type: x mandatory;
-  scroll-padding-inline: 1rem;
+  scroll-padding-left: var(--g-l);
+  scroll-padding-right: var(--g-r);
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
-}
-@media (min-width: 1024px) {
-  .media-scroller { scroll-padding-inline: 2.5rem; }
 }
 
 .media-thumb { transition: box-shadow 200ms ease, transform 150ms ease; }
@@ -364,3 +383,16 @@ html.is-android *::after {
 .media-current .media-thumb { box-shadow: 0 0 0 2px var(--ist-media-accent); }
 /* L'iframe Vimeo arriva in ritardo (dopo l'oEmbed): lo adattiamo via CSS. */
 .cinema iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+/* Comandi nascosti = non cliccabili (il tocco serve solo a farli ricomparire) */
+.cinema[data-ui="off"] .cinema-ui, .cinema[data-ui="off"] .cinema-ui * { pointer-events: none !important; }
+
+/* Carosello delle serie su telefono: una locandina al centro, le vicine in penombra */
+@media (max-width: 1023px) {
+  .media-carousel {
+    padding-left: calc((100% - var(--carousel-w, 64vw)) / 2) !important;
+    padding-right: calc((100% - var(--carousel-w, 64vw)) / 2) !important;
+    scroll-padding-left: 0; scroll-padding-right: 0;
+  }
+  .media-carousel > * { scroll-snap-align: center !important; transition: opacity 260ms ease, transform 260ms ease, filter 260ms ease; }
+  .media-carousel > [data-active="false"] { opacity: 0.42; transform: scale(0.9); filter: saturate(0.6); }
+}

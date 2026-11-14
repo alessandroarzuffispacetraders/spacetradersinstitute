@@ -3,9 +3,10 @@ import { X, Loader2, RefreshCw, WandSparkles, CircleAlert, type LucideIcon } fro
 import MediaThumb from '../media/MediaThumb'
 import { CoverKind, generateCover, useCoverJob } from '../../lib/covers'
 
-// Copertina AI di una lezione o di un replay: anteprima, rigenera, e richiesta
-// di modifica a parole ("più semplice", "metti un toro", "parola chiave: RISCHIO").
-// La generazione continua in background anche chiudendo la finestra.
+// Copertina AI di una lezione o di un replay, o locandina verticale di una serie:
+// anteprima, rigenera, e richiesta di modifica a parole ("più semplice", "metti
+// un toro", "parola chiave: RISCHIO"). La generazione continua in background
+// anche chiudendo la finestra.
 
 export interface CoverSubject {
   kind: CoverKind
@@ -21,6 +22,37 @@ export interface CoverSubject {
 }
 
 const FEEDBACK_MAX = 500
+
+// Anteprima della locandina 2:3 come la vedrà lo studente: titolo della serie
+// scritto dall'app sopra il terzo inferiore scuro della grafica.
+function PosterPreview({ subject, coverUrl, className = '' }: { subject: CoverSubject; coverUrl: string | null; className?: string }) {
+  return (
+    <MediaThumb
+      imageUrl={coverUrl}
+      accent={subject.accent}
+      accentEnd={subject.accentEnd}
+      icon={subject.icon}
+      aspect="aspect-[2/3]"
+      rounded="rounded-2xl"
+      showPlay={false}
+      thumbWidth={800}
+      className={className}
+    >
+      <div
+        data-inverted="true"
+        className="absolute inset-x-0 bottom-0 px-5 pb-6 pt-24 pointer-events-none"
+        style={{ background: 'linear-gradient(to top, rgba(5,7,13,0.92) 0%, rgba(5,7,13,0.55) 55%, rgba(5,7,13,0) 100%)' }}
+      >
+        <p
+          className="text-white font-extrabold leading-[1.02]"
+          style={{ fontSize: 'clamp(22px, 11cqw, 44px)', letterSpacing: '-0.025em', textWrap: 'balance' }}
+        >
+          {subject.title}
+        </p>
+      </div>
+    </MediaThumb>
+  )
+}
 
 export default function CoverEditorModal({ subject, onClose, onChanged }: {
   subject: CoverSubject
@@ -51,6 +83,8 @@ export default function CoverEditorModal({ subject, onClose, onChanged }: {
 
   const serverPending = !job.running && subject.status === 'pending'
   const hasCover = !!preview.coverUrl
+  const isPoster = subject.kind === 'category'
+  const noun = isPoster ? 'locandina' : 'copertina'
 
   return (
     <div
@@ -65,7 +99,7 @@ export default function CoverEditorModal({ subject, onClose, onChanged }: {
       >
         <div className="flex items-center justify-between gap-3 px-6 py-4" style={{ borderBottom: '1px solid var(--ist-border)' }}>
           <div className="min-w-0">
-            <h3 className="text-sm font-bold" style={{ color: 'var(--ist-text)' }}>Copertina AI</h3>
+            <h3 className="text-sm font-bold" style={{ color: 'var(--ist-text)' }}>{isPoster ? 'Locandina AI della serie' : 'Copertina AI'}</h3>
             <p className="text-xs truncate" style={{ color: 'var(--ist-text-muted)' }}>{subject.title}</p>
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:bg-white/[0.06]" style={{ color: 'var(--ist-text-dim)' }}>
@@ -74,24 +108,30 @@ export default function CoverEditorModal({ subject, onClose, onChanged }: {
         </div>
 
         <div className="p-6 space-y-4">
-          <div className="relative">
-            <MediaThumb
-              imageUrl={preview.coverUrl}
-              keyword={preview.keyword}
-              kicker={subject.kicker}
-              accent={subject.accent}
-              accentEnd={subject.accentEnd}
-              icon={subject.icon}
-              rounded="rounded-2xl"
-              showPlay={false}
-              thumbWidth={960}
-            />
+          <div className={`relative ${isPoster ? 'w-full max-w-[260px] mx-auto' : ''}`}>
+            {isPoster ? (
+              <PosterPreview subject={subject} coverUrl={preview.coverUrl} />
+            ) : (
+              <MediaThumb
+                imageUrl={preview.coverUrl}
+                keyword={preview.keyword}
+                kicker={subject.kicker}
+                accent={subject.accent}
+                accentEnd={subject.accentEnd}
+                icon={subject.icon}
+                rounded="rounded-2xl"
+                showPlay={false}
+                thumbWidth={960}
+              />
+            )}
             {(job.running || serverPending) && (
               <div className="absolute inset-0 rounded-2xl flex flex-col items-center justify-center gap-2 text-center px-6" data-inverted="true" style={{ background: 'rgba(5,7,13,0.72)' }}>
                 <Loader2 size={26} className="animate-spin text-white" />
-                <p className="text-sm font-semibold text-white">Sto disegnando la copertina…</p>
+                <p className="text-sm font-semibold text-white">Sto disegnando la {noun}…</p>
                 <p className="text-[11px] text-white" style={{ opacity: 0.7 }}>
-                  Di solito ci vuole meno di un minuto e mezzo. Puoi chiudere: continua in background.
+                  {isPoster
+                    ? 'Una locandina richiede di solito 2–3 minuti. Puoi chiudere: continua in background.'
+                    : 'Di solito ci vuole meno di un minuto e mezzo. Puoi chiudere: continua in background.'}
                 </p>
               </div>
             )}
@@ -99,7 +139,7 @@ export default function CoverEditorModal({ subject, onClose, onChanged }: {
 
           {!hasCover && !job.running && !serverPending && (
             <p className="text-xs" style={{ color: 'var(--ist-text-muted)' }}>
-              Nessuna copertina ancora: generala ora, oppure descrivi sotto cosa vorresti vedere.
+              Nessuna {noun} ancora: generala ora, oppure descrivi sotto cosa vorresti vedere.
             </p>
           )}
 
@@ -117,7 +157,9 @@ export default function CoverEditorModal({ subject, onClose, onChanged }: {
               onChange={e => setFeedback(e.target.value.slice(0, FEEDBACK_MAX))}
               rows={3}
               disabled={job.running}
-              placeholder="es. «più semplice», «metti un toro al posto delle candele», «parola chiave: RISCHIO»"
+              placeholder={isPoster
+                ? 'es. «più drammatica», «al centro un toro di luce», «più profondità sullo sfondo»'
+                : 'es. «più semplice», «metti un toro al posto delle candele», «parola chiave: RISCHIO»'}
               className="w-full px-3 py-2.5 text-sm resize-none disabled:opacity-60"
               style={{ background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)', borderRadius: 14, color: 'var(--ist-text)', outline: 'none' }}
             />
@@ -140,7 +182,7 @@ export default function CoverEditorModal({ subject, onClose, onChanged }: {
               style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)', color: 'var(--ist-text)' }}
             >
               {job.running ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} strokeWidth={2.2} />}
-              {hasCover ? 'Rigenera' : 'Genera copertina'}
+              {hasCover ? 'Rigenera' : isPoster ? 'Genera locandina' : 'Genera copertina'}
             </button>
           </div>
         </div>
@@ -159,17 +201,20 @@ export function CoverChip({ subject, onClick, width = 64 }: {
   const job = useCoverJob(subject.kind, subject.id)
   const running = job.running || subject.status === 'pending'
   const failed = !running && (!!job.error || subject.status === 'error')
+  const isPoster = subject.kind === 'category'
+  const noun = isPoster ? 'Locandina' : 'Copertina'
   return (
     <button
       onClick={onClick}
       className="relative flex-shrink-0 rounded-md overflow-hidden transition-transform hover:scale-105"
       style={{ width, border: '1px solid var(--ist-border)' }}
-      title={running ? 'Copertina in generazione…' : failed ? 'Generazione non riuscita: apri per riprovare' : subject.coverUrl ? 'Copertina AI: apri per modificarla' : 'Nessuna copertina: apri per generarla'}
+      title={running ? `${noun} in generazione…` : failed ? 'Generazione non riuscita: apri per riprovare' : subject.coverUrl ? `${noun} AI: apri per modificarla` : `Nessuna ${noun.toLowerCase()}: apri per generarla`}
     >
       <MediaThumb
         imageUrl={subject.coverUrl}
         accent={subject.accent}
         accentEnd={subject.accentEnd}
+        aspect={isPoster ? 'aspect-[2/3]' : 'aspect-video'}
         rounded="rounded-none"
         showPlay={false}
         thumbWidth={320}

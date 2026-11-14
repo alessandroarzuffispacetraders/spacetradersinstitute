@@ -4,6 +4,7 @@ import MediaThumb from './MediaThumb'
 
 interface BillboardProps {
   imageUrl?: string | null
+  imagePosition?: string        // inquadratura dell'immagine (es. locandina verticale)
   vimeoId?: string | null
   fallbackUrl?: string | null
   accent: string
@@ -24,7 +25,7 @@ interface BillboardProps {
 // larghezza, velo scuro, titolo grande e pulsanti. È sempre scuro (anche col
 // tema chiaro), come una sala cinema; i testi stanno sopra la parte velata.
 export default function Billboard({
-  imageUrl, vimeoId, fallbackUrl, accent, accentEnd, icon,
+  imageUrl, imagePosition, vimeoId, fallbackUrl, accent, accentEnd, icon,
   topLeft, topRight, eyebrow, title, meta, description, progress = 0, progressLabel, actions,
 }: BillboardProps) {
   return (
@@ -35,6 +36,7 @@ export default function Billboard({
       <div className="relative w-full aspect-video lg:absolute lg:inset-0 lg:aspect-auto">
         <MediaThumb
           imageUrl={imageUrl}
+          objectPosition={imagePosition}
           vimeoId={vimeoId}
           fallbackUrl={fallbackUrl}
           accent={accent}
@@ -61,13 +63,13 @@ export default function Billboard({
       </div>
 
       {(topLeft || topRight) && (
-        <div className="absolute top-0 inset-x-0 z-10 flex items-center justify-between gap-3 px-4 lg:px-10 pt-3.5 lg:pt-6">
+        <div className="absolute top-0 inset-x-0 z-10 flex items-center justify-between gap-3 cinema-px pt-3.5 lg:pt-6">
           <div className="min-w-0">{topLeft}</div>
           {topRight && <div className="flex-shrink-0">{topRight}</div>}
         </div>
       )}
 
-      <div className="relative px-4 lg:px-10 -mt-14 sm:-mt-24 pb-14 lg:mt-0 lg:pb-[4.5rem] lg:pt-28 lg:min-h-[min(66vh,600px)] lg:flex lg:flex-col lg:justify-end">
+      <div className="relative cinema-px -mt-14 sm:-mt-24 pb-14 lg:mt-0 lg:pb-[4.5rem] lg:pt-28 lg:min-h-[min(66vh,600px)] lg:flex lg:flex-col lg:justify-end">
         <div className="max-w-xl">
           {eyebrow && <div className="mb-2.5 flex items-center gap-2 flex-wrap">{eyebrow}</div>}
 

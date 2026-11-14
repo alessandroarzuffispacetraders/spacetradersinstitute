@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useCinemaMode } from '../../context/ThemeContext'
 import { Radio, Loader2, Play, CalendarDays, Info } from 'lucide-react'
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
@@ -45,6 +46,7 @@ function monthKey(iso: string | null): string {
 const REPLAYS_SINGLE_ROW_MAX = 10
 
 export default function StudentLive() {
+  useCinemaMode()
   const navigate = useNavigate()
   const { events: allEvents, loading } = useLiveEvents()
 
@@ -86,7 +88,7 @@ export default function StudentLive() {
 
   if (live.length + upcoming.length + replays.length === 0) {
     return (
-      <div className="p-5 lg:p-8 max-w-4xl mx-auto">
+      <div className="cinema-page cinema-px pt-6 lg:pt-8">
         <PageHeader title="Live & Replay" subtitle="Sessioni in diretta e registrazioni" />
         <Card className="p-10 text-center">
           <Radio size={28} strokeWidth={1.5} className="mx-auto mb-3" style={{ color: 'var(--ist-text-dim)' }} />
@@ -106,7 +108,7 @@ export default function StudentLive() {
   const pageTitle    = <p className="text-lg lg:text-2xl font-extrabold tracking-tight text-white">Live & Replay</p>
 
   return (
-    <div className="pb-8">
+    <div className="cinema-page pb-8">
       <Billboard
         imageUrl={hero.coverUrl}
         vimeoId={heroReplay?.replayVimeoId}

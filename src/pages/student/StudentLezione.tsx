@@ -15,6 +15,7 @@ import UpgradeWall from '../../components/auth/UpgradeWall'
 import { isFreeUser } from '../../lib/freeTier'
 import { useUI } from '../../context/UIContext'
 import { useAuth } from '../../context/AuthContext'
+import { useCinemaMode } from '../../context/ThemeContext'
 
 // ─── file type helpers ────────────────────────────────────────────────────────
 
@@ -194,6 +195,7 @@ function CourseDoneOverlay({ onBack, onReplay }: { onBack: () => void; onReplay:
 // allegati, e la fila degli "episodi" del corso (aperta su quello in corso).
 
 export default function StudentLezione() {
+  useCinemaMode()
   const { lessonId } = useParams<{ lessonId: string }>()
   const navigate     = useNavigate()
   const { setHideBottomNav } = useUI()
@@ -252,9 +254,9 @@ export default function StudentLezione() {
   }
 
   return (
-    <div className="pb-16">
+    <div className="cinema-page pb-16">
       {/* ── Palco ── */}
-      <section data-inverted="true" className="bg-black lg:px-6 lg:py-5">
+      <section data-inverted="true" className="bg-black cinema-stage">
         <CinemaPlayer
           key={lesson.id}
           vimeoId={lesson.vimeoId}
@@ -283,7 +285,7 @@ export default function StudentLezione() {
       </section>
 
       {/* ── Info lezione ── */}
-      <div className="px-4 lg:px-10 pt-5 lg:pt-8">
+      <div className="cinema-px pt-5 lg:pt-8">
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6 lg:gap-12 max-w-[1280px]">
           <div className="min-w-0">
             <button

@@ -1,27 +1,46 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
 import { applyStatusBarTheme } from '../lib/nativeUi'
 
 type Theme = 'dark' | 'light'
-interface ThemeContextValue { theme: Theme; toggleTheme: () => void }
-const ThemeContext = createContext<ThemeContextValue>({ theme: 'dark', toggleTheme: () => {} })
+interface ThemeContextValue {
+  theme: Theme
+  toggleTheme: () => void
+  // Modalità "cinema": finché almeno una pagina la richiede, l'app è scura
+  // anche se l'utente ha scelto il tema chiaro (Videocorsi, Live & Replay).
+  enterCinema: () => () => void
+}
+const ThemeContext = createContext<ThemeContextValue>({ theme: 'dark', toggleTheme: () => {}, enterCinema: () => () => {} })
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('ist-theme') as Theme) ?? 'dark')
+  const [cinema, setCinema] = useState(0)
+  const effective: Theme = cinema > 0 ? 'dark' : theme
 
   useEffect(() => {
     const root = document.documentElement
-    root.classList.toggle('light', theme === 'light')
-    root.classList.toggle('dark', theme === 'dark')
+    root.classList.toggle('light', effective === 'light')
+    root.classList.toggle('dark', effective === 'dark')
     localStorage.setItem('ist-theme', theme)
     // App nativa: mantieni la status bar leggibile sul tema attivo (no-op sul web).
-    applyStatusBarTheme(theme)
-  }, [theme])
+    applyStatusBarTheme(effective)
+  }, [theme, effective])
+
+  const enterCinema = useCallback(() => {
+    setCinema(c => c + 1)
+    return () => setCinema(c => Math.max(0, c - 1))
+  }, [])
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme: () => setTheme(t => t === 'dark' ? 'light' : 'dark') }}>
+    <ThemeContext.Provider value={{ theme, toggleTheme: () => setTheme(t => t === 'dark' ? 'light' : 'dark'), enterCinema }}>
       {children}
     </ThemeContext.Provider>
   )
 }
 
 export const useTheme = () => useContext(ThemeContext)
+
+// Da chiamare nelle pagine "cinema": sempre scure, qualunque sia il tema scelto.
+export function useCinemaMode() {
+  const { enterCinema } = useTheme()
+  useEffect(() => enterCinema(), [enterCinema])
+}

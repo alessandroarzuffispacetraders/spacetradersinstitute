@@ -1,31 +1,46 @@
-// Copertine dei video generate dall'AI (lezioni e replay delle live).
+// Copertine dei video generate dall'AI (lezioni e replay delle live) e
+// locandine verticali delle serie (categorie del catalogo).
 //
 // Claude disegna un'illustrazione SVG SENZA testo nello stile della piattaforma
 // e sceglie una parola chiave dal titolo; la parola la scrive poi l'app sopra
 // la grafica (carattere sempre identico e leggibile). L'admin può chiedere
 // modifiche a parole ("più semplice", "metti un toro"): arrivano come feedback.
 //
-// POST { kind: 'lesson' | 'live', id: uuid, feedback?: string }
-//  - lezioni: solo admin; live/replay: admin oppure chi ha creato la live.
+// POST { kind: 'lesson' | 'live' | 'category', id: uuid, feedback?: string }
+//  - lezioni e serie: solo admin; live/replay: admin oppure chi ha creato la live.
+//  - 'category' = locandina 2:3 della serie (colonne poster_*, nessuna parola
+//    chiave: il titolo della serie lo scrive l'app nel terzo inferiore).
 //  - risponde SUBITO 202 { ok, status: 'pending' } e genera in background
 //    (EdgeRuntime.waitUntil): un'illustrazione può richiedere più dei ~150 s
 //    entro cui Supabase vuole una risposta. Il client segue lo stato sulla riga
-//    (cover_status: pending → ready | error) e rilegge cover_url/cover_keyword.
+//    (cover_status / poster_status: pending → ready | error) e rilegge l'URL.
 import Anthropic from 'npm:@anthropic-ai/sdk@1.8.0'
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@2'
 import { CORS, json, adminClient, HttpError } from '../_shared/http.ts'
-import { COVER_SYSTEM_PROMPT } from './prompt.ts'
+import { COVER_SYSTEM_PROMPT, POSTER_SYSTEM_PROMPT } from './prompt.ts'
 
 // Modello e sforzo configurabili senza ridistribuire (supabase secrets set …).
 const MODEL = Deno.env.get('COVER_MODEL') || 'claude-opus-5-5'
 const EFFORT = (Deno.env.get('COVER_EFFORT') || 'medium') as 'low' | 'medium' | 'high'
 const BUCKET = 'video-covers'
-const MAX_SVG_BYTES = 80_000
 const MAX_FEEDBACK_CHARS = 500
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-type Kind = 'lesson' | 'live'
-const TABLE: Record<Kind, 'lessons' | 'live_events'> = { lesson: 'lessons', live: 'live_events' }
+type Kind = 'lesson' | 'live' | 'category'
+const TABLE: Record<Kind, 'lessons' | 'live_events' | 'categories'> = {
+  lesson: 'lessons', live: 'live_events', category: 'categories',
+}
+// Prefisso delle colonne: le serie usano poster_* (categories.cover_url resta
+// la copertina caricata a mano dall'admin).
+const COL: Record<Kind, 'cover' | 'poster'> = { lesson: 'cover', live: 'cover', category: 'poster' }
+
+// Formato della tela e peso massimo per tipo.
+interface CanvasSpec { width: number; height: number; maxBytes: number; maxTokens: number }
+const CANVAS: Record<Kind, CanvasSpec> = {
+  lesson:   { width: 1600, height: 900,  maxBytes: 80_000,  maxTokens: 16_000 },
+  live:     { width: 1600, height: 900,  maxBytes: 80_000,  maxTokens: 16_000 },
+  category: { width: 1000, height: 1500, maxBytes: 100_000, maxTokens: 32_000 },
+}
 
 interface CoverContext {
   title: string
@@ -123,7 +138,49 @@ async function loadLiveContext(admin: SupabaseClient, id: string): Promise<Cover
   }
 }
 
-function buildUserMessage(ctx: CoverContext, feedback: string): string {
+interface RawPosterLesson { title: string; position: number | null }
+interface RawPosterCourse { title: string; position: number | null; lessons: RawPosterLesson[] | null }
+
+const MAX_POSTER_LESSONS = 15
+const byPos = <T extends { position: number | null }>(a: T, b: T) => (a.position ?? 0) - (b.position ?? 0)
+
+async function loadCategoryContext(admin: SupabaseClient, id: string): Promise<CoverContext> {
+  const { data, error } = await admin
+    .from('categories')
+    .select('id, title, description, phase, accent, section, poster_notes, courses ( title, position, lessons ( title, position ) )')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) throw new Error(`lettura serie: ${error.message}`)
+  if (!data) throw new HttpError(404, 'Serie non trovata')
+
+  const accent = typeof data.accent === 'string' && data.accent ? data.accent : '#7CBBD0'
+  const phase = PHASE_LABEL[String(data.phase ?? '')] ?? ''
+  const isMental = data.section === 'mental'
+  const courses = ((data.courses ?? []) as RawPosterCourse[]).slice().sort(byPos)
+  const lessons = courses
+    .flatMap(c => (c.lessons ?? []).slice().sort(byPos).map(l => l.title))
+    .filter(Boolean)
+    .slice(0, MAX_POSTER_LESSONS)
+
+  return {
+    title: data.title,
+    accent,
+    previousKeyword: null,
+    previousNotes: data.poster_notes ?? null,
+    ownerId: null,
+    lines: [
+      `Tipo: locandina di una serie di videocorsi${isMental ? " dell'area Mental Coach (psicologia del trader)" : ''}`,
+      `Titolo della serie: ${data.title}`,
+      data.description ? `Descrizione: ${data.description}` : '',
+      phase ? `Fase del percorso: ${phase}` : '',
+      courses.length ? `Capitoli: ${courses.map(c => c.title).join(' · ')}` : '',
+      lessons.length ? `Alcune puntate: ${lessons.join(' · ')}` : '',
+      `Colore d'accento: ${accent}`,
+    ].filter(Boolean),
+  }
+}
+
+function buildUserMessage(ctx: CoverContext, feedback: string, kind: Kind): string {
   const parts = [ctx.lines.join('\n')]
   if (ctx.previousKeyword) {
     parts.push(`Parola chiave attuale: ${ctx.previousKeyword} (cambiala solo se la richiesta dell'admin lo chiede o se non rappresenta bene il titolo).`)
@@ -136,13 +193,13 @@ function buildUserMessage(ctx: CoverContext, feedback: string): string {
   } else if (ctx.previousNotes) {
     parts.push(`Indicazioni date in precedenza dall'admin (continua a rispettarle): ${ctx.previousNotes}`)
   }
-  parts.push('Disegna la copertina.')
+  parts.push(kind === 'category' ? 'Disegna la locandina.' : 'Disegna la copertina.')
   return parts.join('\n\n')
 }
 
 // ─── Generazione (Claude) ─────────────────────────────────────────────────────
 
-async function generateCover(ctx: CoverContext, feedback: string): Promise<{ keyword: string; svg: string }> {
+async function generateCover(ctx: CoverContext, feedback: string, kind: Kind): Promise<{ keyword: string | null; svg: string }> {
   const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! })
 
   // Streaming + finalMessage(): output lungo (SVG), niente timeout HTTP lato SDK.
@@ -150,12 +207,12 @@ async function generateCover(ctx: CoverContext, feedback: string): Promise<{ key
   // server riprova sul modello di riserva consigliato invece di fallire.
   const stream = anthropic.beta.messages.stream({
     model: MODEL,
-    max_tokens: 16000,
+    max_tokens: CANVAS[kind].maxTokens,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
     output_config: { effort: EFFORT },
-    system: [{ type: 'text', text: COVER_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content: buildUserMessage(ctx, feedback) }],
+    system: [{ type: 'text', text: kind === 'category' ? POSTER_SYSTEM_PROMPT : COVER_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: buildUserMessage(ctx, feedback, kind) }],
   })
   const message = await stream.finalMessage()
 
@@ -175,7 +232,8 @@ async function generateCover(ctx: CoverContext, feedback: string): Promise<{ key
   const svg = text.match(/<svg[\s\S]*<\/svg>/i)?.[0] ?? ''
   if (!svg) throw new Error('risposta del modello senza SVG')
 
-  return { keyword: normalizeKeyword(kw, ctx.title), svg }
+  // Le locandine non hanno parola chiave: il titolo della serie lo scrive l'app.
+  return { keyword: kind === 'category' ? null : normalizeKeyword(kw, ctx.title), svg }
 }
 
 // Maiuscolo, niente virgolette/punteggiatura ai bordi, max 16 caratteri.
@@ -200,7 +258,7 @@ function normalizeKeyword(raw: string, title: string): string {
 // vengono comunque eliminati sotto.
 const DROP_ELEMENTS = 'script|foreignObject|image|iframe|object|embed|audio|video|a|text|animate|animateTransform|animateMotion|set'
 
-function sanitizeSvg(raw: string): string {
+function sanitizeSvg(raw: string, spec: CanvasSpec): string {
   let s = raw.trim()
   const start = s.search(/<svg[\s>]/i)
   const end = s.toLowerCase().lastIndexOf('</svg>')
@@ -224,11 +282,13 @@ function sanitizeSvg(raw: string): string {
   const rootMatch = s.match(/^<svg\b[^>]*>/i)
   if (!rootMatch) throw new Error('SVG non valido')
   const vb = rootMatch[0].match(/viewBox\s*=\s*["']\s*([-\d.]+)[\s,]+([-\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*["']/i)
-  const viewBox = vb && Number(vb[3]) > 0 && Number(vb[4]) > 0 ? `${vb[1]} ${vb[2]} ${vb[3]} ${vb[4]}` : '0 0 1600 900'
-  const root = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="${viewBox}" width="1600" height="900" preserveAspectRatio="xMidYMid slice">`
+  const viewBox = vb && Number(vb[3]) > 0 && Number(vb[4]) > 0
+    ? `${vb[1]} ${vb[2]} ${vb[3]} ${vb[4]}`
+    : `0 0 ${spec.width} ${spec.height}`
+  const root = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="${viewBox}" width="${spec.width}" height="${spec.height}" preserveAspectRatio="xMidYMid slice">`
   s = root + s.slice(rootMatch[0].length)
 
-  if (new TextEncoder().encode(s).length > MAX_SVG_BYTES) throw new Error('SVG troppo pesante')
+  if (new TextEncoder().encode(s).length > spec.maxBytes) throw new Error('SVG troppo pesante')
   if (!/<(path|rect|circle|ellipse|line|polyline|polygon|g)\b/i.test(s)) throw new Error('SVG vuoto')
   return s
 }
@@ -237,9 +297,10 @@ function sanitizeSvg(raw: string): string {
 
 async function runJob(admin: SupabaseClient, kind: Kind, id: string, ctx: CoverContext, feedback: string) {
   const table = TABLE[kind]
+  const col = COL[kind]
   try {
-    const { keyword, svg } = await generateCover(ctx, feedback)
-    const clean = sanitizeSvg(svg)
+    const { keyword, svg } = await generateCover(ctx, feedback, kind)
+    const clean = sanitizeSvg(svg, CANVAS[kind])
 
     const folder = `${kind}/${id}`
     const path = `${folder}/${Date.now()}.svg`
@@ -251,23 +312,25 @@ async function runJob(admin: SupabaseClient, kind: Kind, id: string, ctx: CoverC
     if (upErr) throw new Error(`upload: ${upErr.message}`)
     const coverUrl = admin.storage.from(BUCKET).getPublicUrl(path).data.publicUrl
 
-    const { error: updErr } = await admin.from(table).update({
-      cover_url: coverUrl,
-      cover_keyword: keyword,
-      cover_status: 'ready',
-      cover_error: null,
-      cover_notes: feedback || ctx.previousNotes,
-      cover_updated_at: new Date().toISOString(),
-    }).eq('id', id)
+    const fields: Record<string, string | null> = {
+      [`${col}_url`]: coverUrl,
+      [`${col}_status`]: 'ready',
+      [`${col}_error`]: null,
+      [`${col}_notes`]: feedback || ctx.previousNotes,
+      [`${col}_updated_at`]: new Date().toISOString(),
+    }
+    if (kind !== 'category') fields.cover_keyword = keyword
+    const { error: updErr } = await admin.from(table).update(fields).eq('id', id)
     if (updErr) throw new Error(`salvataggio: ${updErr.message}`)
 
     // Pulizia delle versioni precedenti (best-effort: un errore qui non conta).
     // Teniamo il file appena caricato E quello a cui punta ora la riga: con due
     // rigenerazioni sovrapposte vince l'ultima scrittura, mai un link rotto.
-    const { data: row } = await admin.from(table).select('cover_url').eq('id', id).maybeSingle()
+    const { data: row } = await admin.from(table).select(`${col}_url`).eq('id', id).maybeSingle()
     const keep = new Set([path])
     const marker = `/${BUCKET}/`
-    const current = typeof row?.cover_url === 'string' ? row.cover_url : ''
+    const currentRaw = (row as Record<string, unknown> | null)?.[`${col}_url`]
+    const current = typeof currentRaw === 'string' ? currentRaw : ''
     if (current.includes(marker)) keep.add(current.slice(current.indexOf(marker) + marker.length))
     const { data: files } = await admin.storage.from(BUCKET).list(folder, { limit: 100 })
     const old = (files ?? []).map(f => `${folder}/${f.name}`).filter(p => !keep.has(p))
@@ -276,9 +339,9 @@ async function runJob(admin: SupabaseClient, kind: Kind, id: string, ctx: CoverC
     const msg = e instanceof Error ? e.message : String(e)
     console.error(`generate-cover ${kind}/${id}:`, msg)
     await admin.from(table).update({
-      cover_status: 'error',
-      cover_error: msg.slice(0, 300),
-      cover_updated_at: new Date().toISOString(),
+      [`${col}_status`]: 'error',
+      [`${col}_error`]: msg.slice(0, 300),
+      [`${col}_updated_at`]: new Date().toISOString(),
     }).eq('id', id)
   }
 }
@@ -294,7 +357,7 @@ Deno.serve(async (req) => {
     const user = await requireUser(admin, req)
 
     const body = await req.json().catch(() => ({}))
-    const kind: Kind | null = body.kind === 'lesson' || body.kind === 'live' ? body.kind : null
+    const kind: Kind | null = body.kind === 'lesson' || body.kind === 'live' || body.kind === 'category' ? body.kind : null
     const id = typeof body.id === 'string' && UUID_RE.test(body.id) ? body.id : null
     const feedback = typeof body.feedback === 'string' ? body.feedback.trim().slice(0, MAX_FEEDBACK_CHARS) : ''
     if (!kind || !id) return json({ ok: false, error: 'Parametri non validi' }, 400)
@@ -302,13 +365,17 @@ Deno.serve(async (req) => {
     // Permessi PRIMA di leggere il contenuto (chi non può non scopre se esiste).
     const userIsAdmin = await isAdmin(admin, user.id)
     if (kind === 'lesson' && !userIsAdmin) throw new HttpError(403, 'Solo un admin può generare la copertina di una lezione')
-    const ctx = kind === 'lesson' ? await loadLessonContext(admin, id) : await loadLiveContext(admin, id)
+    if (kind === 'category' && !userIsAdmin) throw new HttpError(403, 'Solo un admin può generare la locandina di una serie')
+    const ctx = kind === 'lesson' ? await loadLessonContext(admin, id)
+      : kind === 'category' ? await loadCategoryContext(admin, id)
+      : await loadLiveContext(admin, id)
     if (!userIsAdmin && ctx.ownerId !== user.id) throw new HttpError(403, 'Solo un admin o chi ha creato la live può generarne la copertina')
 
+    const col = COL[kind]
     const { error: pendErr } = await admin.from(TABLE[kind]).update({
-      cover_status: 'pending',
-      cover_error: null,
-      cover_updated_at: new Date().toISOString(),
+      [`${col}_status`]: 'pending',
+      [`${col}_error`]: null,
+      [`${col}_updated_at`]: new Date().toISOString(),
     }).eq('id', id)
     if (pendErr) throw new Error(`stato: ${pendErr.message}`)
 

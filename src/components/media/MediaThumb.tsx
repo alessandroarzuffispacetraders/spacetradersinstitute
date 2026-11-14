@@ -43,6 +43,7 @@ export interface MediaThumbProps {
   thumbWidth?: number           // risoluzione richiesta a Vimeo
   rounded?: string
   aspect?: string               // 'aspect-video' (card) oppure 'h-full' (sfondo banner)
+  objectPosition?: string       // inquadratura dell'immagine (es. '72% 50%' per arte a destra)
   showPlay?: boolean
   className?: string
   children?: ReactNode
@@ -53,7 +54,7 @@ export interface MediaThumbProps {
 // così testi e badge restano bianchi anche col tema chiaro.
 export default function MediaThumb({
   imageUrl, vimeoId, fallbackUrl, accent, accentEnd, icon: Icon, iconSize = '46%', label, keyword, kicker, progress = 0,
-  done, duration, topLeft, thumbWidth = 640, rounded = 'rounded-xl', aspect = 'aspect-video', showPlay = true,
+  done, duration, topLeft, thumbWidth = 640, rounded = 'rounded-xl', aspect = 'aspect-video', objectPosition, showPlay = true,
   className = '', children,
 }: MediaThumbProps) {
   const vimeoThumb = useVimeoThumb(imageUrl ? null : vimeoId, thumbWidth)
@@ -95,7 +96,7 @@ export default function MediaThumb({
           onLoad={() => setLoadedSrc(src)}
           onError={() => setFailed(prev => new Set(prev).add(src))}
           className="media-thumb-img absolute inset-0 w-full h-full object-cover"
-          style={{ opacity: imgReady ? 1 : 0 }}
+          style={{ opacity: imgReady ? 1 : 0, objectPosition }}
         />
       )}
 

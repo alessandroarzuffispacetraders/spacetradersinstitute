@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ChevronLeft, CalendarDays, ExternalLink, Loader2, Radio } from 'lucide-react'
 import { useUI } from '../../context/UIContext'
+import { useCinemaMode } from '../../context/ThemeContext'
 import CinemaPlayer from '../../components/player/CinemaPlayer'
 import MediaRow from '../../components/media/MediaRow'
 import ReplayCard from '../../components/media/ReplayCard'
@@ -35,6 +36,7 @@ function relativeDay(iso: string | null): string | null {
 }
 
 export default function StudentLivePlayer() {
+  useCinemaMode()
   const { liveId } = useParams<{ liveId: string }>()
   const navigate   = useNavigate()
   const { setHideBottomNav } = useUI()
@@ -84,9 +86,9 @@ export default function StudentLivePlayer() {
   const duration   = liveDurationLabel(event)
 
   return (
-    <div className="pb-16">
+    <div className="cinema-page pb-16">
       {/* ── Palco ── */}
-      <section data-inverted="true" className="bg-black lg:px-6 lg:py-5">
+      <section data-inverted="true" className="bg-black cinema-stage">
         {event.status === 'replay' ? (
           <CinemaPlayer
             key={event.id}
@@ -102,7 +104,7 @@ export default function StudentLivePlayer() {
       </section>
 
       {/* ── Dettagli ── */}
-      <div className="px-4 lg:px-10 pt-5 lg:pt-8 max-w-[1100px]">
+      <div className="cinema-px pt-5 lg:pt-8" style={{ maxWidth: 'calc(1020px + var(--g-l) + var(--g-r))' }}>
         <div className="flex items-center gap-2 flex-wrap mb-2">
           {isLive ? (
             <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] px-2.5 py-1 rounded-md text-white" style={{ background: '#E5484D' }}>

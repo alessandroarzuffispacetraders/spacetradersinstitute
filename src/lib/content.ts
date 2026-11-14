@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
 import { useIsPreview } from './previewMode'
-import { generateCover, isMissingCoverColumn } from './covers'
+import { generateCover, isMissingCoverColumn, isMissingPosterColumn } from './covers'
 
 // Sezione del catalogo: 'trading' (videocorsi principali) o 'mental' (Area Mental
 // Coach). Riusa la stessa struttura categorie→corsi→lezioni; è solo un filtro.
@@ -58,6 +58,10 @@ export interface Category {
   isFree: boolean           // categoria in vetrina: tutto il suo contenuto è
                             // accessibile all'utente gratuito (gating a cascata)
   coverUrl: string | null   // copertina reale caricata dall'admin (null = procedurale)
+  // Locandina verticale 2:3 della "serie" generata dall'AI (SVG senza testo:
+  // il titolo lo scrive l'app). null finché non c'è o senza la migrazione.
+  posterUrl: string | null
+  posterStatus: string | null   // null | 'pending' | 'ready' | 'error'
   section: string           // 'trading' | 'mental'
   courses: Course[]
 }
@@ -125,11 +129,12 @@ interface RawCourse {
 interface RawCategory {
   id: string; title: string; description: string; accent: string
   phase: string; published: boolean; is_free: boolean; cover_url: string | null; position: number; section: string; courses: RawCourse[] | null
+  poster_url?: string | null; poster_status?: string | null
 }
 
-function selectFor(lessonCovers: boolean): string {
+function selectFor(lessonCovers: boolean, posters: boolean): string {
   return `
-  id, title, description, accent, phase, published, is_free, cover_url, position, section,
+  id, title, description, accent, phase, published, is_free, cover_url, position, section,${posters ? ' poster_url, poster_status,' : ''}
   courses (
     id, category_id, title, description, phase, published, position,
     lessons (
@@ -140,26 +145,39 @@ function selectFor(lessonCovers: boolean): string {
 `
 }
 
-// Le colonne delle copertine AI arrivano con la migrazione phase_video_covers.sql:
-// finché non è applicata la query che le chiede fallisce (42703) e ripieghiamo
-// sulla lista di colonne di prima, ricordandolo per il resto della sessione.
+// Le colonne delle copertine AI (lezioni) e delle locandine (serie) arrivano con
+// due migrazioni separate (phase_video_covers.sql, phase_series_posters.sql):
+// finché una non è applicata, la query che chiede quelle colonne fallisce
+// (42703) e ripieghiamo togliendo SOLO quel gruppo, ricordandolo per il resto
+// della sessione. Al massimo due nuovi tentativi (uno per gruppo).
 let lessonCoversAvailable: boolean | null = null
+let postersAvailable: boolean | null = null
 
 async function fetchCategories(section: ContentSection | 'all') {
-  const run = (lessonCovers: boolean) => {
-    let q = supabase.from('categories').select(selectFor(lessonCovers))
+  const run = (lessonCovers: boolean, posters: boolean) => {
+    let q = supabase.from('categories').select(selectFor(lessonCovers, posters))
     if (section !== 'all') q = q.eq('section', section)
     return q
   }
-  if (lessonCoversAvailable !== false) {
-    const res = await run(true)
-    if (!isMissingCoverColumn(res.error)) {
-      if (!res.error) lessonCoversAvailable = true
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const wantCovers = lessonCoversAvailable !== false
+    const wantPosters = postersAvailable !== false
+    const res = await run(wantCovers, wantPosters)
+    if (!res.error) {
+      if (wantCovers) lessonCoversAvailable = true
+      if (wantPosters) postersAvailable = true
       return res
     }
-    lessonCoversAvailable = false
+    const posterMissing = isMissingPosterColumn(res.error)
+    if (!posterMissing && !isMissingCoverColumn(res.error)) return res // errore vero: lo passiamo su
+    // Quale gruppo manca? Lo dice il messaggio (poster_… / cover_…); se non è
+    // chiaro, togliamo prima le locandine (la migrazione più recente).
+    const msg = res.error.message ?? ''
+    if (wantPosters && (posterMissing || !/cover_/i.test(msg))) postersAvailable = false
+    else if (wantCovers) lessonCoversAvailable = false
+    else return res
   }
-  return run(false)
+  return run(lessonCoversAvailable !== false, postersAvailable !== false)
 }
 
 function byPosition<T extends { position: number }>(a: T, b: T) {
@@ -184,6 +202,8 @@ function buildTree(
       published: cat.published,
       isFree: cat.is_free ?? false,
       coverUrl: cat.cover_url ?? null,
+      posterUrl: cat.poster_url ?? null,
+      posterStatus: cat.poster_status ?? null,
       section: cat.section ?? 'trading',
       courses: (cat.courses ?? [])
         .slice()
@@ -343,12 +363,18 @@ export function useContentAdmin(section: ContentSection = 'trading') {
 
   // ---- categories ----
   const createCategory = useCallback(async (input: CategoryInput): Promise<boolean> => {
-    const { error } = await supabase.from('categories').insert({
+    const { data, error } = await supabase.from('categories').insert({
       title: input.title.trim(), description: input.description.trim(),
       accent: input.accent, phase: phaseToDb(input.phase),
       position: categories.length, published: false, section,
-    })
+    }).select('id').single()
     if (!error) await load(true)
+    // Locandina AI automatica per la nuova serie: in background, senza bloccare
+    // il salvataggio; a fine generazione ricarichiamo l'albero.
+    const newId = (data as { id?: string } | null)?.id
+    if (!error && newId && postersAvailable !== false) {
+      generateCover('category', newId).finally(() => { void load(true) })
+    }
     return !error
   }, [categories.length, load, section])
 

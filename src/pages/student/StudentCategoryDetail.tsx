@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, Paperclip, Play, RotateCcw, Loader2 } from 'lucide-react'
 import { useStudentCatalog, getCourseStats, getCategoryStats, Course } from '../../lib/content'
 import { useAuth } from '../../context/AuthContext'
+import { useCinemaMode } from '../../context/ThemeContext'
 import {
   flattenLessons, pickResume, remainingLabel, LessonEntry, RESUME_CTA,
 } from '../../lib/catalogView'
@@ -24,6 +25,7 @@ function totalDurationLabel(seconds: number): string | null {
 // Scheda categoria come la pagina di una serie: banner, selettore dei corsi
 // (le "stagioni") ed elenco delle lezioni (gli "episodi") con miniatura.
 export default function StudentCategoryDetail() {
+  useCinemaMode()
   const { categoryId } = useParams<{ categoryId: string }>()
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
@@ -58,6 +60,8 @@ export default function StudentCategoryDetail() {
   }
 
   const catStats  = getCategoryStats(cat)
+  // Locandina AI della serie (verticale): ultima scelta per il banner orizzontale.
+  const poster    = cat.posterUrl ?? null
   const totalSecs = entries.reduce((s, e) => s + Math.max(0, e.lesson.durationSeconds), 0)
   const duration  = totalDurationLabel(totalSecs)
 
@@ -78,9 +82,10 @@ export default function StudentCategoryDetail() {
   const statusTag  = catStats.pct === 100 ? 'Completato' : catStats.pct > 0 ? 'In corso' : null
 
   return (
-    <div className="pb-10">
+    <div className="cinema-page pb-10">
       <Billboard
-        imageUrl={cat.coverUrl ?? resume?.entry.lesson.coverUrl}
+        imageUrl={cat.coverUrl ?? resume?.entry.lesson.coverUrl ?? poster}
+        imagePosition={!cat.coverUrl && !resume?.entry.lesson.coverUrl && poster ? '50% 20%' : undefined}
         vimeoId={resume?.entry.lesson.vimeoId}
         accent={cat.accent}
         icon={phaseIcon(cat.phase)}
@@ -123,7 +128,7 @@ export default function StudentCategoryDetail() {
 
       {/* ── Selettore corsi ("stagioni") ── */}
       {cat.courses.length > 1 && (
-        <div className="media-scroller flex gap-2 overflow-x-auto px-4 lg:px-10 pt-2 pb-1 mb-4">
+        <div className="media-scroller flex gap-2 overflow-x-auto cinema-px pt-2 pb-1 mb-4">
           {cat.courses.map((c, i) => {
             const s = getCourseStats(c)
             const active = c.id === course?.id
@@ -147,7 +152,7 @@ export default function StudentCategoryDetail() {
       )}
 
       {course && (
-        <div className="px-4 lg:px-10 max-w-5xl">
+        <div className="cinema-px" style={{ maxWidth: 'calc(64rem + var(--g-l) + var(--g-r))' }}>
           {/* Intestazione del corso selezionato */}
           <div className="mb-3 lg:mb-4">
             <div className="flex items-center gap-2 flex-wrap">

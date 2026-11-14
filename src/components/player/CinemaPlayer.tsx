@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import Player from '@vimeo/player'
 import {
   ChevronLeft, Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize, Minimize,
@@ -101,6 +101,20 @@ export default function CinemaPlayer({
   const lastTap = useRef<number>(0)
   const timeRef = useRef(0)
   timeRef.current = time
+  const playingRef = useRef(false)
+  playingRef.current = playing
+  // Puntatore sopra la barra dei comandi: finché c'è, i comandi non spariscono.
+  const overUi = useRef(false)
+  // Dopo uno spostamento ignoriamo i timeupdate "vecchi" finché Vimeo non
+  // arriva davvero al nuovo punto (altrimenti la barra salta indietro).
+  const seekTarget = useRef<number | null>(null)
+  const seekTimer = useRef<number>()
+
+  // Telefono/tablet: comandi grandi al centro, tocco = mostra/nasconde.
+  const touch = useMemo(
+    () => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches,
+    [],
+  )
 
   const visible = controlsOn || !playing || speedOpen || scrub !== null
 
@@ -108,9 +122,15 @@ export default function CinemaPlayer({
   const poke = useCallback(() => {
     setControlsOn(true)
     window.clearTimeout(hideTimer.current)
-    hideTimer.current = window.setTimeout(() => setControlsOn(false), HIDE_AFTER_MS)
+    const schedule = () => {
+      hideTimer.current = window.setTimeout(() => {
+        if (overUi.current) schedule()
+        else setControlsOn(false)
+      }, HIDE_AFTER_MS)
+    }
+    schedule()
   }, [])
-  useEffect(() => () => window.clearTimeout(hideTimer.current), [])
+  useEffect(() => () => { window.clearTimeout(hideTimer.current); window.clearTimeout(seekTimer.current) }, [])
 
   // ── Creazione del player ────────────────────────────────────────────────────
   useEffect(() => {
@@ -155,17 +175,24 @@ export default function CinemaPlayer({
       player.play().catch(() => {})
     }).catch(() => {})
 
-    player.on('play', () => { setPlaying(true); setEnded(false) })
+    // Quando parte, i comandi restano visibili qualche secondo e poi spariscono
+    // (anche su telefono, dove non c'è il movimento del mouse a farlo).
+    player.on('play', () => { setPlaying(true); setEnded(false); poke() })
     player.on('playing', () => setBuffering(false))
     player.on('pause', (d: TimeData) => { setPlaying(false); if (onProgressRef.current) save(d.seconds) })
     player.on('ended', () => { setPlaying(false); setEnded(true); onEndedRef.current?.() })
     player.on('timeupdate', (d: TimeData) => {
       latest = d.seconds
+      if (seekTarget.current !== null) {
+        if (Math.abs(d.seconds - seekTarget.current) > 1.5) return
+        seekTarget.current = null
+      }
       setTime(d.seconds)
       if (d.duration > 0) setDuration(d.duration)
       if (onProgressRef.current && d.seconds - lastSaved >= SAVE_EVERY_S) save(d.seconds)
     })
     player.on('progress', (d: TimeData) => setBuffered(d.percent))
+    player.on('seeked', () => { seekTarget.current = null })
     player.on('bufferstart', () => setBuffering(true))
     player.on('bufferend', () => setBuffering(false))
     player.on('volumechange', (d: { volume: number }) => setVolume(d.volume))
@@ -198,20 +225,30 @@ export default function CinemaPlayer({
     }
   }, [])
 
+  // Aggiornamento immediato dell'icona (non aspettiamo il giro di Vimeo);
+  // se il comando fallisce torniamo allo stato reale.
   const togglePlay = useCallback(() => {
     const p = playerRef.current
     if (!p || !ready) return
-    if (ended) { p.setCurrentTime(0).then(() => play()).catch(() => {}); return }
-    if (playing) p.pause().catch(() => {})
-    else play()
-  }, [ready, ended, playing, play])
+    if (ended) { setEnded(false); setPlaying(true); p.setCurrentTime(0).then(() => play()).catch(() => {}); return }
+    if (playingRef.current) {
+      setPlaying(false)
+      p.pause().catch(() => setPlaying(true))
+    } else {
+      setPlaying(true)
+      play().then(() => p.getPaused().then(paused => { if (paused) setPlaying(false) }).catch(() => {}))
+    }
+  }, [ready, ended, play])
 
   const seekTo = useCallback((seconds: number) => {
     const p = playerRef.current
     if (!p || !duration) return
     const t = Math.max(0, Math.min(duration - 0.5, seconds))
     setTime(t)
-    p.setCurrentTime(t).catch(() => {})
+    seekTarget.current = t
+    window.clearTimeout(seekTimer.current)
+    seekTimer.current = window.setTimeout(() => { seekTarget.current = null }, 2500)
+    p.setCurrentTime(t).catch(() => { seekTarget.current = null })
   }, [duration])
 
   const seekBy = useCallback((delta: number) => {
@@ -277,8 +314,12 @@ export default function CinemaPlayer({
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (e.metaKey || e.ctrlKey || e.altKey) return
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      if (t && (t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      if (t && t.tagName === 'INPUT' && (t as HTMLInputElement).type !== 'range') return
       const k = e.key.toLowerCase()
+      // Spazio/Invio su un pulsante e frecce sul cursore del volume: li gestisce l'elemento.
+      if (t?.tagName === 'BUTTON' && (k === ' ' || k === 'enter')) return
+      if (t?.tagName === 'INPUT' && k.startsWith('arrow')) return
       if (k === ' ' || k === 'k') { e.preventDefault(); togglePlay() }
       else if (k === 'arrowleft' || k === 'j') { e.preventDefault(); seekBy(-SEEK_STEP_S) }
       else if (k === 'arrowright' || k === 'l') { e.preventDefault(); seekBy(SEEK_STEP_S) }
@@ -310,7 +351,8 @@ export default function CinemaPlayer({
       return
     }
     lastTap.current = now
-    if (visible && playing) { setControlsOn(false); setSpeedOpen(false) }
+    if (!visible) { poke(); return }          // primo tocco: mostra solo i comandi
+    if (playing) { setControlsOn(false); setSpeedOpen(false) }
     else poke()
   }
 
@@ -340,6 +382,7 @@ export default function CinemaPlayer({
     <div
       ref={wrapRef}
       data-inverted="true"
+      data-ui={visible ? 'on' : 'off'}
       className={`cinema relative mx-auto w-full overflow-hidden bg-black select-none ${visible ? '' : 'cursor-none'}`}
       style={{ aspectRatio: String(aspect), maxWidth: `calc(${maxHeight} * ${aspect})` }}
       onPointerMove={e => { if (e.pointerType === 'mouse') poke() }}
@@ -365,8 +408,34 @@ export default function CinemaPlayer({
         </div>
       )}
 
-      {/* Grande ▶ quando è in pausa */}
-      {ready && !playing && !ended && scrub === null && (
+      {/* Comandi centrali (telefono/tablet): −10 · play/pausa · +10 */}
+      {touch && ready && !ended && scrub === null && !speedOpen && (
+        <div
+          className="cinema-ui absolute inset-0 z-[25] pb-9 flex items-center justify-center gap-8 pointer-events-none transition-opacity duration-300"
+          style={{ opacity: visible ? 1 : 0 }}
+        >
+          <button aria-label="Indietro 10 secondi" onClick={() => { seekBy(-SEEK_STEP_S); poke() }}
+            className="pointer-events-auto w-14 h-14 rounded-full flex items-center justify-center text-white active:scale-95"
+            style={{ background: 'rgba(0,0,0,0.45)' }}>
+            <SeekIcon dir={-1} />
+          </button>
+          <button aria-label={playing ? 'Pausa' : 'Riproduci'} onClick={() => { togglePlay(); poke() }}
+            className="pointer-events-auto w-[72px] h-[72px] rounded-full flex items-center justify-center active:scale-95"
+            style={{ background: 'rgba(255,255,255,0.92)' }}>
+            {playing
+              ? <Pause size={30} strokeWidth={2} fill="#05070d" color="#05070d" />
+              : <Play size={30} strokeWidth={2} fill="#05070d" color="#05070d" style={{ marginLeft: 3 }} />}
+          </button>
+          <button aria-label="Avanti 10 secondi" onClick={() => { seekBy(SEEK_STEP_S); poke() }}
+            className="pointer-events-auto w-14 h-14 rounded-full flex items-center justify-center text-white active:scale-95"
+            style={{ background: 'rgba(0,0,0,0.45)' }}>
+            <SeekIcon dir={1} />
+          </button>
+        </div>
+      )}
+
+      {/* Grande ▶ quando è in pausa (desktop) */}
+      {!touch && ready && !playing && !ended && scrub === null && (
         <button
           aria-label="Riproduci"
           onClick={togglePlay}
@@ -431,7 +500,7 @@ export default function CinemaPlayer({
 
       {/* ── Barra superiore ── */}
       <div
-        className="absolute inset-x-0 top-0 z-20 px-2 lg:px-5 pt-2 lg:pt-4 pb-10 flex items-start gap-2 pointer-events-none transition-opacity duration-300"
+        className="cinema-ui absolute inset-x-0 top-0 z-20 px-2 lg:px-5 pt-2 lg:pt-4 pb-10 flex items-start gap-2 pointer-events-none transition-opacity duration-300"
         style={{ opacity: visible ? 1 : 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%)' }}
       >
         {onBack && (
@@ -454,14 +523,16 @@ export default function CinemaPlayer({
 
       {/* ── Barra inferiore ── */}
       <div
-        className="absolute inset-x-0 bottom-0 z-20 px-2 lg:px-5 pb-1.5 lg:pb-3 pt-14 pointer-events-none transition-opacity duration-300"
+        className="cinema-ui absolute inset-x-0 bottom-0 z-20 px-2 lg:px-5 pb-1.5 lg:pb-3 pt-14 pointer-events-none transition-opacity duration-300"
+        onPointerOver={() => { overUi.current = true }}
+        onPointerOut={() => { overUi.current = false }}
         style={{ opacity: visible ? 1 : 0, background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 100%)' }}
       >
         {/* Avanzamento */}
         <div className="flex items-center gap-3 px-1.5 lg:px-2">
           <div
             ref={barRef}
-            className="cinema-bar pointer-events-auto relative flex-1 h-6 flex items-center cursor-pointer touch-none"
+            className={`cinema-bar pointer-events-auto relative flex-1 ${touch ? 'h-9' : 'h-6'} flex items-center cursor-pointer touch-none`}
             onPointerDown={e => {
               e.currentTarget.setPointerCapture(e.pointerId)
               setScrub(fracAt(e.clientX))
@@ -504,15 +575,15 @@ export default function CinemaPlayer({
 
         {/* Comandi */}
         <div className="flex items-center gap-0.5 lg:gap-1.5">
-          <button aria-label={playing ? 'Pausa' : 'Riproduci'} className={iconBtn} onClick={togglePlay}>
+          <button aria-label={playing ? 'Pausa' : 'Riproduci'} className={`${iconBtn} ${touch ? 'hidden' : ''}`} onClick={togglePlay}>
             {playing
               ? <Pause size={26} strokeWidth={2} fill="currentColor" />
               : <Play size={26} strokeWidth={2} fill="currentColor" />}
           </button>
-          <button aria-label="Indietro 10 secondi" className={iconBtn} onClick={() => seekBy(-SEEK_STEP_S)}>
+          <button aria-label="Indietro 10 secondi" className={`${iconBtn} ${touch ? 'hidden' : ''}`} onClick={() => seekBy(-SEEK_STEP_S)}>
             <SeekIcon dir={-1} />
           </button>
-          <button aria-label="Avanti 10 secondi" className={iconBtn} onClick={() => seekBy(SEEK_STEP_S)}>
+          <button aria-label="Avanti 10 secondi" className={`${iconBtn} ${touch ? 'hidden' : ''}`} onClick={() => seekBy(SEEK_STEP_S)}>
             <SeekIcon dir={1} />
           </button>
 

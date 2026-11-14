@@ -8,9 +8,9 @@ import { flattenLessons, pickResume, RESUME_CTA, type LessonEntry, type ResumeMo
 
 // Una categoria del catalogo presentata come una "serie": i corsi sono i
 // capitoli e le lezioni le puntate (i nomi nell'app restano quelli di sempre).
-//  - nella riga: copertina con titolo, stato e avanzamento
-//  - desktop: passando col mouse si apre un'anteprima più grande SOPRA la riga
-//    (in un portal, così non viene tagliata dalla riga che scorre)
+//  - nella riga: LOCANDINA VERTICALE (2:3) con titolo, stato e avanzamento
+//  - desktop: passando col mouse la locandina si apre in un'anteprima
+//    ORIZZONTALE più grande sopra la riga (portal: non viene tagliata)
 //  - telefono: il tocco apre una scheda dal basso con copertina e dettagli
 
 const HOVER_DELAY_MS = 450
@@ -20,7 +20,32 @@ export interface SeriesInfo {
   resume: { entry: LessonEntry; mode: ResumeMode } | null
   duration: string | null
   status: string | null
-  coverUrl: string | null
+  lessonCover: string | null   // illustrazione AI della prima puntata che ne ha una
+}
+
+// Locandina AI della serie (null finché non è generata o senza migrazione).
+const posterOf = (c: Category): string | null => c.posterUrl ?? null
+
+interface Art { url: string | null; pos?: string }
+
+// Verticale: locandina AI → copertina dell'admin → illustrazione di una puntata
+// (l'arte delle copertine AI sta a destra) → copertina generata.
+function posterArt(cat: Category, info: SeriesInfo): Art {
+  const poster = posterOf(cat)
+  if (poster) return { url: poster }
+  if (cat.coverUrl) return { url: cat.coverUrl, pos: '50% 50%' }
+  if (info.lessonCover) return { url: info.lessonCover, pos: '74% 50%' }
+  return { url: null }
+}
+
+// Orizzontale (anteprima/scheda): stessa locandina inquadrata sul soggetto, così
+// "la locandina si apre"; altrimenti copertina dell'admin o di una puntata.
+function landscapeArt(cat: Category, info: SeriesInfo): Art {
+  const poster = posterOf(cat)
+  if (poster) return { url: poster, pos: '50% 18%' }
+  if (cat.coverUrl) return { url: cat.coverUrl }
+  if (info.lessonCover) return { url: info.lessonCover }
+  return { url: null }
 }
 
 function durationLabel(seconds: number): string | null {
@@ -41,9 +66,7 @@ export function seriesInfo(cat: Category, isCurrent: boolean): SeriesInfo {
     resume: pickResume(entries),
     duration: durationLabel(entries.reduce((s, e) => s + Math.max(0, e.lesson.durationSeconds), 0)),
     status: done ? 'Completato' : isCurrent ? 'Sei qui' : stats.pct > 0 ? 'In corso' : null,
-    // Copertina della serie: quella caricata dall'admin, altrimenti l'illustrazione
-    // della prima puntata che ne ha una (le copertine AI non hanno testo).
-    coverUrl: cat.coverUrl ?? entries.find(e => e.lesson.coverUrl)?.lesson.coverUrl ?? null,
+    lessonCover: entries.find(e => e.lesson.coverUrl)?.lesson.coverUrl ?? null,
   }
 }
 
@@ -84,9 +107,11 @@ function SeriesCover({
   big?: boolean
 }) {
   const done = info.stats.pct === 100
+  const art = landscapeArt(cat, info)
   return (
     <MediaThumb
-      imageUrl={info.coverUrl}
+      imageUrl={art.url}
+      objectPosition={art.pos}
       accent={cat.accent}
       icon={phaseIcon(cat.phase)}
       progress={info.stats.pct > 0 && !done ? info.stats.pct / 100 : 0}
@@ -109,6 +134,46 @@ function SeriesCover({
         >
           {cat.title}
         </h3>
+      </div>
+    </MediaThumb>
+  )
+}
+
+// Locandina verticale nella riga: arte a tutta altezza, titolo grande in basso.
+function SeriesPoster({ cat, info, isCurrent }: { cat: Category; info: SeriesInfo; isCurrent: boolean }) {
+  const done = info.stats.pct === 100
+  const art = posterArt(cat, info)
+  return (
+    <MediaThumb
+      imageUrl={art.url}
+      objectPosition={art.pos}
+      accent={cat.accent}
+      icon={phaseIcon(cat.phase)}
+      iconSize="78%"
+      aspect="aspect-[2/3]"
+      progress={info.stats.pct > 0 && !done ? info.stats.pct / 100 : 0}
+      showPlay={false}
+      rounded="rounded-xl"
+      className={isCurrent ? 'media-thumb-current' : ''}
+      thumbWidth={640}
+      topLeft={<>
+        <PhaseTag>{cat.phase}</PhaseTag>
+        {info.status && <StatusTag status={info.status} done={done} isCurrent={isCurrent} />}
+      </>}
+    >
+      <div
+        className="absolute inset-x-0 bottom-0 px-4 pb-5 pt-24"
+        style={{ background: 'linear-gradient(to top, rgba(3,4,8,0.95) 0%, rgba(3,4,8,0.7) 38%, rgba(3,4,8,0) 100%)' }}
+      >
+        <h3
+          className="text-[24px] lg:text-[26px] font-black leading-[1.02] tracking-tight text-white line-clamp-3"
+          style={{ textShadow: '0 2px 20px rgba(0,0,0,0.5)', textWrap: 'balance' }}
+        >
+          {cat.title}
+        </h3>
+        <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'rgba(255,255,255,0.62)' }}>
+          {cat.courses.length} {cat.courses.length === 1 ? 'corso' : 'corsi'} · {info.stats.total} lezioni
+        </p>
       </div>
     </MediaThumb>
   )
@@ -211,15 +276,7 @@ export default function SeriesCard({ category: cat, isCurrent, onOpen, onPlay }:
           else setSheet(true)
         }}
       >
-        <SeriesCover cat={cat} info={info} isCurrent={isCurrent} />
-        <div className="mt-2 px-0.5 flex items-center justify-between gap-2 text-[11px]">
-          <span className="truncate" style={{ color: 'var(--ist-text-dim)' }}>
-            {cat.courses.length} {cat.courses.length === 1 ? 'corso' : 'corsi'} · {info.stats.total} lezioni
-          </span>
-          <span className="font-semibold flex-shrink-0" style={{ color: info.stats.pct === 100 ? '#46D39A' : 'var(--ist-text-muted)' }}>
-            {info.stats.done}/{info.stats.total}
-          </span>
-        </div>
+        <SeriesPoster cat={cat} info={info} isCurrent={isCurrent} />
       </button>
 
       {preview && (
@@ -250,7 +307,8 @@ export default function SeriesCard({ category: cat, isCurrent, onOpen, onPlay }:
 
 // ─── Anteprima al passaggio del mouse (desktop) ───────────────────────────────
 
-const PREVIEW_SCALE = 1.45
+const PREVIEW_MIN_W = 400
+const PREVIEW_MAX_W = 520
 const EDGE = 16
 
 function SeriesPreview({
@@ -266,15 +324,16 @@ function SeriesPreview({
 }) {
   const [shown, setShown] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
-  const [shiftUp, setShiftUp] = useState(0)
-
-  // Se l'anteprima uscirebbe dal fondo dello schermo, la facciamo risalire.
+  // Centrata verticalmente sulla locandina, poi tenuta dentro lo schermo
+  // (l'altezza si conosce solo dopo il primo render: misuriamo prima del paint).
+  const [top, setTop] = useState(anchor.top)
   useLayoutEffect(() => {
     const el = boxRef.current
     if (!el) return
-    const overflow = el.getBoundingClientRect().top + el.offsetHeight - (window.innerHeight - EDGE)
-    if (overflow > 0) setShiftUp(overflow)
-  }, [])
+    const h = el.offsetHeight
+    const centered = anchor.top + anchor.height / 2 - h / 2
+    setTop(Math.max(EDGE, Math.min(centered, window.innerHeight - h - EDGE)))
+  }, [anchor])
 
   // Chiudi se la pagina scorre o cambia dimensione (la posizione non sarebbe più valida).
   useEffect(() => {
@@ -294,13 +353,11 @@ function SeriesPreview({
   const minLeft = main
     ? main.getBoundingClientRect().left + (parseFloat(getComputedStyle(main).paddingLeft) || 0) + EDGE
     : EDGE
-  const width = Math.min(anchor.width * PREVIEW_SCALE, window.innerWidth - minLeft - EDGE)
+  const width = Math.min(Math.max(anchor.width * 1.9, PREVIEW_MIN_W), PREVIEW_MAX_W, window.innerWidth - minLeft - EDGE)
   const centerLeft = anchor.left + anchor.width / 2 - width / 2
   const left = Math.max(minLeft, Math.min(centerLeft, window.innerWidth - width - EDGE))
-  const coverH = (width * 9) / 16
-  // Allineata verticalmente al centro della card; mai fuori dallo schermo in alto.
-  const top = Math.max(EDGE, anchor.top + anchor.height / 2 - coverH / 2 - 8 - shiftUp)
   const originX = ((anchor.left + anchor.width / 2 - left) / width) * 100
+  const originY = Math.max(0, Math.min(100, ((anchor.top + anchor.height / 2 - top) / 400) * 100))
 
   const mode = info.resume?.mode
   const PlayIcon = mode === 'rewatch' ? RotateCcw : Play
@@ -316,8 +373,8 @@ function SeriesPreview({
         top, left, width,
         background: '#11141c',
         boxShadow: '0 24px 70px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.08)',
-        transformOrigin: `${originX}% 20%`,
-        transform: shown ? 'scale(1)' : `scale(${1 / PREVIEW_SCALE})`,
+        transformOrigin: `${originX}% ${originY}%`,
+        transform: shown ? 'scale(1)' : 'scale(0.6)',
         opacity: shown ? 1 : 0,
         transition: 'transform 220ms cubic-bezier(0.22,1,0.36,1), opacity 160ms ease',
       }}
