@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import PageHeader from '../../components/ui/PageHeader'
 import {
   ChevronDown, Plus, Edit2, Trash2,
   Paperclip, Video, FolderOpen, BookOpen, Radio, Clock,
   ChevronUp, Eye, EyeOff, Loader2, X, Upload, Sparkles, ImagePlus, WandSparkles,
+  Copy, Check, ExternalLink, CircleAlert,
 } from 'lucide-react'
 import {
   useContentAdmin, Category, Course, Lesson,
@@ -13,9 +14,12 @@ import { parseVimeo, fetchVimeoDuration } from '../../lib/vimeo'
 import { uploadAttachment, deleteAttachment, uploadCategoryCover, deleteCategoryCover } from '../../lib/storage'
 import { useLiveAdmin } from '../../lib/live'
 import LiveManager from '../../components/live/LiveManager'
-import CoverEditorModal, { CoverChip, CoverSubject } from '../../components/admin/CoverEditorModal'
+import CoverEditorModal, { CoverChip, CoverSubject, fullPrompt } from '../../components/admin/CoverEditorModal'
 import { phaseIcon } from '../../components/media/phase'
-import { listMissingCovers, generateMissingCovers } from '../../lib/covers'
+import {
+  listMissingCovers, generateMissingCovers, preparePrompt, prepareAllPrompts, usePromptJob,
+  uploadCoverImage, copyText, isUploadedCover, PromptKind,
+} from '../../lib/covers'
 import { useAuth } from '../../context/AuthContext'
 
 type Tab = 'corsi' | 'live'
@@ -188,24 +192,28 @@ function categoryPosterSubject(cat: Category): CoverSubject {
     kind: 'category', id: cat.id, title: cat.title,
     coverUrl: cat.posterUrl, keyword: null, status: cat.posterStatus,
     accent: cat.accent, icon: phaseIcon(cat.phase),
+    prompt: cat.posterPrompt,
+    promptContext: { serie: cat.title, descrizione: cat.description || undefined },
   }
 }
 
-function lessonCoverSubject(lesson: Lesson, category: Category, number: number): CoverSubject {
+function lessonCoverSubject(lesson: Lesson, category: Category, number: number, course?: Course): CoverSubject {
   return {
     kind: 'lesson', id: lesson.id, title: lesson.title,
     coverUrl: lesson.coverUrl, keyword: lesson.coverKeyword, status: lesson.coverStatus,
     accent: category.accent, icon: phaseIcon(category.phase),
     kicker: `Lezione ${String(number).padStart(2, '0')}`,
+    prompt: lesson.coverPrompt,
+    promptContext: { serie: category.title, corso: course?.title, numero: number },
   }
 }
 
-// Lezione + categoria + numero nel corso (per la finestra della copertina).
-function findLessonContext(cats: Category[], id: string): { lesson: Lesson; category: Category; number: number } | null {
+// Lezione + categoria + corso + numero nel corso (per la finestra della copertina).
+function findLessonContext(cats: Category[], id: string): { lesson: Lesson; category: Category; course: Course; number: number } | null {
   for (const c of cats) {
     for (const cr of c.courses) {
       const i = cr.lessons.findIndex(x => x.id === id)
-      if (i >= 0) return { lesson: cr.lessons[i], category: c, number: i + 1 }
+      if (i >= 0) return { lesson: cr.lessons[i], category: c, course: cr, number: i + 1 }
     }
   }
   return null
@@ -696,7 +704,7 @@ function CoursesTab({ admin, openModal, openCover, openPoster }: {
 
 // ─── Copertine AI mancanti (locandine delle serie + lezioni + replay) ───────
 
-function MissingCoversBar({ onProgressReload }: { onProgressReload: () => void }) {
+function MissingCoversBar({ onProgressReload, nested = false }: { onProgressReload: () => void; nested?: boolean }) {
   const [state, setState] = useState<
     | { phase: 'idle' }
     | { phase: 'checking' }
@@ -731,12 +739,15 @@ function MissingCoversBar({ onProgressReload }: { onProgressReload: () => void }
   const pct = state.phase === 'running' && state.total ? Math.round((state.done / state.total) * 100) : 0
 
   return (
-    <div className="flex items-center gap-3 px-5 py-3 rounded-2xl mb-6 flex-wrap" style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)' }}>
+    <div
+      className={`flex items-center gap-3 flex-wrap ${nested ? 'py-1' : 'px-5 py-3 rounded-2xl mb-6'}`}
+      style={nested ? undefined : { background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)' }}
+    >
       <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(90,154,177,0.14)', color: 'var(--ist-accent-text)' }}>
         <WandSparkles size={15} strokeWidth={2} />
       </div>
       <div className="flex-1 min-w-[180px]">
-        <p className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>Copertine AI</p>
+        <p className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>Generazione vettoriale automatica</p>
         {state.phase === 'running' ? (
           <div className="mt-1">
             <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: 'var(--ist-text-muted)' }}>
@@ -751,7 +762,7 @@ function MissingCoversBar({ onProgressReload }: { onProgressReload: () => void }
           <p className="text-[11px]" style={{ color: state.phase === 'message' && state.error ? '#FF6B7A' : 'var(--ist-text-muted)' }}>
             {state.phase === 'message' ? state.text
               : state.phase === 'finished' ? `Fatto: ${state.total - state.failed} grafiche create${state.failed ? `, ${state.failed} non riuscite (riprova dalla singola serie o lezione)` : ''}.${state.notice ? ` ${state.notice}` : ''}`
-              : 'Nuove serie e lezioni le ricevono da sole. Qui crei quelle che mancano: prima le locandine delle serie, poi le copertine di lezioni e replay.'}
+              : 'Disegna in automatico, in vettoriale, le grafiche che mancano: prima le locandine delle serie, poi le copertine di lezioni e replay.'}
           </p>
         )}
       </div>
@@ -762,8 +773,210 @@ function MissingCoversBar({ onProgressReload }: { onProgressReload: () => void }
         style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)', border: '1px solid rgba(255,255,255,0.12)' }}
       >
         {busy ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} strokeWidth={2.2} />}
-        {state.phase === 'checking' ? 'Controllo…' : state.phase === 'running' ? 'In corso…' : 'Genera quelle mancanti'}
+        {state.phase === 'checking' ? 'Controllo…' : state.phase === 'running' ? 'In corso…' : 'Genera in vettoriale'}
       </button>
+    </div>
+  )
+}
+
+
+// ─── Copertine con ChatGPT (flusso principale) ───────────────────────────────
+// Elenco di serie (prima) e lezioni (poi, in ordine di catalogo) della sezione
+// aperta che non hanno ancora un'immagine caricata: per ognuna si prepara il
+// prompt (Claude sceglie il soggetto), lo si copia in ChatGPT e si carica
+// l'immagine ottenuta. Le grafiche vettoriali già presenti contano come "da fare".
+
+interface ChatGptItem {
+  kind: PromptKind
+  id: string
+  title: string
+  meta: string
+  subject: CoverSubject
+}
+
+function ChatGptRow({ item, onReload, onOpen }: { item: ChatGptItem; onReload: () => void; onOpen: () => void }) {
+  const job = usePromptJob(item.kind, item.id)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [copied, setCopied] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const text = fullPrompt(item.subject, item.subject.prompt)
+
+  const prepare = async () => {
+    setError(null)
+    const res = await preparePrompt(item.kind, item.id)
+    if (!res.ok) setError(res.error ?? 'Prompt non riuscito')
+    onReload()
+  }
+  const copy = async () => {
+    if (text && await copyText(text)) { setCopied(true); window.setTimeout(() => setCopied(false), 1800) }
+  }
+  const upload = async (file: File | undefined) => {
+    if (!file) return
+    setUploading(true)
+    setError(null)
+    const keyword = item.subject.keyword ?? item.subject.prompt?.parolaChiave ?? undefined
+    const res = await uploadCoverImage(item.kind, item.id, file, keyword)
+    setUploading(false)
+    if (fileRef.current) fileRef.current.value = ''
+    if (!res.ok) setError(res.error ?? 'Caricamento non riuscito')
+    onReload()
+  }
+
+  const btn = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors disabled:opacity-50 flex-shrink-0'
+  return (
+    <div className="flex items-center gap-3 px-4 py-2.5" style={{ borderTop: '1px solid var(--ist-w7)' }}>
+      <CoverChip subject={item.subject} onClick={onOpen} width={item.kind === 'category' ? 30 : 56} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate" style={{ color: 'var(--ist-text)' }}>{item.title}</p>
+        <p className="text-[11px] truncate" style={{ color: error ? '#FF6B7A' : 'var(--ist-text-dim)' }}>
+          {error ?? (job.running ? 'Claude sta scegliendo il soggetto…' : text ? `${item.meta} · prompt pronto${item.subject.prompt?.visual ? ` (${item.subject.prompt.visual})` : ''}` : item.meta)}
+        </p>
+      </div>
+      {text ? (
+        <button onClick={copy} className={btn} style={copied ? { background: 'rgba(70,211,154,0.16)', color: '#46D39A' } : { background: 'var(--ist-w8)', color: 'var(--ist-text)' }}>
+          {copied ? <Check size={12} strokeWidth={2.6} /> : <Copy size={12} strokeWidth={2.2} />}
+          {copied ? 'Copiato' : 'Copia prompt'}
+        </button>
+      ) : (
+        <button onClick={prepare} disabled={job.running} className={btn} style={{ background: 'var(--ist-w8)', color: 'var(--ist-text)' }}>
+          {job.running ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} strokeWidth={2.2} />}
+          Prepara prompt
+        </button>
+      )}
+      <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => upload(e.target.files?.[0])} />
+      <button onClick={() => fileRef.current?.click()} disabled={uploading} className={btn} style={{ background: 'rgba(90,154,177,0.14)', color: 'var(--ist-accent-text)' }}>
+        {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} strokeWidth={2.2} />}
+        Carica
+      </button>
+      <button onClick={onOpen} className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:bg-white/[0.06]" style={{ color: 'var(--ist-text-dim)' }} title="Apri (anteprima, parola chiave, rigenera prompt)">
+        <ExternalLink size={13} strokeWidth={2} />
+      </button>
+    </div>
+  )
+}
+
+function ChatGptCoversPanel({ categories, onReload, openCover, openPoster, onReloadAll }: {
+  categories: Category[]
+  onReload: () => void
+  onReloadAll: () => void
+  openCover: (lessonId: string) => void
+  openPoster: (categoryId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [batch, setBatch] = useState<
+    | { phase: 'idle' }
+    | { phase: 'running'; done: number; total: number; failed: number }
+    | { phase: 'finished'; total: number; failed: number }
+  >({ phase: 'idle' })
+
+  const items = useMemo<ChatGptItem[]>(() => {
+    const posters: ChatGptItem[] = categories
+      .filter(c => !isUploadedCover(c.posterUrl))
+      .map(c => ({ kind: 'category', id: c.id, title: c.title, meta: `Locandina della serie · ${c.phase}`, subject: categoryPosterSubject(c) }))
+    const lessons: ChatGptItem[] = categories.flatMap(c => c.courses.flatMap(cr => cr.lessons.map((l, i) => ({ l, c, cr, n: i + 1 }))))
+      .filter(x => !isUploadedCover(x.l.coverUrl))
+      .map(x => ({
+        kind: 'lesson', id: x.l.id, title: x.l.title,
+        meta: `${x.c.title} · ${x.cr.title} · lezione ${x.n}`,
+        subject: lessonCoverSubject(x.l, x.c, x.n, x.cr),
+      }))
+    return [...posters, ...lessons]
+  }, [categories])
+
+  const posters = items.filter(i => i.kind === 'category').length
+  const ready = items.filter(i => !!i.subject.prompt).length
+  const missingPrompts = items.filter(i => !i.subject.prompt)
+
+  const runBatch = async () => {
+    if (missingPrompts.length === 0) return
+    if (!confirm(`Preparare ${missingPrompts.length} prompt? Claude sceglie il soggetto di ognuno (qualche secondo ciascuno): tieni aperta la pagina.`)) return
+    setOpen(true)
+    const res = await prepareAllPrompts(missingPrompts.map(i => ({ kind: i.kind, id: i.id })), (done, total, failed) => {
+      setBatch({ phase: 'running', done, total, failed })
+      if (done > 0 && done % 4 === 0) onReload()
+    })
+    onReload()
+    setBatch({ phase: 'finished', total: missingPrompts.length, failed: res.failed })
+  }
+
+  const pct = batch.phase === 'running' && batch.total ? Math.round((batch.done / batch.total) * 100) : 0
+
+  return (
+    <div className="rounded-2xl mb-6 overflow-hidden" style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)' }}>
+      <div className="flex items-center gap-3 px-5 py-3 flex-wrap">
+        <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(90,154,177,0.14)', color: 'var(--ist-accent-text)' }}>
+          <ImagePlus size={15} strokeWidth={2} />
+        </div>
+        <div className="flex-1 min-w-[200px]">
+          <p className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>Copertine con ChatGPT</p>
+          {batch.phase === 'running' ? (
+            <div className="mt-1">
+              <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: 'var(--ist-text-muted)' }}>
+                <span>{batch.done}/{batch.total} prompt preparati{batch.failed ? ` · ${batch.failed} non riusciti` : ''} — tieni aperta questa pagina</span>
+                <span>{pct}%</span>
+              </div>
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--ist-w10)' }}>
+                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #7CBBD0, #286680)' }} />
+              </div>
+            </div>
+          ) : (
+            <p className="text-[11px]" style={{ color: 'var(--ist-text-muted)' }}>
+              {items.length === 0
+                ? 'Tutte le serie e le lezioni di questa sezione hanno la loro immagine.'
+                : `${items.length} da fare in questa sezione (${posters} locandine, ${items.length - posters} copertine) · ${ready} prompt pronti.`}
+              {batch.phase === 'finished' ? ` Fatto: ${batch.total - batch.failed} prompt preparati${batch.failed ? `, ${batch.failed} non riusciti (riprova dalla riga)` : ''}.` : ''}
+            </p>
+          )}
+        </div>
+        {missingPrompts.length > 0 && (
+          <button
+            onClick={runBatch}
+            disabled={batch.phase === 'running'}
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0 flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)', border: '1px solid rgba(255,255,255,0.12)' }}
+          >
+            {batch.phase === 'running' ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} strokeWidth={2.2} />}
+            {batch.phase === 'running' ? 'In corso…' : 'Prepara tutti i prompt'}
+          </button>
+        )}
+        {items.length > 0 && (
+          <button
+            onClick={() => setOpen(o => !o)}
+            className="flex items-center gap-1 px-3 py-2 rounded-full text-xs font-semibold flex-shrink-0"
+            style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)', color: 'var(--ist-text)' }}
+          >
+            {open ? 'Nascondi elenco' : `Mostra elenco (${items.length})`}
+            <ChevronDown size={13} strokeWidth={2.2} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+          </button>
+        )}
+      </div>
+
+      {open && items.length > 0 && (
+        <>
+          <p className="px-5 pb-2 text-[11px] flex items-start gap-1.5" style={{ color: 'var(--ist-text-dim)' }}>
+            <CircleAlert size={12} strokeWidth={2} className="flex-shrink-0 mt-px" />
+            1. Prepara o copia il prompt · 2. Incollalo in ChatGPT (allega l&apos;immagine di riferimento se vuoi) · 3. Scarica l&apos;immagine e premi «Carica». Le locandine sono verticali 2:3, le copertine orizzontali 3:2.
+          </p>
+          <div className="max-h-[480px] overflow-y-auto">
+            {items.map(it => (
+              <ChatGptRow
+                key={`${it.kind}:${it.id}`}
+                item={it}
+                onReload={onReload}
+                onOpen={() => (it.kind === 'category' ? openPoster(it.id) : openCover(it.id))}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      <details className="px-5 pb-3 pt-1" style={{ borderTop: '1px solid var(--ist-w7)' }}>
+        <summary className="text-[11px] font-semibold cursor-pointer py-2" style={{ color: 'var(--ist-text-dim)' }}>
+          Altre opzioni: generazione vettoriale automatica
+        </summary>
+        <MissingCoversBar onProgressReload={onReloadAll} nested />
+      </details>
     </div>
   )
 }
@@ -827,7 +1040,15 @@ export default function AdminContenuti() {
         ))}
       </div>
 
-      <MissingCoversBar onProgressReload={() => { void admin.reload(); void liveAdmin.reload() }} />
+      {tab === 'corsi' && !admin.loading && (
+        <ChatGptCoversPanel
+          categories={admin.categories}
+          onReload={() => { void admin.reload() }}
+          onReloadAll={() => { void admin.reload(); void liveAdmin.reload() }}
+          openCover={setCoverLessonId}
+          openPoster={setPosterCatId}
+        />
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 p-1 rounded-2xl w-fit" style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-border)' }}>
@@ -879,7 +1100,7 @@ export default function AdminContenuti() {
 
       {coverCtx && (
         <CoverEditorModal
-          subject={lessonCoverSubject(coverCtx.lesson, coverCtx.category, coverCtx.number)}
+          subject={lessonCoverSubject(coverCtx.lesson, coverCtx.category, coverCtx.number, coverCtx.course)}
           onClose={() => setCoverLessonId(null)}
           onChanged={() => { void admin.reload() }}
         />

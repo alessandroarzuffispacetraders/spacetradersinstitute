@@ -10,6 +10,12 @@
 //  - lezioni e serie: solo admin; live/replay: admin oppure chi ha creato la live.
 //  - 'category' = locandina 2:3 della serie (colonne poster_*, nessuna parola
 //    chiave: il titolo della serie lo scrive l'app nel terzo inferiore).
+//  - mode 'prompt' (solo 'lesson' | 'category', solo admin): NON disegna. Claude
+//    sceglie dalla libreria la visualizzazione tecnica adatta e la descrive
+//    (soggetto + grafici di contorno + parola chiave per le lezioni); risposta
+//    SINCRONA { ok, visual, soggetto, contorno, parolaChiave? } e salvataggio in
+//    lessons.cover_prompt / categories.poster_prompt. L'app ci costruisce il
+//    prompt da incollare in ChatGPT (src/lib/coverPrompts.ts).
 //  - risponde SUBITO 202 { ok, status: 'pending' } e genera in background
 //    (EdgeRuntime.waitUntil): un'illustrazione può richiedere più dei ~150 s
 //    entro cui Supabase vuole una risposta. Il client segue lo stato sulla riga
@@ -17,7 +23,7 @@
 import Anthropic from 'npm:@anthropic-ai/sdk@1.8.0'
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@2'
 import { CORS, json, adminClient, HttpError } from '../_shared/http.ts'
-import { COVER_SYSTEM_PROMPT, POSTER_SYSTEM_PROMPT } from './prompt.ts'
+import { COVER_SYSTEM_PROMPT, POSTER_SYSTEM_PROMPT, SUBJECT_SYSTEM_PROMPT } from './prompt.ts'
 
 // Modello e sforzo configurabili senza ridistribuire (supabase secrets set …).
 const MODEL = Deno.env.get('COVER_MODEL') || 'claude-opus-5-5'
@@ -295,6 +301,178 @@ function sanitizeSvg(raw: string, spec: CanvasSpec): string {
   return s
 }
 
+// ─── Soggetto per ChatGPT (mode 'prompt') ─────────────────────────────────────
+
+type PromptKind = 'lesson' | 'category'
+
+interface PromptSubject { visual: string; soggetto: string; contorno: string; parolaChiave?: string }
+
+interface PromptContext {
+  title: string
+  lines: string[]
+  used: string[]                 // visualizzazioni già scelte dai contenuti vicini
+  previous: PromptSubject | null // soggetto attuale (rigenerazione)
+}
+
+interface RawPromptLesson { id: string; title: string; position: number | null; cover_prompt: PromptSubject | null }
+interface RawPromptCourse { id: string; title: string; position: number | null; lessons: RawPromptLesson[] | null }
+
+function asSubject(v: unknown): PromptSubject | null {
+  if (!v || typeof v !== 'object') return null
+  const o = v as Record<string, unknown>
+  if (typeof o.soggetto !== 'string' || typeof o.contorno !== 'string') return null
+  return {
+    visual: typeof o.visual === 'string' ? o.visual : '',
+    soggetto: o.soggetto,
+    contorno: o.contorno,
+    parolaChiave: typeof o.parolaChiave === 'string' ? o.parolaChiave : undefined,
+  }
+}
+
+function countUsed(visuals: string[]): string[] {
+  const counts = new Map<string, number>()
+  for (const v of visuals.filter(Boolean)) counts.set(v, (counts.get(v) ?? 0) + 1)
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([v, n]) => (n > 1 ? `${v} (×${n})` : v))
+}
+
+async function loadLessonPromptContext(admin: SupabaseClient, id: string): Promise<PromptContext> {
+  const { data, error } = await admin
+    .from('lessons')
+    .select('id, title, description, course_id, cover_prompt, courses ( id, title, category_id, categories ( id, title, description, phase, section ) )')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) throw new Error(`lettura lezione: ${error.message}`)
+  if (!data) throw new HttpError(404, 'Lezione non trovata')
+
+  const course = one(data.courses as unknown as Record<string, unknown> | Record<string, unknown>[])
+  const category = one(course?.categories as Record<string, unknown> | Record<string, unknown>[] | undefined)
+  const phase = PHASE_LABEL[String(category?.phase ?? '')] ?? ''
+  const isMental = category?.section === 'mental'
+
+  // Tutte le lezioni della serie: contesto per i temi generici («STEP 1») e
+  // visualizzazioni già scelte, per non dare a tutta la serie la stessa copertina.
+  let courses: RawPromptCourse[] = []
+  if (category?.id) {
+    const { data: rows } = await admin
+      .from('courses')
+      .select('id, title, position, lessons ( id, title, position, cover_prompt )')
+      .eq('category_id', String(category.id))
+    courses = ((rows ?? []) as unknown as RawPromptCourse[]).slice().sort(byPos)
+  }
+  const sameCourse = courses.find(c => c.id === data.course_id)
+  const chapterTitles = (sameCourse?.lessons ?? []).slice().sort(byPos).map(l => l.title)
+  const used = countUsed(courses.flatMap(c => (c.lessons ?? []).filter(l => l.id !== id).map(l => asSubject(l.cover_prompt)?.visual ?? '')))
+
+  return {
+    title: data.title,
+    used,
+    previous: asSubject(data.cover_prompt),
+    lines: [
+      `Tipo: copertina di una LEZIONE${isMental ? " dell'area Mental Coach (psicologia del trader)" : ''}`,
+      `Titolo della lezione: ${data.title}`,
+      data.description ? `Descrizione della lezione: ${data.description}` : '',
+      course?.title ? `Capitolo: ${course.title}` : '',
+      chapterTitles.length ? `Lezioni del capitolo, in ordine: ${chapterTitles.join(' · ')}` : '',
+      category?.title ? `Serie: ${category.title}${phase ? ` (fase ${phase})` : ''}` : '',
+      category?.description ? `Descrizione della serie: ${category.description}` : '',
+      courses.length > 1 ? `Capitoli della serie: ${courses.map(c => c.title).join(' · ')}` : '',
+    ].filter(Boolean),
+  }
+}
+
+async function loadCategoryPromptContext(admin: SupabaseClient, id: string): Promise<PromptContext> {
+  const { data, error } = await admin
+    .from('categories')
+    .select('id, title, description, phase, section, poster_prompt, courses ( title, position, lessons ( title, position ) )')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) throw new Error(`lettura serie: ${error.message}`)
+  if (!data) throw new HttpError(404, 'Serie non trovata')
+
+  const phase = PHASE_LABEL[String(data.phase ?? '')] ?? ''
+  const isMental = data.section === 'mental'
+  const courses = ((data.courses ?? []) as RawPosterCourse[]).slice().sort(byPos)
+  const lessons = courses.flatMap(c => (c.lessons ?? []).slice().sort(byPos).map(l => l.title)).filter(Boolean).slice(0, MAX_POSTER_LESSONS)
+
+  // Locandine delle altre serie della stessa sezione: variare il soggetto.
+  const { data: others } = await admin
+    .from('categories')
+    .select('id, poster_prompt')
+    .eq('section', data.section ?? 'trading')
+    .neq('id', id)
+  const used = countUsed(((others ?? []) as { poster_prompt: unknown }[]).map(o => asSubject(o.poster_prompt)?.visual ?? ''))
+
+  return {
+    title: data.title,
+    used,
+    previous: asSubject(data.poster_prompt),
+    lines: [
+      `Tipo: LOCANDINA verticale di una SERIE di videocorsi${isMental ? " dell'area Mental Coach (psicologia del trader)" : ''}: deve essere la più iconica e d'impatto, come la locandina di un film`,
+      `Titolo della serie: ${data.title}`,
+      data.description ? `Descrizione: ${data.description}` : '',
+      phase ? `Fase del percorso: ${phase}` : '',
+      courses.length ? `Capitoli: ${courses.map(c => c.title).join(' · ')}` : '',
+      lessons.length ? `Alcune lezioni: ${lessons.join(' · ')}` : '',
+    ].filter(Boolean),
+  }
+}
+
+function buildSubjectMessage(kind: PromptKind, ctx: PromptContext, feedback: string): string {
+  const parts = [ctx.lines.join('\n')]
+  if (ctx.used.length) {
+    parts.push(`Visualizzazioni già usate da contenuti vicini: ${ctx.used.join(' · ')}. Se ce n'è un'altra adatta al tema, preferiscila.`)
+  }
+  if (ctx.previous) {
+    parts.push(`Soggetto attuale (da sostituire con una proposta diversa, salvo indicazioni contrarie dell'admin): ${ctx.previous.visual ? `${ctx.previous.visual} — ` : ''}${ctx.previous.soggetto}`)
+  }
+  if (feedback) parts.push(`Indicazioni dell'admin (hanno la precedenza): ${feedback}`)
+  parts.push(kind === 'lesson'
+    ? 'Scegli e descrivi il soggetto della copertina di questa lezione, con la parola chiave.'
+    : 'Scegli e descrivi il soggetto della locandina di questa serie (niente parola chiave).')
+  return parts.join('\n\n')
+}
+
+const tag = (text: string, name: string) =>
+  (text.match(new RegExp(`<${name}>([\\s\\S]*?)<\\/${name}>`, 'i'))?.[1] ?? '').replace(/\s+/g, ' ').trim()
+
+async function generateSubject(kind: PromptKind, ctx: PromptContext, feedback: string): Promise<PromptSubject> {
+  const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! })
+  // Testo breve: effort basso. Il pensiero conta nei token, quindi margine.
+  const message = await anthropic.beta.messages.create({
+    model: MODEL,
+    max_tokens: 4000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    output_config: { effort: 'low' },
+    system: [{ type: 'text', text: SUBJECT_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: buildSubjectMessage(kind, ctx, feedback) }],
+  })
+  if (message.stop_reason === 'refusal') throw new Error('il modello ha rifiutato la richiesta: riformula le indicazioni')
+  if (message.stop_reason === 'max_tokens') throw new Error('risposta troncata: riprova')
+
+  const text = message.content
+    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')
+    .map(b => b.text)
+    .join('')
+  const subject: PromptSubject = {
+    visual: tag(text, 'visual').slice(0, 80),
+    soggetto: tag(text, 'soggetto').slice(0, 1200),
+    contorno: tag(text, 'contorno').slice(0, 800),
+  }
+  if (!subject.soggetto || !subject.contorno) throw new Error('risposta del modello incompleta: riprova')
+  if (kind === 'lesson') subject.parolaChiave = normalizeKeyword(tag(text, 'parola'), ctx.title)
+  return subject
+}
+
+async function runPrompt(admin: SupabaseClient, kind: PromptKind, id: string, feedback: string): Promise<PromptSubject> {
+  const ctx = kind === 'lesson' ? await loadLessonPromptContext(admin, id) : await loadCategoryPromptContext(admin, id)
+  const subject = await generateSubject(kind, ctx, feedback)
+  const column = kind === 'lesson' ? 'cover_prompt' : 'poster_prompt'
+  const { error } = await admin.from(TABLE[kind]).update({ [column]: { ...subject, updatedAt: new Date().toISOString() } }).eq('id', id)
+  if (error) throw new Error(`salvataggio del soggetto: ${error.message}`)
+  return subject
+}
+
 // ─── Lavoro in background ─────────────────────────────────────────────────────
 
 async function runJob(admin: SupabaseClient, kind: Kind, id: string, ctx: CoverContext, feedback: string) {
@@ -366,6 +544,15 @@ Deno.serve(async (req) => {
 
     // Permessi PRIMA di leggere il contenuto (chi non può non scopre se esiste).
     const userIsAdmin = await isAdmin(admin, user.id)
+
+    // Soggetto per il prompt di ChatGPT: sincrono (pochi secondi), niente disegno.
+    if (body.mode === 'prompt') {
+      if (kind === 'live') return json({ ok: false, error: 'Il prompt per ChatGPT è disponibile solo per lezioni e serie' }, 400)
+      if (!userIsAdmin) throw new HttpError(403, 'Solo un admin può preparare i prompt delle copertine')
+      const subject = await runPrompt(admin, kind, id, feedback)
+      return json({ ok: true, ...subject })
+    }
+
     if (kind === 'lesson' && !userIsAdmin) throw new HttpError(403, 'Solo un admin può generare la copertina di una lezione')
     if (kind === 'category' && !userIsAdmin) throw new HttpError(403, 'Solo un admin può generare la locandina di una serie')
     const ctx = kind === 'lesson' ? await loadLessonContext(admin, id)

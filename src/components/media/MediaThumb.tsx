@@ -2,10 +2,10 @@ import { ReactNode, useState } from 'react'
 import { Check, Play, type LucideIcon } from 'lucide-react'
 import { useVimeoThumb } from '../../lib/useVimeoThumb'
 
-// Le copertine restano nella palette blu/viola delle sezioni cinema: i colori
-// verdi diventano blu, rossi/arancio/gialli diventano viola (grigi invariati).
-const COVER_BLUE = '#5A9AB1'
-const COVER_VIOLET = '#7C6CF0'
+// Le copertine di ripiego restano sui blu delle sezioni cinema: qualunque
+// colore della categoria che non sia già un blu diventa blu (grigi invariati).
+const COVER_BLUE = '#2F7DFF'
+const COVER_TEAL = '#5A9AB1'
 export function coverTone(hex: string): string {
   const m = /^#?([0-9a-f]{6})/i.exec(hex)
   if (!m) return COVER_BLUE
@@ -16,8 +16,8 @@ export function coverTone(hex: string): string {
   let h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4
   h *= 60
   if (h < 0) h += 360
-  if (h >= 185 && h <= 300) return `#${m[1]}`
-  return h > 300 || h < 60 ? COVER_VIOLET : COVER_BLUE
+  if (h >= 185 && h <= 245) return `#${m[1]}`
+  return h > 245 || h < 60 ? COVER_BLUE : COVER_TEAL
 }
 
 // Copertina GENERATA dal colore (nessun upload): glow radiali su base scura.

@@ -1,12 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Loader2, RefreshCw, WandSparkles, CircleAlert, type LucideIcon } from 'lucide-react'
+import {
+  X, Loader2, RefreshCw, WandSparkles, CircleAlert, Copy, Check, Upload, ChevronDown, Sparkles,
+  type LucideIcon,
+} from 'lucide-react'
 import MediaThumb from '../media/MediaThumb'
-import { CoverKind, generateCover, useCoverJob } from '../../lib/covers'
+import {
+  CoverKind, CoverPromptSubject, generateCover, useCoverJob, preparePrompt, usePromptJob,
+  uploadCoverImage, copyText, isUploadedCover,
+} from '../../lib/covers'
+import { buildCoverPrompt, buildPosterPrompt } from '../../lib/coverPrompts'
 
-// Copertina AI di una lezione o di un replay, o locandina verticale di una serie:
-// anteprima, rigenera, e richiesta di modifica a parole ("più semplice", "metti
-// un toro", "parola chiave: RISCHIO"). La generazione continua in background
-// anche chiudendo la finestra.
+// Copertina di una lezione o locandina verticale di una serie.
+//  - Flusso PRINCIPALE (lezioni e serie): Claude sceglie il soggetto, qui si
+//    copia il prompt completo da incollare in ChatGPT e si carica l'immagine
+//    ottenuta (con la parola chiave per le lezioni).
+//  - Secondario (a scomparsa): la vecchia generazione vettoriale automatica,
+//    con richiesta di modifica a parole. Per i replay delle live resta l'unica.
 
 export interface CoverSubject {
   kind: CoverKind
@@ -19,6 +28,18 @@ export interface CoverSubject {
   accentEnd?: string
   icon?: LucideIcon
   kicker?: string
+  // Per il prompt di ChatGPT (lezioni e serie).
+  prompt?: CoverPromptSubject | null
+  promptContext?: { serie: string; descrizione?: string; corso?: string; numero?: number }
+}
+
+// Prompt completo da incollare in ChatGPT (null se il soggetto non c'è ancora).
+export function fullPrompt(subject: CoverSubject, prompt: CoverPromptSubject | null | undefined): string | null {
+  if (!prompt || subject.kind === 'live') return null
+  const ctx = subject.promptContext
+  return subject.kind === 'category'
+    ? buildPosterPrompt({ titolo: subject.title, descrizione: ctx?.descrizione }, prompt)
+    : buildCoverPrompt({ titolo: subject.title, numero: ctx?.numero ?? 1, serie: ctx?.serie ?? '', corso: ctx?.corso }, prompt)
 }
 
 const FEEDBACK_MAX = 500
@@ -54,52 +75,282 @@ function PosterPreview({ subject, coverUrl, className = '' }: { subject: CoverSu
   )
 }
 
-export default function CoverEditorModal({ subject, onClose, onChanged }: {
+// ─── Generazione vettoriale (secondaria; unica per i replay) ──────────────────
+
+function VectorPanel({ subject, onChanged, onPreview }: {
   subject: CoverSubject
-  onClose: () => void
   onChanged: () => void
+  onPreview: (p: { coverUrl: string | null; keyword: string | null }) => void
 }) {
   const job = useCoverJob(subject.kind, subject.id)
   const [feedback, setFeedback] = useState('')
-  const [preview, setPreview] = useState({ coverUrl: subject.coverUrl, keyword: subject.keyword })
   const mounted = useRef(true)
   useEffect(() => () => { mounted.current = false }, [])
-
-  // Il genitore ricarica i dati a fine generazione: allinea l'anteprima.
-  useEffect(() => {
-    setPreview({ coverUrl: subject.coverUrl, keyword: subject.keyword })
-  }, [subject.coverUrl, subject.keyword])
 
   const start = async (withFeedback: boolean) => {
     const text = withFeedback ? feedback.trim() : ''
     if (withFeedback && !text) return
     const res = await generateCover(subject.kind, subject.id, text || undefined)
     if (mounted.current && res.ok) {
-      setPreview({ coverUrl: res.coverUrl ?? null, keyword: res.keyword ?? null })
+      onPreview({ coverUrl: res.coverUrl ?? null, keyword: res.keyword ?? null })
       if (withFeedback) setFeedback('')
     }
     onChanged()
   }
 
   const serverPending = !job.running && subject.status === 'pending'
-  const hasCover = !!preview.coverUrl
   const isPoster = subject.kind === 'category'
-  const noun = isPoster ? 'locandina' : 'copertina'
+  const hasCover = !!subject.coverUrl
+
+  return (
+    <div className="space-y-3">
+      {(job.running || serverPending) && (
+        <p className="text-xs flex items-center gap-1.5" style={{ color: 'var(--ist-text-muted)' }}>
+          <Loader2 size={13} className="animate-spin" />
+          {isPoster ? 'Sto disegnando la locandina (2–3 minuti, continua in background)…' : 'Sto disegnando la copertina (circa un minuto, continua in background)…'}
+        </p>
+      )}
+      {(job.error || (!job.running && subject.status === 'error')) && (
+        <p className="text-xs flex items-start gap-1.5" style={{ color: '#FF6B7A' }}>
+          <CircleAlert size={13} strokeWidth={2.2} className="flex-shrink-0 mt-px" />
+          {job.error || "L'ultima generazione non è riuscita. Riprova."}
+        </p>
+      )}
+      <textarea
+        value={feedback}
+        onChange={e => setFeedback(e.target.value.slice(0, FEEDBACK_MAX))}
+        rows={2}
+        disabled={job.running}
+        placeholder={isPoster
+          ? 'Modifica (facoltativa): es. «più drammatica», «più profondità sullo sfondo»'
+          : 'Modifica (facoltativa): es. «più semplice», «parola chiave: RISCHIO»'}
+        className="w-full px-3 py-2.5 text-sm resize-none disabled:opacity-60"
+        style={{ background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)', borderRadius: 14, color: 'var(--ist-text)', outline: 'none' }}
+      />
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => start(true)}
+          disabled={job.running || !feedback.trim()}
+          className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:hover:translate-y-0"
+          style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)', border: '1px solid rgba(255,255,255,0.12)' }}
+        >
+          <WandSparkles size={13} strokeWidth={2.2} />
+          Applica modifica
+        </button>
+        <button
+          onClick={() => start(false)}
+          disabled={job.running}
+          className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-colors disabled:opacity-40"
+          style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)', color: 'var(--ist-text)' }}
+        >
+          {job.running ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} strokeWidth={2.2} />}
+          {hasCover ? 'Rigenera in vettoriale' : 'Genera in vettoriale'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Flusso ChatGPT: prompt da copiare + caricamento dell'immagine ───────────
+
+function ChatGptPanel({ subject, prompt, onPrompt }: {
+  subject: CoverSubject
+  prompt: CoverPromptSubject | null
+  onPrompt: (p: CoverPromptSubject) => void
+}) {
+  const job = usePromptJob(subject.kind as 'lesson' | 'category', subject.id)
+  const [notes, setNotes] = useState('')
+  const [copied, setCopied] = useState(false)
+  const text = fullPrompt(subject, prompt)
+
+  const prepare = async (withNotes: boolean) => {
+    const res = await preparePrompt(subject.kind as 'lesson' | 'category', subject.id, withNotes ? notes : undefined)
+    if (res.ok && res.subject) {
+      onPrompt(res.subject)
+      if (withNotes) setNotes('')
+    }
+  }
+
+  const copy = async () => {
+    if (!text) return
+    if (await copyText(text)) {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1800)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <ol className="text-xs space-y-1" style={{ color: 'var(--ist-text-muted)' }}>
+        <li><b style={{ color: 'var(--ist-text)' }}>1.</b> {text ? 'Copia il prompt' : 'Prepara il prompt (Claude sceglie il soggetto)'}</li>
+        <li><b style={{ color: 'var(--ist-text)' }}>2.</b> Incollalo in ChatGPT (allega l&apos;immagine di riferimento se vuoi)</li>
+        <li><b style={{ color: 'var(--ist-text)' }}>3.</b> Scarica l&apos;immagine e caricala qui</li>
+      </ol>
+
+      {!text ? (
+        <button
+          onClick={() => prepare(false)}
+          disabled={job.running}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0"
+          style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)', border: '1px solid rgba(255,255,255,0.12)' }}
+        >
+          {job.running ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} strokeWidth={2.2} />}
+          {job.running ? 'Claude sta scegliendo il soggetto…' : 'Prepara prompt'}
+        </button>
+      ) : (
+        <>
+          {prompt?.visual && (
+            <p className="text-[11px] font-semibold" style={{ color: 'var(--ist-accent-text)' }}>
+              Soggetto: {prompt.visual}{prompt.parolaChiave ? ` · parola chiave ${prompt.parolaChiave}` : ''}
+            </p>
+          )}
+          {/* Testo a sola lettura (non un campo: la regola globale dei 16px per
+              gli input lo renderebbe enorme); si copia col pulsante. */}
+          <div
+            className="w-full max-h-[240px] overflow-y-auto px-3 py-2.5 text-[11px] leading-relaxed whitespace-pre-wrap select-text"
+            style={{ background: 'var(--ist-w5)', border: '1px solid var(--ist-w10)', borderRadius: 14, color: 'var(--ist-text-muted)' }}
+          >
+            {text}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={copy}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold text-white transition-all hover:-translate-y-0.5"
+              style={{ background: copied ? '#2BA877' : 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)', border: '1px solid rgba(255,255,255,0.12)' }}
+            >
+              {copied ? <Check size={14} strokeWidth={2.6} /> : <Copy size={14} strokeWidth={2.2} />}
+              {copied ? 'Copiato!' : 'Copia prompt'}
+            </button>
+            <input
+              value={notes}
+              onChange={e => setNotes(e.target.value.slice(0, FEEDBACK_MAX))}
+              disabled={job.running}
+              placeholder="Indicazioni (facoltative): es. «usa la heatmap»"
+              className="flex-1 min-w-[160px] px-3 py-2 text-xs disabled:opacity-60"
+              style={{ background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)', borderRadius: 999, color: 'var(--ist-text)', outline: 'none' }}
+            />
+            <button
+              onClick={() => prepare(!!notes.trim())}
+              disabled={job.running}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors disabled:opacity-50"
+              style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)', color: 'var(--ist-text)' }}
+              title="Chiede a Claude un soggetto diverso"
+            >
+              {job.running ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} strokeWidth={2.2} />}
+              Rigenera prompt
+            </button>
+          </div>
+        </>
+      )}
+
+      {job.error && (
+        <p className="text-xs flex items-start gap-1.5" style={{ color: '#FF6B7A' }}>
+          <CircleAlert size={13} strokeWidth={2.2} className="flex-shrink-0 mt-px" />
+          {job.error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function UploadBox({ subject, keyword, setKeyword, onUploaded }: {
+  subject: CoverSubject
+  keyword: string
+  setKeyword: (k: string) => void
+  onUploaded: (url: string) => void
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const isPoster = subject.kind === 'category'
+
+  const onFile = async (file: File | undefined) => {
+    if (!file) return
+    setBusy(true)
+    setError(null)
+    const res = await uploadCoverImage(subject.kind as 'lesson' | 'category', subject.id, file, keyword)
+    setBusy(false)
+    if (fileRef.current) fileRef.current.value = ''
+    if (res.ok && res.url) onUploaded(res.url)
+    else setError(res.error ?? 'Caricamento non riuscito')
+  }
+
+  return (
+    <div className="space-y-2">
+      {!isPoster && (
+        <div>
+          <label className="text-[11px] block mb-1" style={{ color: 'var(--ist-text-muted)' }}>Parola chiave (scritta sopra la copertina)</label>
+          <input
+            value={keyword}
+            onChange={e => setKeyword(e.target.value.toLocaleUpperCase('it-IT').slice(0, 24))}
+            placeholder="es. LIQUIDITÀ"
+            className="w-full px-3 py-2 text-sm font-bold tracking-wide"
+            style={{ background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)', borderRadius: 12, color: 'var(--ist-text)', outline: 'none' }}
+          />
+        </div>
+      )}
+      <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => onFile(e.target.files?.[0])} />
+      <button
+        onClick={() => fileRef.current?.click()}
+        disabled={busy}
+        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold transition-colors disabled:opacity-60"
+        style={{ background: 'var(--ist-w8)', border: '1px dashed var(--ist-border-strong)', color: 'var(--ist-text)' }}
+      >
+        {busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} strokeWidth={2.2} />}
+        {busy ? 'Carico e ottimizzo…' : isPoster ? 'Carica locandina' : 'Carica copertina'}
+      </button>
+      <p className="text-[10px]" style={{ color: 'var(--ist-text-dim)' }}>
+        {isPoster ? 'Verticale 2:3 (es. 1024×1536).' : 'Orizzontale 3:2 (es. 1536×1024), mostrata in 16:9.'} PNG, JPG o WebP: la riduco e la ottimizzo io.
+      </p>
+      {error && (
+        <p className="text-xs flex items-start gap-1.5" style={{ color: '#FF6B7A' }}>
+          <CircleAlert size={13} strokeWidth={2.2} className="flex-shrink-0 mt-px" />
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+export default function CoverEditorModal({ subject, onClose, onChanged }: {
+  subject: CoverSubject
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const isLive = subject.kind === 'live'
+  const isPoster = subject.kind === 'category'
+  const [preview, setPreview] = useState({ coverUrl: subject.coverUrl, keyword: subject.keyword })
+  const [prompt, setPrompt] = useState<CoverPromptSubject | null>(subject.prompt ?? null)
+  const [keyword, setKeyword] = useState(subject.keyword ?? subject.prompt?.parolaChiave ?? '')
+  const [vectorOpen, setVectorOpen] = useState(isLive)
+  const job = useCoverJob(subject.kind, subject.id)
+  const serverPending = !job.running && subject.status === 'pending'
+
+  // Il genitore ricarica i dati (dopo una generazione/caricamento): allinea.
+  useEffect(() => {
+    setPreview({ coverUrl: subject.coverUrl, keyword: subject.keyword })
+  }, [subject.coverUrl, subject.keyword])
+  useEffect(() => { if (subject.prompt) setPrompt(subject.prompt) }, [subject.prompt])
+
+  const uploaded = isUploadedCover(preview.coverUrl)
+  const state = uploaded ? 'Immagine caricata' : preview.coverUrl ? 'Grafica vettoriale' : 'Nessuna immagine'
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[110] flex items-center justify-center p-4 overflow-y-auto"
       style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl rounded-3xl overflow-hidden"
+        className={`w-full ${isLive ? 'max-w-xl' : 'max-w-4xl'} rounded-3xl overflow-hidden my-auto`}
         style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 px-6 py-4" style={{ borderBottom: '1px solid var(--ist-border)' }}>
           <div className="min-w-0">
-            <h3 className="text-sm font-bold" style={{ color: 'var(--ist-text)' }}>{isPoster ? 'Locandina AI della serie' : 'Copertina AI'}</h3>
+            <h3 className="text-sm font-bold" style={{ color: 'var(--ist-text)' }}>
+              {isPoster ? 'Locandina della serie' : isLive ? 'Copertina AI del replay' : 'Copertina della lezione'}
+            </h3>
             <p className="text-xs truncate" style={{ color: 'var(--ist-text-muted)' }}>{subject.title}</p>
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:bg-white/[0.06]" style={{ color: 'var(--ist-text-dim)' }}>
@@ -107,83 +358,77 @@ export default function CoverEditorModal({ subject, onClose, onChanged }: {
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
-          <div className={`relative ${isPoster ? 'w-full max-w-[260px] mx-auto' : ''}`}>
-            {isPoster ? (
-              <PosterPreview subject={subject} coverUrl={preview.coverUrl} />
-            ) : (
-              <MediaThumb
-                imageUrl={preview.coverUrl}
-                keyword={preview.keyword}
-                kicker={subject.kicker}
-                accent={subject.accent}
-                accentEnd={subject.accentEnd}
-                icon={subject.icon}
-                rounded="rounded-2xl"
-                showPlay={false}
-                thumbWidth={960}
+        <div className={`p-6 ${isLive ? 'space-y-4' : 'grid grid-cols-1 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-6'}`}>
+          {/* Anteprima (+ caricamento per lezioni e serie) */}
+          <div className="space-y-3">
+            <div className={`relative ${isPoster ? 'w-full max-w-[240px] mx-auto' : ''}`}>
+              {isPoster ? (
+                <PosterPreview subject={subject} coverUrl={preview.coverUrl} />
+              ) : (
+                <MediaThumb
+                  imageUrl={preview.coverUrl}
+                  keyword={isLive ? preview.keyword : (keyword || preview.keyword)}
+                  kicker={subject.kicker}
+                  accent={subject.accent}
+                  accentEnd={subject.accentEnd}
+                  icon={subject.icon}
+                  rounded="rounded-2xl"
+                  showPlay={false}
+                  thumbWidth={960}
+                />
+              )}
+              {(job.running || serverPending) && (
+                <div className="absolute inset-0 rounded-2xl flex items-center justify-center" data-inverted="true" style={{ background: 'rgba(5,7,13,0.6)' }}>
+                  <Loader2 size={24} className="animate-spin text-white" />
+                </div>
+              )}
+            </div>
+            {!isLive && (
+              <>
+                <p className="text-[11px] text-center" style={{ color: 'var(--ist-text-dim)' }}>{state}</p>
+                <UploadBox
+                  subject={subject}
+                  keyword={keyword}
+                  setKeyword={setKeyword}
+                  onUploaded={url => { setPreview({ coverUrl: url, keyword: keyword || null }); onChanged() }}
+                />
+              </>
+            )}
+          </div>
+
+          {/* Prompt per ChatGPT (lezioni e serie) / generazione vettoriale */}
+          <div className="space-y-4 min-w-0">
+            {!isLive && (
+              <ChatGptPanel
+                subject={subject}
+                prompt={prompt}
+                onPrompt={p => {
+                  setPrompt(p)
+                  if (!keyword && p.parolaChiave) setKeyword(p.parolaChiave)
+                  onChanged()
+                }}
               />
             )}
-            {(job.running || serverPending) && (
-              <div className="absolute inset-0 rounded-2xl flex flex-col items-center justify-center gap-2 text-center px-6" data-inverted="true" style={{ background: 'rgba(5,7,13,0.72)' }}>
-                <Loader2 size={26} className="animate-spin text-white" />
-                <p className="text-sm font-semibold text-white">Sto disegnando la {noun}…</p>
-                <p className="text-[11px] text-white" style={{ opacity: 0.7 }}>
-                  {isPoster
-                    ? 'Una locandina richiede di solito 2–3 minuti. Puoi chiudere: continua in background.'
-                    : 'Di solito ci vuole meno di un minuto e mezzo. Puoi chiudere: continua in background.'}
-                </p>
+
+            {isLive ? (
+              <VectorPanel subject={subject} onChanged={onChanged} onPreview={setPreview} />
+            ) : (
+              <div className="rounded-2xl" style={{ border: '1px solid var(--ist-border)' }}>
+                <button
+                  onClick={() => setVectorOpen(o => !o)}
+                  className="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-xs font-semibold"
+                  style={{ color: 'var(--ist-text-muted)' }}
+                >
+                  Genera automaticamente (vettoriale)
+                  <ChevronDown size={14} strokeWidth={2.2} className={`transition-transform ${vectorOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {vectorOpen && (
+                  <div className="px-4 pb-4">
+                    <VectorPanel subject={subject} onChanged={onChanged} onPreview={setPreview} />
+                  </div>
+                )}
               </div>
             )}
-          </div>
-
-          {!hasCover && !job.running && !serverPending && (
-            <p className="text-xs" style={{ color: 'var(--ist-text-muted)' }}>
-              Nessuna {noun} ancora: generala ora, oppure descrivi sotto cosa vorresti vedere.
-            </p>
-          )}
-
-          {(job.error || (!job.running && subject.status === 'error')) && (
-            <p className="text-xs flex items-start gap-1.5" style={{ color: '#FF6B7A' }}>
-              <CircleAlert size={13} strokeWidth={2.2} className="flex-shrink-0 mt-px" />
-              {job.error || "L'ultima generazione non è riuscita. Riprova."}
-            </p>
-          )}
-
-          <div>
-            <label className="text-xs block mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>Chiedi una modifica</label>
-            <textarea
-              value={feedback}
-              onChange={e => setFeedback(e.target.value.slice(0, FEEDBACK_MAX))}
-              rows={3}
-              disabled={job.running}
-              placeholder={isPoster
-                ? 'es. «più drammatica», «al centro un toro di luce», «più profondità sullo sfondo»'
-                : 'es. «più semplice», «metti un toro al posto delle candele», «parola chiave: RISCHIO»'}
-              className="w-full px-3 py-2.5 text-sm resize-none disabled:opacity-60"
-              style={{ background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)', borderRadius: 14, color: 'var(--ist-text)', outline: 'none' }}
-            />
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => start(true)}
-              disabled={job.running || !feedback.trim()}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:hover:translate-y-0"
-              style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)', border: '1px solid rgba(255,255,255,0.12)' }}
-            >
-              <WandSparkles size={14} strokeWidth={2.2} />
-              Applica modifica
-            </button>
-            <button
-              onClick={() => start(false)}
-              disabled={job.running}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold transition-colors disabled:opacity-40"
-              style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)', color: 'var(--ist-text)' }}
-            >
-              {job.running ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} strokeWidth={2.2} />}
-              {hasCover ? 'Rigenera' : isPoster ? 'Genera locandina' : 'Genera copertina'}
-            </button>
           </div>
         </div>
       </div>

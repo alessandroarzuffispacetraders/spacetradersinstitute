@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
 import { useIsPreview } from './previewMode'
-import { generateCover, isMissingCoverColumn, isMissingPosterColumn } from './covers'
+import { isMissingCoverColumn, isMissingPosterColumn, isMissingPromptColumn } from './covers'
+import type { CoverSubject } from './coverPrompts'
 
 // Sezione del catalogo: 'trading' (videocorsi principali) o 'mental' (Area Mental
 // Coach). Riusa la stessa struttura categorie→corsi→lezioni; è solo un filtro.
@@ -35,6 +36,8 @@ export interface Lesson {
   coverUrl: string | null
   coverKeyword: string | null
   coverStatus: string | null    // null | 'pending' | 'ready' | 'error'
+  // Soggetto scelto da Claude per il prompt di ChatGPT (solo vista admin).
+  coverPrompt: CoverSubject | null
   attachments: Attachment[]
 }
 
@@ -62,6 +65,7 @@ export interface Category {
   // il titolo lo scrive l'app). null finché non c'è o senza la migrazione.
   posterUrl: string | null
   posterStatus: string | null   // null | 'pending' | 'ready' | 'error'
+  posterPrompt: CoverSubject | null  // soggetto per il prompt di ChatGPT (solo admin)
   section: string           // 'trading' | 'mental'
   courses: Course[]
 }
@@ -121,6 +125,7 @@ interface RawLesson {
   duration_seconds: number; vimeo_id: string | null; published: boolean
   position: number; attachments: RawAttachment[] | null
   cover_url?: string | null; cover_keyword?: string | null; cover_status?: string | null
+  cover_prompt?: CoverSubject | null
 }
 interface RawCourse {
   id: string; category_id: string; title: string; description: string
@@ -130,15 +135,17 @@ interface RawCategory {
   id: string; title: string; description: string; accent: string
   phase: string; published: boolean; is_free: boolean; cover_url: string | null; position: number; section: string; courses: RawCourse[] | null
   poster_url?: string | null; poster_status?: string | null
+  poster_prompt?: CoverSubject | null
 }
 
-function selectFor(lessonCovers: boolean, posters: boolean): string {
+// prompts: soggetti per ChatGPT (cover_prompt / poster_prompt), solo per l'admin.
+function selectFor(lessonCovers: boolean, posters: boolean, prompts = false): string {
   return `
-  id, title, description, accent, phase, published, is_free, cover_url, position, section,${posters ? ' poster_url, poster_status,' : ''}
+  id, title, description, accent, phase, published, is_free, cover_url, position, section,${posters ? ' poster_url, poster_status,' : ''}${posters && prompts ? ' poster_prompt,' : ''}
   courses (
     id, category_id, title, description, phase, published, position,
     lessons (
-      id, course_id, title, description, duration_seconds, vimeo_id, published, position,${lessonCovers ? '\n      cover_url, cover_keyword, cover_status,' : ''}
+      id, course_id, title, description, duration_seconds, vimeo_id, published, position,${lessonCovers ? '\n      cover_url, cover_keyword, cover_status,' : ''}${lessonCovers && prompts ? ' cover_prompt,' : ''}
       attachments ( id, lesson_id, name, type, size_bytes, object_key, position )
     )
   )
@@ -152,22 +159,29 @@ function selectFor(lessonCovers: boolean, posters: boolean): string {
 // della sessione. Al massimo due nuovi tentativi (uno per gruppo).
 let lessonCoversAvailable: boolean | null = null
 let postersAvailable: boolean | null = null
+// Soggetti per ChatGPT (migrazione phase_cover_prompts.sql): terzo gruppo,
+// chiesto solo dalla vista admin.
+let promptsAvailable: boolean | null = null
 
-async function fetchCategories(section: ContentSection | 'all') {
-  const run = (lessonCovers: boolean, posters: boolean) => {
-    let q = supabase.from('categories').select(selectFor(lessonCovers, posters))
+async function fetchCategories(section: ContentSection | 'all', withPrompts = false) {
+  const run = (lessonCovers: boolean, posters: boolean, prompts: boolean) => {
+    let q = supabase.from('categories').select(selectFor(lessonCovers, posters, prompts))
     if (section !== 'all') q = q.eq('section', section)
     return q
   }
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const wantCovers = lessonCoversAvailable !== false
     const wantPosters = postersAvailable !== false
-    const res = await run(wantCovers, wantPosters)
+    const wantPrompts = withPrompts && promptsAvailable !== false
+    const res = await run(wantCovers, wantPosters, wantPrompts)
     if (!res.error) {
       if (wantCovers) lessonCoversAvailable = true
       if (wantPosters) postersAvailable = true
+      if (wantPrompts) promptsAvailable = true
       return res
     }
+    // Prima i soggetti (cover_prompt contiene "cover_": va riconosciuto per primo).
+    if (wantPrompts && isMissingPromptColumn(res.error)) { promptsAvailable = false; continue }
     const posterMissing = isMissingPosterColumn(res.error)
     if (!posterMissing && !isMissingCoverColumn(res.error)) return res // errore vero: lo passiamo su
     // Quale gruppo manca? Lo dice il messaggio (poster_… / cover_…); se non è
@@ -177,7 +191,7 @@ async function fetchCategories(section: ContentSection | 'all') {
     else if (wantCovers) lessonCoversAvailable = false
     else return res
   }
-  return run(lessonCoversAvailable !== false, postersAvailable !== false)
+  return run(lessonCoversAvailable !== false, postersAvailable !== false, withPrompts && promptsAvailable !== false)
 }
 
 function byPosition<T extends { position: number }>(a: T, b: T) {
@@ -204,6 +218,7 @@ function buildTree(
       coverUrl: cat.cover_url ?? null,
       posterUrl: cat.poster_url ?? null,
       posterStatus: cat.poster_status ?? null,
+      posterPrompt: cat.poster_prompt ?? null,
       section: cat.section ?? 'trading',
       courses: (cat.courses ?? [])
         .slice()
@@ -234,6 +249,7 @@ function buildTree(
                 coverUrl: les.cover_url ?? null,
                 coverKeyword: les.cover_keyword ?? null,
                 coverStatus: les.cover_status ?? null,
+                coverPrompt: les.cover_prompt ?? null,
                 attachments: (les.attachments ?? [])
                   .slice()
                   .sort(byPosition)
@@ -354,7 +370,7 @@ export function useContentAdmin(section: ContentSection = 'trading') {
   // silent=true skips the full-page spinner (used after mutations).
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
-    const { data } = await fetchCategories(section)
+    const { data } = await fetchCategories(section, true)
     setCategories(buildTree(data as unknown as RawCategory[] | null, new Map()))
     if (!silent) setLoading(false)
   }, [section])
@@ -369,12 +385,10 @@ export function useContentAdmin(section: ContentSection = 'trading') {
       position: categories.length, published: false, section,
     }).select('id').single()
     if (!error) await load(true)
-    // Locandina AI automatica per la nuova serie: in background, senza bloccare
-    // il salvataggio; a fine generazione ricarichiamo l'albero.
-    const newId = (data as { id?: string } | null)?.id
-    if (!error && newId && postersAvailable !== false) {
-      generateCover('category', newId).finally(() => { void load(true) })
-    }
+    // Niente più locandina vettoriale automatica: ora le grafiche si creano con
+    // ChatGPT dall'admin (pannello "Copertine con ChatGPT"); la generazione
+    // vettoriale resta disponibile a mano come opzione secondaria.
+    void data
     return !error
   }, [categories.length, load, section])
 
@@ -432,12 +446,8 @@ export function useContentAdmin(section: ContentSection = 'trading') {
       position: count, published: true,
     }).select('id').single()
     if (!error) await load(true)
-    // Copertina AI automatica per la nuova lezione: in background, senza
-    // bloccare il salvataggio; a fine generazione ricarichiamo l'albero.
-    const newId = (data as { id?: string } | null)?.id
-    if (!error && newId && lessonCoversAvailable !== false) {
-      generateCover('lesson', newId).finally(() => { void load(true) })
-    }
+    // Niente più copertina vettoriale automatica: si crea con ChatGPT dall'admin.
+    void data
     return !error
   }, [categories, load])
 
