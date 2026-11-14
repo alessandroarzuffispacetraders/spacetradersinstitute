@@ -178,7 +178,7 @@ export default function StudentCorsi() {
             key={`${row.phase}-${r}`}
             eyebrow={seriesRows.length > 1 ? `Fase ${PHASES.indexOf(row.phase) + 1 || r + 1}` : undefined}
             title={seriesRows.length > 1 ? row.phase : 'Il tuo percorso'}
-            itemClassName="w-[64vw] sm:w-[40vw] md:w-[30vw] lg:w-[220px] xl:w-[240px]"
+            itemClassName="w-[64vw] sm:w-[40vw] md:w-[30vw] lg:w-auto"
             variant="carousel"
             initialIndex={r === 0 && currentIndex > 0 && currentIndex < row.items.length ? currentIndex : undefined}
           >
