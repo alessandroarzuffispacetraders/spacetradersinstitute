@@ -130,9 +130,11 @@ export default function StudentCorsi() {
   return (
     <div className="cinema-page pb-8">
       <Billboard
-        imageUrl={heroLesson.coverUrl}
-        vimeoId={heroLesson.vimeoId}
-        fallbackUrl={hero.category.coverUrl}
+        // Solo copertine nuove nel banner: quella della lezione, altrimenti la
+        // locandina della serie (inquadrata sul soggetto), altrimenti lo sfondo
+        // generato. Niente fotogrammi Vimeo o vecchie copertine caricate a mano.
+        imageUrl={heroLesson.coverUrl ?? hero.category.posterUrl}
+        imagePosition={!heroLesson.coverUrl && hero.category.posterUrl ? '50% 20%' : undefined}
         accent={hero.category.accent}
         icon={phaseIcon(hero.category.phase)}
         topLeft={<p className="text-lg lg:text-2xl font-extrabold tracking-tight text-white">Videocorsi</p>}

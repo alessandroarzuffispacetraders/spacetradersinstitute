@@ -71,11 +71,17 @@ export default function VimeoPlayer({
     const container = containerRef.current
     if (!container || !videoUrl) return
 
-    let player: Player | null = new Player(container, {
+    // Contenitore nuovo a ogni montaggio (vedi CinemaPlayer: l'SDK ricorda il
+    // player per elemento e lo riuserebbe anche dopo destroy, es. StrictMode).
+    const host = document.createElement('div')
+    host.style.cssText = 'position:absolute;inset:0'
+    container.appendChild(host)
+
+    let player: Player | null = new Player(host, {
       url: videoUrl, dnt: true, title: false, byline: false, portrait: false,
     })
     // L'iframe iniettato dall'SDK deve riempire il container 16:9.
-    const ifr = container.querySelector('iframe')
+    const ifr = host.querySelector('iframe')
     if (ifr) {
       Object.assign(ifr.style, { position: 'absolute', top: '0', left: '0', width: '100%', height: '100%', border: '0' })
       // Abilita il pulsante schermo intero dei controlli Vimeo.
@@ -111,6 +117,7 @@ export default function VimeoPlayer({
       // Salva la posizione raggiunta prima di smontare (cambio lezione / uscita).
       if (onProgressRef.current && latest > lastSaved) onProgressRef.current(latest)
       player?.destroy().catch(() => {})
+      host.remove()
       player = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

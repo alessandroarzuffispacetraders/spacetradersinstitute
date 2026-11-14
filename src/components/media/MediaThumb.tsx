@@ -101,7 +101,7 @@ export default function MediaThumb({
     return (
       <div
         className={`media-thumb relative w-full ${aspect} overflow-hidden ${rounded} ${className}`}
-        style={{ backgroundColor: '#eef2f7', containerType: 'inline-size' }}
+        style={{ backgroundColor: '#e5eaf1', containerType: 'inline-size' }}
       >
         <img
           key={src}
@@ -119,7 +119,7 @@ export default function MediaThumb({
         {(showLabel || progress > 0 || duration) && (
           <div
             className="absolute inset-0 pointer-events-none"
-            style={{ background: 'linear-gradient(to top, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.25) 42%, transparent 64%)' }}
+            style={{ background: 'linear-gradient(to top, rgba(232,237,244,0.82) 0%, rgba(232,237,244,0.28) 42%, transparent 64%)' }}
           />
         )}
 
@@ -127,7 +127,7 @@ export default function MediaThumb({
           <>
             <div
               className="absolute inset-0 pointer-events-none"
-              style={{ background: 'linear-gradient(90deg, rgba(248,250,253,0.86) 0%, rgba(248,250,253,0.32) 48%, transparent 68%), linear-gradient(to top, rgba(248,250,253,0.86) 0%, rgba(248,250,253,0.2) 34%, transparent 56%)' }}
+              style={{ background: 'linear-gradient(90deg, rgba(232,237,244,0.86) 0%, rgba(232,237,244,0.32) 48%, transparent 68%), linear-gradient(to top, rgba(232,237,244,0.86) 0%, rgba(232,237,244,0.2) 34%, transparent 56%)' }}
             />
             <div
               className="absolute left-[6%] max-w-[78%] pointer-events-none"
@@ -144,7 +144,7 @@ export default function MediaThumb({
               )}
               <span
                 className="block font-extrabold uppercase"
-                style={{ fontSize: `${kw.size}cqw`, lineHeight: 0.94, letterSpacing: '-0.02em', color: '#0b1530', textShadow: '0 1px 14px rgba(255,255,255,0.55)' }}
+                style={{ fontSize: `${kw.size}cqw`, lineHeight: 0.94, letterSpacing: '-0.02em', color: '#0b1530', textShadow: '0 1px 14px rgba(232,237,244,0.6)' }}
               >
                 {kw.lines.map((line, i) => <span key={i} className="block whitespace-nowrap">{line}</span>)}
               </span>

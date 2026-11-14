@@ -29,12 +29,12 @@ THEMES = {
                  DIAG='#4a5a85', ZERO='#3a4668', CELL_A='#0b0f18', CELL_B='#e6ebf5',
                  GRID3D=(0.25, 0.32, 0.5, 0.35), LINE3D=(0.3, 0.4, 0.65, 0.7), SURF_EDGE=(0.82, 0.88, 1, 0.38),
                  COOL=['#0b2a5f', '#1f5fd8', '#2F7DFF', '#4DB3FF', '#A8D8FF'], BARS_C=['#123c8c', '#2F7DFF', '#4DB3FF']),
-    'light': dict(BG=(244, 246, 250), PANEL=(255, 255, 255), BORDER=(220, 226, 236), CANVAS_GRID=(234, 238, 245, 255),
-                  SPINE='#c3ccdc', GRID='#e6ebf3', TICK='#6b7790', TXT='#5a6680', TXT2='#27324d', HERO='#0b1730',
-                  LBLUE='#1f6fe0', PALE='#3d6fb8', NEUTRAL='#b9c5db', IS_BG='#dfe8fb', OOS_BG='#dcf2e6', EDGE='#9fb0d0',
-                  DIAG='#9aa7c0', ZERO='#9aa7c0', CELL_A='#0b0f18', CELL_B='#0b0f18',
-                  GRID3D=(0.62, 0.68, 0.8, 0.55), LINE3D=(0.55, 0.6, 0.72, 0.85), SURF_EDGE=(0.12, 0.18, 0.32, 0.22),
-                  COOL=['#9cc2f7', '#4f8ff2', '#1f5fd8', '#163f9e', '#0b2a6b'], BARS_C=['#7fb0f5', '#2F7DFF', '#1a4fb8']),
+    'light': dict(BG=(229, 234, 241), PANEL=(243, 246, 250), BORDER=(203, 211, 224), CANVAS_GRID=(218, 224, 233, 255),
+                  SPINE='#a9b5c9', GRID='#d3dae6', TICK='#4f5c77', TXT='#44516c', TXT2='#1b2540', HERO='#0a1530',
+                  LBLUE='#1557d6', PALE='#2f5fa8', NEUTRAL='#8fa3c6', IS_BG='#d3e0f8', OOS_BG='#d2ecdf', EDGE='#8396bd',
+                  DIAG='#8693ad', ZERO='#8693ad', CELL_A='#0b0f18', CELL_B='#0b0f18',
+                  GRID3D=(0.5, 0.56, 0.68, 0.55), LINE3D=(0.42, 0.48, 0.62, 0.85), SURF_EDGE=(0.1, 0.14, 0.26, 0.28),
+                  COOL=['#78a5ee', '#3a78e8', '#1650c8', '#103c95', '#0a2a66'], BARS_C=['#5b93ea', '#1f63e0', '#123f9c']),
 }
 THEME = 'dark'
 def set_theme(name):
@@ -233,8 +233,8 @@ def photograph(canvas, out_size, sharp_center, sharp_radius, tilt=(0.06, 0.03), 
 def _photo_light(arr, xx, yy, w, h, quiet_bottom, quiet_left_bottom, vignette):
     # Schermo chiaro fotografato: bordi che sfumano verso un grigio-azzurro chiaro,
     # zone del testo bianche e pulite (l'app ci scrive sopra in scuro), grana leggera.
-    edge = np.array([214, 221, 232], dtype=np.float32)
-    white = np.array([248, 250, 253], dtype=np.float32)
+    edge = np.array([198, 206, 219], dtype=np.float32)
+    white = np.array([232, 237, 244], dtype=np.float32)
     vig = np.clip(1 - vignette * 0.8 * (((xx - w / 2) / (w * 0.75)) ** 2 + ((yy - h / 2) / (h * 0.75)) ** 2), 0.35, 1)
     arr = arr * vig[..., None] + edge * (1 - vig[..., None])
     if quiet_bottom is not None:
@@ -244,9 +244,10 @@ def _photo_light(arr, xx, yy, w, h, quiet_bottom, quiet_left_bottom, vignette):
         x0, y0 = quiet_left_bottom
         t = np.clip(np.clip((yy / h - y0) / (1 - y0), 0, 1) * np.clip((x0 - xx / w) / x0, 0, 1) * 2.2, 0, 1) * 0.9
         arr = arr * (1 - t[..., None]) + white * t[..., None]
-    arr = arr * 0.985 + np.array([1, 2, 5], dtype=np.float32)
     arr += rng.normal(0, 3.2, arr.shape[:2])[..., None]
-    return Image.fromarray(np.clip(arr, 0, 255).astype('uint8'))
+    img = Image.fromarray(np.clip(arr, 0, 255).astype('uint8'))
+    img = ImageEnhance.Contrast(img).enhance(1.12)
+    return ImageEnhance.Color(img).enhance(1.18)
 
 def new_canvas(W, H):
     c = Image.new('RGBA', (W, H), BG + (255,))
@@ -258,7 +259,7 @@ def new_canvas(W, H):
 def dim(img, f):
     if THEME == 'light':
         r, g, b, a = img.split()
-        a = a.point(lambda v: int(v * (0.3 + 0.7 * f)))
+        a = a.point(lambda v: int(v * (0.5 + 0.5 * f)))
         return Image.merge('RGBA', (r, g, b, a))
     return ImageEnhance.Brightness(img).enhance(f)
 

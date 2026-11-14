@@ -84,9 +84,9 @@ export default function StudentCategoryDetail() {
   return (
     <div className="cinema-page pb-10">
       <Billboard
-        imageUrl={cat.coverUrl ?? resume?.entry.lesson.coverUrl ?? poster}
-        imagePosition={!cat.coverUrl && !resume?.entry.lesson.coverUrl && poster ? '50% 20%' : undefined}
-        vimeoId={resume?.entry.lesson.vimeoId}
+        // Solo copertine nuove: lezione da riprendere, poi locandina della serie.
+        imageUrl={resume?.entry.lesson.coverUrl ?? poster}
+        imagePosition={!resume?.entry.lesson.coverUrl && poster ? '50% 20%' : undefined}
         accent={cat.accent}
         icon={phaseIcon(cat.phase)}
         topLeft={

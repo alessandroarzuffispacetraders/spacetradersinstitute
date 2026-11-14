@@ -153,7 +153,7 @@ function SeriesCover({
       <div
         className={`absolute inset-x-0 bottom-0 ${big ? 'px-5 pb-5 pt-16' : 'px-3.5 pb-3.5 pt-10 lg:px-4 lg:pb-4'}`}
         style={{ background: L
-          ? 'linear-gradient(to top, rgba(248,250,253,0.92) 0%, rgba(248,250,253,0.4) 60%, transparent 100%)'
+          ? 'linear-gradient(to top, rgba(232,237,244,0.92) 0%, rgba(232,237,244,0.4) 60%, transparent 100%)'
           : 'linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.35) 60%, transparent 100%)' }}
       >
         <h3
@@ -193,7 +193,7 @@ function SeriesPoster({ cat, info, isCurrent, tone = 'dark' }: { cat: Category; 
       <div
         className="absolute inset-x-0 bottom-0 px-4 pb-5 pt-24"
         style={{ background: L
-          ? 'linear-gradient(to top, rgba(248,250,253,0.96) 0%, rgba(248,250,253,0.72) 38%, rgba(248,250,253,0) 100%)'
+          ? 'linear-gradient(to top, rgba(232,237,244,0.96) 0%, rgba(232,237,244,0.72) 38%, rgba(232,237,244,0) 100%)'
           : 'linear-gradient(to top, rgba(3,4,8,0.95) 0%, rgba(3,4,8,0.7) 38%, rgba(3,4,8,0) 100%)' }}
       >
         <h3
@@ -242,7 +242,7 @@ function SeriesOpen({
       <div
         className="absolute inset-0 pointer-events-none"
         style={{ background: L
-          ? 'linear-gradient(90deg, rgba(248,250,253,0.95) 0%, rgba(248,250,253,0.8) 36%, rgba(248,250,253,0.15) 70%, transparent 100%), linear-gradient(to top, rgba(248,250,253,0.8) 0%, rgba(248,250,253,0) 45%)'
+          ? 'linear-gradient(90deg, rgba(232,237,244,0.95) 0%, rgba(232,237,244,0.8) 36%, rgba(232,237,244,0.15) 70%, transparent 100%), linear-gradient(to top, rgba(232,237,244,0.8) 0%, rgba(232,237,244,0) 45%)'
           : 'linear-gradient(90deg, rgba(3,4,8,0.94) 0%, rgba(3,4,8,0.78) 36%, rgba(3,4,8,0.2) 70%, rgba(3,4,8,0) 100%), linear-gradient(to top, rgba(3,4,8,0.85) 0%, rgba(3,4,8,0) 45%)' }}
       />
       <div className={`series-open-content absolute inset-0 p-5 xl:p-6 flex flex-col justify-end ${L ? '' : 'text-white'}`} style={L ? { maxWidth: '68%', color: NAVY } : { maxWidth: '68%' }}>

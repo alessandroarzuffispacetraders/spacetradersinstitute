@@ -145,13 +145,21 @@ export default function CinemaPlayer({
 
     setReady(false); setPlaying(false); setEnded(false); setTime(0); setDuration(0); setBuffered(0)
 
-    const player = new Player(container, {
+    // Contenitore NUOVO a ogni montaggio: l'SDK Vimeo ricorda il player per
+    // elemento (WeakMap) e, se lo stesso div viene riusato (React StrictMode in
+    // sviluppo, cambio lezione rapido), il nuovo player finisce agganciato
+    // all'iframe di quello distrutto → comandi e stato scollegati dal video.
+    const host = document.createElement('div')
+    host.style.cssText = 'position:absolute;inset:0'
+    container.appendChild(host)
+
+    const player = new Player(host, {
       url: videoUrl, controls: false, keyboard: false, dnt: true,
       title: false, byline: false, portrait: false, pip: false, playsinline: true,
     })
     playerRef.current = player
 
-    const ifr = container.querySelector('iframe')
+    const ifr = host.querySelector('iframe')
     if (ifr) {
       Object.assign(ifr.style, { position: 'absolute', top: '0', left: '0', width: '100%', height: '100%', border: '0' })
       ifr.setAttribute('allowfullscreen', '')
@@ -216,6 +224,7 @@ export default function CinemaPlayer({
       cancelled = true
       if (onProgressRef.current && latest > lastSaved) onProgressRef.current(latest)
       player.destroy().catch(() => {})
+      host.remove()
       playerRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
