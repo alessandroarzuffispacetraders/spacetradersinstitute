@@ -32,6 +32,8 @@ import {
   useMyMute, muteUser, unmuteUser, fetchActiveMute, formatMutedUntil, MUTE_DURATIONS,
 } from '../../lib/moderation'
 import UserAvatar from '../../components/ui/UserAvatar'
+import LiveInviteCard from '../../components/live/LiveInviteCard'
+import ImageAttachPicker from '../../components/ui/ImageAttachPicker'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -1394,6 +1396,11 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
                                   </div>
                                 )}
                                 {linkify(msg.text)}
+                                {msg.fullMsg.kind === 'live_invite' && msg.fullMsg.live_event_id && (
+                                  <div className="mt-2" style={{ minWidth: 220 }}>
+                                    <LiveInviteCard liveId={msg.fullMsg.live_event_id} compact />
+                                  </div>
+                                )}
                                 {msg.editedAt && (
                                   <span className="text-[9px] ml-1.5 opacity-50">modificato</span>
                                 )}
@@ -1789,6 +1796,21 @@ function BachecaPostCard({
         {linkify(post.content)}
       </p>
 
+      {post.imageUrls.length > 0 && (
+        <div className={`grid gap-1.5 ${post.imageUrls.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          {post.imageUrls.map((url, i) => (
+            <a key={url} href={url} target="_blank" rel="noreferrer"
+              className={`block overflow-hidden rounded-2xl ${post.imageUrls.length === 3 && i === 0 ? 'col-span-2' : ''}`}
+              style={{ background: 'var(--ist-w6)' }}>
+              <img src={url} alt="" loading="lazy" className="w-full h-full object-cover transition-transform hover:scale-[1.02]"
+                style={{ aspectRatio: post.imageUrls.length === 1 ? undefined : (post.imageUrls.length === 3 && i === 0 ? '16 / 9' : '1 / 1'), maxHeight: post.imageUrls.length === 1 ? 460 : undefined }} />
+            </a>
+          ))}
+        </div>
+      )}
+
+      {post.liveEventId && <LiveInviteCard liveId={post.liveEventId} />}
+
       {canManage && (
         <div className="flex items-center gap-2 pt-2 flex-wrap" style={{ borderTop: '1px solid var(--ist-w8)' }}>
           <button
@@ -1840,15 +1862,17 @@ function BachecaComposeModal({
   const [tag, setTag] = useState('')
   const [pinned, setPinned] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [images, setImages] = useState<string[]>([])
+  const [uploading, setUploading] = useState(false)
 
   const inputStyle: React.CSSProperties = {
     background: 'var(--ist-w6)', border: '1px solid var(--ist-w10)', color: 'var(--ist-text)',
   }
 
   const publish = async () => {
-    if (!content.trim() || saving) return
+    if (!content.trim() || saving || uploading) return
     setSaving(true)
-    const ok = await onPublish({ title, content, tag, pinned })
+    const ok = await onPublish({ title, content, tag, pinned, imageUrls: images })
     setSaving(false)
     if (ok) onClose()
   }
@@ -1881,6 +1905,10 @@ function BachecaComposeModal({
             <textarea value={content} onChange={e => setContent(e.target.value)} rows={5} placeholder="Scrivi l'annuncio…" className="w-full px-3.5 py-2.5 text-sm rounded-2xl focus:outline-none resize-none no-scrollbar" style={{ ...inputStyle, lineHeight: 1.5 }} />
           </div>
           <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>Immagini (fino a 4)</label>
+            <ImageAttachPicker images={images} onChange={setImages} onBusy={setUploading} />
+          </div>
+          <div>
             <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>Etichetta (opzionale)</label>
             <input value={tag} onChange={e => setTag(e.target.value)} placeholder="Es. Evento, Importante…" className="w-full px-3.5 py-2.5 text-sm rounded-2xl focus:outline-none" style={inputStyle} />
           </div>
@@ -1892,7 +1920,7 @@ function BachecaComposeModal({
 
         <div className="flex gap-3 px-5 py-4" style={{ borderTop: '1px solid var(--ist-w8)' }}>
           <button onClick={onClose} className="flex-1 py-2.5 text-sm font-semibold rounded-2xl" style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}>Annulla</button>
-          <button onClick={publish} disabled={!content.trim() || saving} className="flex-1 py-2.5 text-sm font-semibold rounded-2xl text-white flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)', boxShadow: '0 4px 14px rgba(40,102,128,0.30)' }}>
+          <button onClick={publish} disabled={!content.trim() || saving || uploading} className="flex-1 py-2.5 text-sm font-semibold rounded-2xl text-white flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)', boxShadow: '0 4px 14px rgba(40,102,128,0.30)' }}>
             {saving && <Loader2 size={15} className="animate-spin" />}
             Pubblica
           </button>

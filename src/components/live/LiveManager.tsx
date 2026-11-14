@@ -1,18 +1,21 @@
 import { useState, useEffect, useRef } from 'react'
-import { Radio, Edit2, Trash2, X, Plus, Loader2, Play, Square, Save, ChevronUp, ChevronDown, Video, Bell, ExternalLink, WandSparkles } from 'lucide-react'
+import { Radio, Edit2, Trash2, X, Plus, Loader2, Play, Square, Save, ChevronUp, ChevronDown, Video, Bell, ExternalLink, WandSparkles, Share2, Images } from 'lucide-react'
 import {
   useLiveAdmin, LiveEvent, LiveInput, LiveStatus, LiveRole, LiveAudience,
-  liveDateLabel, liveDurationLabel,
+  liveDateLabel, liveDurationLabel, coverPoolStatus,
 } from '../../lib/live'
+import ShareLiveModal from './ShareLiveModal'
+import { useAuth } from '../../context/AuthContext'
 import { parseVimeo, fetchVimeoDuration } from '../../lib/vimeo'
 import CoverEditorModal, { CoverChip, CoverSubject } from '../admin/CoverEditorModal'
 
-// Copertina AI del replay (stessa finestra delle lezioni).
+// Copertina della live (stessa finestra delle lezioni): arriva dalla scorta
+// di copertine pronte appena la live viene creata.
 function liveCoverSubject(e: LiveEvent): CoverSubject {
   return {
     kind: 'live', id: e.id, title: e.title,
     coverUrl: e.coverUrl, keyword: e.coverKeyword, status: e.coverStatus,
-    accent: e.accent, accentEnd: e.accentEnd, icon: Radio, kicker: 'Replay',
+    accent: e.accent, accentEnd: e.accentEnd, icon: Radio, kicker: e.status === 'replay' ? 'Replay' : 'Live',
   }
 }
 
@@ -363,6 +366,11 @@ export default function LiveManager({ api, defaultHost }: {
   const [replayDraft, setReplayDraft] = useState<Record<string, string>>({})
   const [coverId, setCoverId] = useState<string | null>(null)
   const coverEvent = coverId ? api.events.find(e => e.id === coverId) ?? null : null
+  const [shareId, setShareId] = useState<string | null>(null)
+  const shareEvent = shareId ? api.events.find(e => e.id === shareId) ?? null : null
+  const { user } = useAuth()
+  const [pool, setPool] = useState<{ trading: number; mind: number } | null>(null)
+  useEffect(() => { if (user?.role === 'admin') coverPoolStatus().then(setPool) }, [user?.role, api.events])
 
   if (api.loading) {
     return <div className="flex items-center justify-center py-24"><Loader2 size={24} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} /></div>
@@ -378,6 +386,18 @@ export default function LiveManager({ api, defaultHost }: {
         <Plus size={14} strokeWidth={2.5} />
         <span className="text-sm font-medium">Nuova live</span>
       </button>
+
+      {pool && (
+        <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl text-xs" style={pool.trading + pool.mind <= 6
+          ? { background: 'rgba(246,200,95,0.1)', color: '#F6C85F', border: '1px solid rgba(246,200,95,0.25)' }
+          : { background: 'var(--ist-w5)', color: 'var(--ist-text-muted)', border: '1px solid var(--ist-w8)' }}>
+          <Images size={14} strokeWidth={2} className="flex-shrink-0" />
+          <span>
+            Copertine pronte per le nuove live: <b>{pool.trading}</b> trading · <b>{pool.mind}</b> mente
+            {pool.trading + pool.mind <= 6 && ' — stanno finendo, fanne generare altre.'}
+          </span>
+        </div>
+      )}
 
       {api.events.length === 0 && (
         <p className="text-[11px] text-center py-6" style={{ color: 'var(--ist-text-dim)' }}>Nessuna live. Creane una con il pulsante qui sopra.</p>
@@ -432,7 +452,10 @@ export default function LiveManager({ api, defaultHost }: {
                     {!isRem && event.status === 'live' && (
                       <ActionBtn icon={<Square size={11} strokeWidth={2} />} label="Termina" danger onClick={() => api.setLiveStatus(event.id, 'replay')} />
                     )}
-                    {!isRem && event.status === 'replay' && (
+                    {!isRem && (
+                      <ActionBtn icon={<Share2 size={11} strokeWidth={2} />} label="Condividi" accent={event.status !== 'replay'} onClick={() => setShareId(event.id)} />
+                    )}
+                    {!isRem && (
                       <ActionBtn icon={<WandSparkles size={11} strokeWidth={2} />} label="Copertina" onClick={() => setCoverId(event.id)} />
                     )}
                     <ActionBtn icon={<Edit2 size={11} strokeWidth={2} />} label="Modifica" onClick={() => setModal({ open: true, editing: event })} />
@@ -441,6 +464,19 @@ export default function LiveManager({ api, defaultHost }: {
                 )}
               </div>
             </div>
+
+            {/* Live in programma / in diretta: copertina già pronta da condividere */}
+            {event.status !== 'replay' && !isRem && (
+              <div className="mt-3 pt-3 flex items-center gap-2.5" style={{ borderTop: '1px solid var(--ist-w7)' }}>
+                <CoverChip subject={liveCoverSubject(event)} onClick={() => setCoverId(event.id)} width={72} />
+                <p className="text-xs flex-1" style={{ color: 'var(--ist-text-muted)' }}>
+                  {event.coverUrl ? 'Copertina pronta: condividila sui social o inviala agli studenti.' : 'Nessuna copertina: aprila per assegnarne una.'}
+                </p>
+                <button onClick={() => setShareId(event.id)} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)' }}>
+                  <Share2 size={12} strokeWidth={2.2} /> Condividi
+                </button>
+              </div>
+            )}
 
             {/* Replay: salva il link della registrazione */}
             {event.status === 'replay' && !isRem && (
@@ -474,6 +510,10 @@ export default function LiveManager({ api, defaultHost }: {
           </div>
         )
       })}
+
+      {shareEvent && (
+        <ShareLiveModal event={shareEvent} onClose={() => setShareId(null)} onClaimCover={() => api.claimCover(shareEvent.id)} />
+      )}
 
       {coverEvent && (
         <CoverEditorModal

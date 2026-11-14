@@ -49,3 +49,12 @@ ricevono una copertina. Colonne da aggiornare: `cover_url`, `cover_url_light`,
 `plan_mental.py` crea la locandina della serie e le copertine delle lezioni del
 Mental Coach nello stesso stile (cervello, neuroni, sinapsi). Input: le
 categorie della sezione `mental` con le loro lezioni (`id, title, lessons[]`).
+
+## Scorta per le nuove live
+
+`plan_pool.py` genera la scorta di copertine pronte (tabella `cover_pool`,
+cartella `curated/pool/` del bucket). Quando si crea una live l'app chiama
+`claim_live_cover` e riceve subito una copertina mai usata: tema mente per il
+Mental Coach, trading per il resto, scegliendo quella con più tag presenti nel
+titolo. Ogni voce ha un grafico protagonista che non compare altrove: per
+rifornire la scorta servono grafici nuovi (aggiungerli a `POOL`).

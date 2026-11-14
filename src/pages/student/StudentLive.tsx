@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useCinemaMode } from '../../context/ThemeContext'
+import { useCinemaMode, useCoverTone } from '../../context/ThemeContext'
 import { Radio, Loader2, Play, CalendarDays, Info } from 'lucide-react'
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
@@ -174,15 +174,25 @@ export default function StudentLive() {
 }
 
 // Live in programma: "locandina" generata dal colore, con la data in grande.
+// Live in programma: la copertina (pronta dalla creazione) con sopra data e ora.
 function UpcomingCard({ event: e, onClick }: { event: LiveEvent; onClick: () => void }) {
   const d = e.startsAt ? new Date(e.startsAt) : null
+  const tone = useCoverTone()
+  const light = tone === 'light' && !!e.coverUrlLight
+  const cover = light ? e.coverUrlLight : e.coverUrl
+  const ink = light ? '#0b1530' : '#fff'
   return (
     <button onClick={onClick} className="media-card group w-full text-left">
-      <MediaThumb accent={e.accent} accentEnd={e.accentEnd} icon={CalendarDays} showPlay={false}>
-        <div className="absolute inset-0 p-3.5 lg:p-4 flex flex-col justify-between">
+      <MediaThumb imageUrl={cover} tone={light ? 'light' : 'dark'} accent={e.accent} accentEnd={e.accentEnd} icon={CalendarDays} showPlay={false}>
+        <div
+          className="absolute inset-0 p-3.5 lg:p-4 flex flex-col justify-between"
+          style={cover ? { background: light
+            ? 'linear-gradient(180deg, rgba(232,237,244,0.92) 0%, rgba(232,237,244,0) 48%, rgba(232,237,244,0) 70%, rgba(232,237,244,0.7) 100%)'
+            : 'linear-gradient(180deg, rgba(5,7,13,0.8) 0%, rgba(5,7,13,0) 48%, rgba(5,7,13,0) 70%, rgba(5,7,13,0.55) 100%)' } : undefined}
+        >
           {d ? (
-            <div className="text-white leading-none">
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] mb-1" style={{ color: 'rgba(255,255,255,0.75)' }}>
+            <div className="leading-none" style={{ color: ink }}>
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] mb-1" style={{ color: light ? 'rgba(11,21,48,0.7)' : 'rgba(255,255,255,0.75)' }}>
                 {d.toLocaleDateString('it-IT', { weekday: 'long' })}
               </p>
               <p className="font-black tracking-tight" style={{ fontSize: '19cqw' }}>
@@ -193,7 +203,7 @@ function UpcomingCard({ event: e, onClick }: { event: LiveEvent; onClick: () => 
               </p>
             </div>
           ) : (
-            <p className="text-sm font-bold text-white">Da programmare</p>
+            <p className="text-sm font-bold" style={{ color: ink }}>Da programmare</p>
           )}
           {d && (
             <span

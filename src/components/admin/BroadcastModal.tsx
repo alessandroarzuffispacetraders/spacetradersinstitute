@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { MemberRole } from '../../data/chatData'
 import { postAnnouncement } from '../../lib/bacheca'
 import { notifyBroadcast } from '../../lib/push'
+import ImageAttachPicker from '../ui/ImageAttachPicker'
 
 type Segment = 'all' | 'full' | 'free'
 const SEGMENTS: { id: Segment; label: string }[] = [
@@ -24,6 +25,8 @@ export default function BroadcastModal({
   const { user } = useAuth()
   const [title, setTitle] = useState('')
   const [message, setMessage] = useState('')
+  const [images, setImages] = useState<string[]>([])
+  const [uploading, setUploading] = useState(false)
   const [segment, setSegment] = useState<Segment>('all')
   const [channelId, setChannelId] = useState<string>(bachecaChannels[0]?.id ?? '')
   const [pushOn, setPushOn] = useState(true)
@@ -43,7 +46,7 @@ export default function BroadcastModal({
 
     let bacheca: boolean | null = null
     if (channelId) {
-      bacheca = await postAnnouncement(channelId, user.id, user.name, user.role as MemberRole, { title, content: message })
+      bacheca = await postAnnouncement(channelId, user.id, user.name, user.role as MemberRole, { title, content: message, imageUrls: images })
     }
     let sent: number | null = null
     if (pushOn) {
@@ -110,6 +113,10 @@ export default function BroadcastModal({
                   <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>Messaggio *</label>
                   <textarea value={message} onChange={e => setMessage(e.target.value)} rows={3} placeholder="Scrivi l'annuncio..." className="w-full px-3.5 py-2.5 text-sm rounded-2xl focus:outline-none resize-none" style={inputStyle} />
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>Immagini in bacheca (fino a 4)</label>
+                  <ImageAttachPicker images={images} onChange={setImages} onBusy={setUploading} />
+                </div>
 
                 <div>
                   <label className="block text-xs font-semibold mb-2" style={{ color: 'var(--ist-text-muted)' }}>Destinatari notifica</label>
@@ -143,7 +150,7 @@ export default function BroadcastModal({
 
               <div className="flex gap-3 px-6 py-4" style={{ borderTop: '1px solid var(--ist-w8)' }}>
                 <button onClick={onClose} className="flex-1 py-2.5 text-sm font-semibold rounded-2xl" style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}>Annulla</button>
-                <button onClick={send} disabled={sending} className="flex-1 py-2.5 text-sm font-semibold rounded-2xl text-white flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)' }}>
+                <button onClick={send} disabled={sending || uploading} className="flex-1 py-2.5 text-sm font-semibold rounded-2xl text-white flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)' }}>
                   {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={14} strokeWidth={2.2} />}
                   {sending ? 'Invio...' : 'Invia annuncio'}
                 </button>

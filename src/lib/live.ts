@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
 import { useIsPreview } from './previewMode'
-import { generateCover, isMissingCoverColumn } from './covers'
+import { isMissingCoverColumn } from './covers'
 
 // ─── Tipi (camelCase, stessa forma del vecchio mock liveData) ───────────────────
 
@@ -249,6 +249,40 @@ function toRow(input: LiveInput) {
   }
 }
 
+// Parola chiave della copertina ricavata dal titolo (modificabile dall'admin):
+// la parte dopo " - " / ":" se c'è, senza parole vuote; due parole se stanno
+// in 16 caratteri, altrimenti la più lunga. Es. "Live Mental Coach" → MENTAL COACH.
+const STOP = new Set(['e', 'ed', 'di', 'del', 'della', 'dei', 'delle', 'il', 'lo', 'la', 'i', 'gli', 'le', 'un', 'una', 'uno', 'per', 'con', 'su', 'in', 'a', 'da', 'al', 'alla', 'live', 'zoom', 'sessione', 'the', 'and', 'of'])
+export function keywordFromTitle(title: string): string {
+  const parts = title.split(/\s[-–—:|]\s|:\s/)
+  const tail = (parts.length > 1 ? parts[parts.length - 1] : title).replace(/\(.*?\)/g, ' ')
+  const words = tail.split(/\s+/).map(w => w.replace(/[^\p{L}\p{N}&%+#']/gu, '')).filter(w => w && !STOP.has(w.toLowerCase()))
+  if (!words.length) return title.trim().toUpperCase().slice(0, 16)
+  const two = words.slice(0, 2).join(' ')
+  const pick = two.length <= 16 ? two : words.reduce((a, b) => (b.length > a.length ? b : a))
+  return pick.toUpperCase()
+}
+
+export type ClaimResult = { status: 'ok' | 'other_theme' | 'kept' | 'empty' | 'unavailable' | 'error'; left?: number }
+
+// Copertina pronta dalla scorta (phase_live_share.sql): una mai usata, adatta
+// al tema della live. force = ne assegna un'altra anche se ce n'è già una.
+export async function claimLiveCover(liveId: string, keyword?: string | null, force = false): Promise<ClaimResult> {
+  const { data, error } = await supabase.rpc('claim_live_cover', { p_live_id: liveId, p_keyword: keyword ?? null, p_force: force })
+  if (error) return { status: /claim_live_cover|PGRST202|42883/.test(`${error.code} ${error.message}`) ? 'unavailable' : 'error' }
+  const d = (data ?? {}) as { status?: ClaimResult['status']; left?: number }
+  return { status: d.status ?? 'ok', left: d.left }
+}
+
+// Copertine ancora libere nella scorta, per tema (solo staff; null se la
+// migrazione non c'è ancora).
+export async function coverPoolStatus(): Promise<{ trading: number; mind: number } | null> {
+  const { data, error } = await supabase.from('cover_pool').select('theme').is('used_id', null)
+  if (error) return null
+  const rows = (data ?? []) as { theme: string }[]
+  return { trading: rows.filter(r => r.theme === 'trading').length, mind: rows.filter(r => r.theme === 'mind').length }
+}
+
 // opts.ownerId: id da assegnare alle live create (e da filtrare se onlyOwn).
 // opts.onlyOwn: true → mostra solo le live di ownerId (vista coach/mental);
 // false/omesso → tutte (vista admin).
@@ -271,11 +305,12 @@ export function useLiveAdmin(opts?: { ownerId?: string; onlyOwn?: boolean }) {
 
   useEffect(() => { load() }, [load])
 
-  // Copertina AI automatica quando una live diventa (o nasce) replay e non ne ha
-  // ancora una: in background, a fine generazione ricarichiamo la lista.
-  const autoCover = useCallback((id: string) => {
+  // Copertina pronta dalla scorta: appena la live nasce (anche "in programma",
+  // così si può già condividere) o, per le vecchie live, quando diventa replay.
+  const autoCover = useCallback(async (id: string, title?: string) => {
     if (liveCoversAvailable === false) return
-    generateCover('live', id).finally(() => { void load(true) })
+    const res = await claimLiveCover(id, title ? keywordFromTitle(title) : null)
+    if (res.status === 'ok' || res.status === 'other_theme') void load(true)
   }, [load])
   const needsCover = (id: string) => !events.find(e => e.id === id)?.coverUrl
 
@@ -289,7 +324,7 @@ export function useLiveAdmin(opts?: { ownerId?: string; onlyOwn?: boolean }) {
     }).select('id').single()
     if (!error) await load(true)
     const newId = (data as { id?: string } | null)?.id
-    if (!error && newId && input.eventType === 'live' && input.status === 'replay') autoCover(newId)
+    if (!error && newId && input.eventType === 'live') await autoCover(newId, input.title)
     return !error
   }, [events, load, ownerId, autoCover])
 
@@ -297,7 +332,7 @@ export function useLiveAdmin(opts?: { ownerId?: string; onlyOwn?: boolean }) {
     const missing = needsCover(id)
     const { error } = await supabase.from('live_events').update(toRow(input)).eq('id', id)
     if (!error) await load(true)
-    if (!error && missing && input.eventType === 'live' && input.status === 'replay') autoCover(id)
+    if (!error && missing && input.eventType === 'live') void autoCover(id, input.title)
     return !error
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, autoCover, events])
@@ -313,7 +348,7 @@ export function useLiveAdmin(opts?: { ownerId?: string; onlyOwn?: boolean }) {
     const missing = needsCover(id)
     const { error } = await supabase.from('live_events').update({ status }).eq('id', id)
     if (!error) await load(true)
-    if (!error && missing && status === 'replay') autoCover(id)
+    if (!error && missing) void autoCover(id, events.find(e => e.id === id)?.title)
     return !error
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, autoCover, events])
@@ -323,7 +358,7 @@ export function useLiveAdmin(opts?: { ownerId?: string; onlyOwn?: boolean }) {
     const { error } = await supabase.from('live_events')
       .update({ replay_vimeo_id: vimeoId.trim() || null, status: 'replay' }).eq('id', id)
     if (!error) await load(true)
-    if (!error && missing) autoCover(id)
+    if (!error && missing) void autoCover(id, events.find(e => e.id === id)?.title)
     return !error
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, autoCover, events])
@@ -346,5 +381,5 @@ export function useLiveAdmin(opts?: { ownerId?: string; onlyOwn?: boolean }) {
     return true
   }, [events, load])
 
-  return { events, loading, reload: () => load(true), createLive, updateLive, deleteLive, setLiveStatus, setReplay, moveLive }
+  return { events, loading, reload: () => load(true), createLive, updateLive, deleteLive, setLiveStatus, setReplay, moveLive, claimCover: async (id: string, force = false) => { const ev = events.find(e => e.id === id); const r = await claimLiveCover(id, ev?.coverKeyword || (ev ? keywordFromTitle(ev.title) : null), force); await load(true); return r } }
 }

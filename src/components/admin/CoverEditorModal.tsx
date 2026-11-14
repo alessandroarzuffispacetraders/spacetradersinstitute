@@ -9,6 +9,8 @@ import {
   uploadCoverImage, copyText, isUploadedCover,
 } from '../../lib/covers'
 import { buildCoverPrompt, buildPosterPrompt } from '../../lib/coverPrompts'
+import { claimLiveCover } from '../../lib/live'
+import { supabase } from '../../lib/supabase'
 
 // Copertina di una lezione o locandina verticale di una serie.
 //  - Flusso PRINCIPALE (lezioni e serie): Claude sceglie il soggetto, qui si
@@ -147,6 +149,66 @@ function VectorPanel({ subject, onChanged, onPreview }: {
           {hasCover ? 'Rigenera in vettoriale' : 'Genera in vettoriale'}
         </button>
       </div>
+    </div>
+  )
+}
+
+// ─── Live: copertina dalla scorta + parola chiave ─────────────────────────────
+
+function LivePoolPanel({ subject, onChanged, onPreview }: {
+  subject: CoverSubject
+  onChanged: () => void
+  onPreview: (p: { coverUrl: string | null; keyword: string | null }) => void
+}) {
+  const [keyword, setKeyword] = useState(subject.keyword ?? '')
+  const [busy, setBusy] = useState<'claim' | 'save' | null>(null)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const claim = async () => {
+    setBusy('claim'); setMsg(null)
+    const res = await claimLiveCover(subject.id, keyword || null, !!subject.coverUrl)
+    setBusy(null)
+    if (res.status === 'ok' || res.status === 'other_theme') {
+      setMsg({ ok: true, text: `Nuova copertina assegnata${res.left !== undefined ? ` · ne restano ${res.left} di questo tema` : ''}.` })
+    } else if (res.status === 'empty') setMsg({ ok: false, text: 'La scorta di copertine è finita: fanne generare altre.' })
+    else if (res.status === 'unavailable') setMsg({ ok: false, text: "Manca l'aggiornamento del database (phase_live_share.sql)." })
+    else setMsg({ ok: false, text: 'Non è stato possibile assegnare la copertina.' })
+    onChanged()
+  }
+
+  const saveKeyword = async () => {
+    setBusy('save'); setMsg(null)
+    const kw = keyword.trim().toUpperCase() || null
+    const { error } = await supabase.from('live_events').update({ cover_keyword: kw }).eq('id', subject.id)
+    setBusy(null)
+    if (!error) { onPreview({ coverUrl: subject.coverUrl, keyword: kw }); setMsg({ ok: true, text: 'Parola chiave aggiornata.' }); onChanged() }
+    else setMsg({ ok: false, text: 'Salvataggio non riuscito.' })
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs" style={{ color: 'var(--ist-text-muted)' }}>
+        Ogni live riceve una copertina pronta appena viene creata, presa da una scorta di immagini tutte diverse
+        (tema mente per il Mental Coach, trading per il resto).
+      </p>
+      <div>
+        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>Parola chiave sulla copertina</label>
+        <div className="flex gap-2">
+          <input value={keyword} onChange={e => setKeyword(e.target.value.slice(0, 24))} placeholder="Es. OTTIMIZZAZIONE"
+            className="flex-1 px-3 py-2.5 text-sm uppercase" style={{ background: 'var(--ist-w7)', border: '1px solid var(--ist-w10)', borderRadius: 14, color: 'var(--ist-text)', outline: 'none' }} />
+          <button onClick={saveKeyword} disabled={busy !== null || keyword.trim().toUpperCase() === (subject.keyword ?? '')}
+            className="px-4 rounded-2xl text-xs font-bold text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)' }}>
+            {busy === 'save' ? <Loader2 size={13} className="animate-spin" /> : 'Salva'}
+          </button>
+        </div>
+      </div>
+      <button onClick={claim} disabled={busy !== null}
+        className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-colors disabled:opacity-40"
+        style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)', color: 'var(--ist-text)' }}>
+        {busy === 'claim' ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} strokeWidth={2.2} />}
+        {subject.coverUrl ? 'Cambia copertina' : 'Assegna copertina'}
+      </button>
+      {msg && <p className="text-xs" style={{ color: msg.ok ? '#46D39A' : '#FF6B7A' }}>{msg.text}</p>}
     </div>
   )
 }
@@ -349,7 +411,7 @@ export default function CoverEditorModal({ subject, onClose, onChanged }: {
         <div className="flex items-center justify-between gap-3 px-6 py-4" style={{ borderBottom: '1px solid var(--ist-border)' }}>
           <div className="min-w-0">
             <h3 className="text-sm font-bold" style={{ color: 'var(--ist-text)' }}>
-              {isPoster ? 'Locandina della serie' : isLive ? 'Copertina AI del replay' : 'Copertina della lezione'}
+              {isPoster ? 'Locandina della serie' : isLive ? 'Copertina della live' : 'Copertina della lezione'}
             </h3>
             <p className="text-xs truncate" style={{ color: 'var(--ist-text-muted)' }}>{subject.title}</p>
           </div>
@@ -411,7 +473,7 @@ export default function CoverEditorModal({ subject, onClose, onChanged }: {
             )}
 
             {isLive ? (
-              <VectorPanel subject={subject} onChanged={onChanged} onPreview={setPreview} />
+              <LivePoolPanel subject={subject} onChanged={onChanged} onPreview={setPreview} />
             ) : (
               <div className="rounded-2xl" style={{ border: '1px solid var(--ist-border)' }}>
                 <button

@@ -13,6 +13,8 @@ export interface BachecaPost {
   tag: string | null
   pinned: boolean
   createdAt: string
+  imageUrls: string[]          // fino a 4 immagini allegate
+  liveEventId: string | null   // live condivisa (scheda nel post)
 }
 
 export interface NewBachecaPost {
@@ -20,12 +22,15 @@ export interface NewBachecaPost {
   content: string
   tag?: string
   pinned?: boolean
+  imageUrls?: string[]
+  liveEventId?: string | null
 }
 
 interface RawPost {
   id: string; channel_id: string; author_id: string; author_name: string
   author_role: MemberRole; title: string | null; content: string
   tag: string | null; pinned: boolean; created_at: string
+  image_urls?: string[] | null; live_event_id?: string | null
 }
 
 function mapPost(r: RawPost): BachecaPost {
@@ -33,6 +38,7 @@ function mapPost(r: RawPost): BachecaPost {
     id: r.id, channelId: r.channel_id, authorId: r.author_id, author: r.author_name,
     authorRole: r.author_role, title: r.title, content: r.content, tag: r.tag,
     pinned: r.pinned, createdAt: r.created_at,
+    imageUrls: r.image_urls ?? [], liveEventId: r.live_event_id ?? null,
   }
 }
 
@@ -44,12 +50,10 @@ function sortPosts(posts: BachecaPost[]): BachecaPost[] {
   })
 }
 
-// Inserimento diretto (senza hook) di un post bacheca — usato dal broadcast admin.
-export async function postAnnouncement(
-  channelId: string, userId: string, authorName: string, authorRole: MemberRole, input: NewBachecaPost,
-): Promise<boolean> {
-  if (!channelId || !userId || !input.content.trim()) return false
-  const { error } = await supabase.from('bacheca_posts').insert({
+// Inserisce un post. Immagini e live collegata arrivano con phase_live_share.sql:
+// se le colonne non ci sono ancora, ripubblica senza (il testo non si perde).
+async function insertPost(channelId: string, userId: string, authorName: string, authorRole: MemberRole, input: NewBachecaPost): Promise<boolean> {
+  const base = {
     channel_id: channelId,
     author_id: userId,
     author_name: authorName,
@@ -58,8 +62,26 @@ export async function postAnnouncement(
     content: input.content.trim(),
     tag: input.tag?.trim() || null,
     pinned: input.pinned ?? false,
-  })
+  }
+  const extra = {
+    ...(input.imageUrls?.length ? { image_urls: input.imageUrls.slice(0, 4) } : {}),
+    ...(input.liveEventId ? { live_event_id: input.liveEventId } : {}),
+  }
+  const { error } = await supabase.from('bacheca_posts').insert({ ...base, ...extra })
+  if (error && Object.keys(extra).length && /image_urls|live_event_id|PGRST204|42703/.test(`${error.code} ${error.message}`)) {
+    const retry = await supabase.from('bacheca_posts').insert(base)
+    return !retry.error
+  }
   return !error
+}
+
+// Inserimento diretto (senza hook) di un post bacheca — usato dal broadcast admin
+// e dalla condivisione delle live.
+export async function postAnnouncement(
+  channelId: string, userId: string, authorName: string, authorRole: MemberRole, input: NewBachecaPost,
+): Promise<boolean> {
+  if (!channelId || !userId || !input.content.trim()) return false
+  return insertPost(channelId, userId, authorName, authorRole, input)
 }
 
 export function useBachecaPosts(channelId: string | null, userId: string) {
@@ -97,17 +119,8 @@ export function useBachecaPosts(channelId: string | null, userId: string) {
 
   const createPost = useCallback(async (input: NewBachecaPost, authorName: string, authorRole: MemberRole): Promise<boolean> => {
     if (!channelId || !userId || !input.content.trim()) return false
-    const { error } = await supabase.from('bacheca_posts').insert({
-      channel_id: channelId,
-      author_id: userId,
-      author_name: authorName,
-      author_role: authorRole,
-      title: input.title?.trim() || null,
-      content: input.content.trim(),
-      tag: input.tag?.trim() || null,
-      pinned: input.pinned ?? false,
-    })
-    if (error) return false
+    const ok = await insertPost(channelId, userId, authorName, authorRole, input)
+    if (!ok) return false
     await reload(channelId) // mostra subito (oltre all'eco realtime)
     return true
   }, [channelId, userId, reload])

@@ -22,6 +22,7 @@ export interface DbMessage {
   deleted_at?: string | null
   kind?: string | null            // 'welcome' = messaggio automatico di benvenuto
   target_user_id?: string | null  // destinatario del messaggio di sistema (es. benvenuto)
+  live_event_id?: string | null   // 'live_invite': scheda della live condivisa dall'admin
   // Risposta a un altro messaggio (quote): id + snapshot autore/anteprima.
   reply_to?: string | null
   reply_to_author?: string | null

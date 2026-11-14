@@ -1406,6 +1406,266 @@ def draw_molecule(fig):
     _dust(ax, (u.min() - 2, u.max() + 2), (v.min() - 2, v.max() + 2), 500)
     _set_frame(ax, fig, u, np.r_[v, v.min() - 1.4], pad=0.07)
 
+# ── scorta: copertine pronte da assegnare alle nuove live ─────────────────────
+import matplotlib.patheffects as pe
+
+def _style3d(ax, labels):
+    for a in (ax.xaxis, ax.yaxis, ax.zaxis):
+        a.set_pane_color((0, 0, 0, 0)); a._axinfo['grid']['color'] = GRID3D; a.line.set_color(LINE3D)
+    ax.tick_params(colors=TXT, labelsize=9)
+    for f, t in zip((ax.set_xlabel, ax.set_ylabel, ax.set_zlabel), labels): f(t, color=TXT, labelpad=8)
+
+def draw_plateau_wire(fig):
+    ax = fig.add_axes([-0.04, 0.0, 1.08, 1.0], projection='3d'); ax.set_facecolor('none')
+    X, Y = np.meshgrid(np.linspace(-1, 1, 34), np.linspace(-1, 1, 34)); R = np.sqrt((X - 0.15) ** 2 + (Y + 0.05) ** 2)
+    Z = 0.9 / (1 + np.exp((R - 0.42) * 14)) + 0.25 * np.exp(-((X + 0.6) ** 2 + (Y - 0.6) ** 2) * 9) + 0.04 * np.sin(5 * X) * np.cos(4 * Y) + rng.normal(0, 0.01, X.shape)
+    ax.plot_wireframe(X, Y, Z, rstride=1, cstride=1, color=LBLUE, linewidth=0.6, alpha=0.75)
+    top = Z > 0.8; ax.scatter(X[top], Y[top], Z[top] + 0.012, s=9, color=AMBER, depthshade=False)
+    ax.view_init(elev=30, azim=-60); _style3d(ax, ('Param A', 'Param B', 'Profit factor'))
+
+def draw_stacked_area(fig):
+    ax = main_ax(fig); n = 500; x = np.arange(n)
+    parts = []
+    for k in range(5):
+        w_ = np.cumsum(rng.normal(0.025 + 0.008 * k, 0.14, n)); parts.append(w_ - min(w_.min(), 0))
+    ax.stackplot(x, parts, colors=[SQ_COOL(0.22 + 0.17 * k) for k in range(5)], alpha=0.92, labels=['Breakout', 'Mean reversion', 'Sessioni', 'Trend', 'Stagionalità'])
+    ax.plot(x, np.sum(parts, axis=0), color=HERO, lw=1.8)
+    ax.legend(loc='upper left', frameon=False, labelcolor=TXT, fontsize=11); ax.set_xlim(0, n - 1); lbl(ax, 'Giorni', 'Profitto cumulato (R)')
+
+def draw_lollipop(fig):
+    ax = main_ax(fig); m = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic']; x = np.arange(12)
+    v = rng.normal(2.0, 3.0, 12); c = [GREEN if vi > 0 else RED for vi in v]
+    for xi, vi, ci in zip(x, v, c): ax.plot([xi, xi], [0, vi], color=ci, lw=2.6)
+    ax.scatter(x, v, s=180, color=c, zorder=3)
+    for xi, vi in zip(x, v): ax.text(xi, vi + (0.6 if vi > 0 else -1.1), f'{vi:+.1f}%', ha='center', color=TXT2, fontsize=10)
+    ax.axhline(0, color=ZERO, lw=1.2); ax.set_xticks(x); ax.set_xticklabels(m); ax.set_ylim(min(v) - 2, max(v) + 2); lbl(ax, None, 'Rendimento mensile (%)')
+
+def draw_kelly(fig):
+    ax = main_ax(fig); f = np.linspace(0, 0.42, 400); p, b = 0.58, 1.0
+    g = (p * np.log(1 + b * f) + (1 - p) * np.log(1 - f)) * 100; fk = (p * b - (1 - p)) / b
+    gmax = (p * np.log(1 + b * fk) + (1 - p) * np.log(1 - fk)) * 100
+    ax.fill_between(f * 100, g, 0, where=g > 0, color=BLUE, alpha=0.16, lw=0); ax.fill_between(f * 100, g, 0, where=g < 0, color=RED, alpha=0.14, lw=0)
+    ax.plot(f * 100, g, color=LBLUE, lw=2.8); ax.axhline(0, color=ZERO, lw=1)
+    ax.axvline(fk * 100, color=AMBER, ls='--', lw=1.4); ax.scatter([fk * 100], [gmax], s=220, color=AMBER, edgecolor='#ffe39a', lw=1.2, zorder=5)
+    ax.axvline(fk * 50, color=GREEN, ls=':', lw=1.6); ax.text(fk * 50 + 0.4, gmax * 0.25, 'mezzo Kelly', color=GREEN, fontsize=12, rotation=90)
+    ax.text(fk * 100 + 0.6, gmax * 1.06, f'Kelly = {fk * 100:.0f}%', color=AMBER, fontsize=13); ax.text(34, -1.4, 'zona di rovina', color=RED, fontsize=13)
+    ax.set_xlim(0, 42); ax.set_ylim(-2.3, gmax * 1.4); lbl(ax, 'Rischio per trade (% del capitale)', 'Crescita attesa per trade (%)')
+
+def draw_rolling_sharpe(fig):
+    ax = main_ax(fig); n = 700; x = np.arange(n); r = rng.normal(0.0006, 0.01, n) + 0.0012 * np.sin(x / 80)
+    w = 90; rs = np.full(n, np.nan)
+    for i in range(w, n): s = r[i - w:i]; rs[i] = s.mean() / (s.std() + 1e-9) * np.sqrt(252)
+    ax.fill_between(x, rs - 0.6, rs + 0.6, color=BLUE, alpha=0.12, lw=0)
+    ax.fill_between(x, 0, rs, where=rs > 0, color=GREEN, alpha=0.14, lw=0); ax.fill_between(x, 0, rs, where=rs < 0, color=RED, alpha=0.14, lw=0)
+    ax.plot(x, rs, color=LBLUE, lw=2); ax.axhline(0, color=ZERO, lw=1); m = np.nanmean(rs)
+    ax.axhline(m, color=AMBER, ls='--', lw=1.3); ax.text(w + 5, m + 0.2, f'Sharpe medio {m:.2f}', color=AMBER, fontsize=12)
+    ax.set_xlim(0, n); lbl(ax, 'Giorni', 'Sharpe mobile (90 giorni)')
+
+def draw_pairplot(fig):
+    names = ['ATR', 'Gap', 'Volume']; k = 3; n = 420
+    A = rng.normal(0, 1, (n, k)); A[:, 1] += 0.6 * A[:, 0]; A[:, 2] += -0.4 * A[:, 0] + 0.3 * A[:, 1]
+    res = 0.5 * A[:, 0] - 0.3 * A[:, 2] + rng.normal(0, 1, n); col = SQ_COOL(np.clip(0.5 + 0.25 * res, 0.15, 1))
+    for i in range(k):
+        for j in range(k):
+            ax = fig.add_axes([0.09 + j * 0.3, 0.68 - i * 0.3, 0.27, 0.27]); style(ax, label_size=7)
+            if i == j: ax.hist(A[:, i], bins=24, color=BARS(0.6), alpha=0.9)
+            else: ax.scatter(A[:, j], A[:, i], s=8, c=col, lw=0, alpha=0.8)
+            if i == k - 1: ax.set_xlabel(names[j], color=TXT)
+            if j == 0: ax.set_ylabel(names[i], color=TXT)
+            if i < k - 1: ax.set_xticklabels([])
+            if j > 0: ax.set_yticklabels([])
+
+def draw_ridgeline(fig):
+    ax = main_ax(fig, (0.1, 0.1, 0.86, 0.86)); ax.grid(False)
+    m = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic']; x = np.linspace(-6, 6, 400)
+    for i, name in enumerate(m[::-1]):
+        mu, sd = rng.normal(0.3, 0.6), rng.uniform(0.8, 1.8); y = np.exp(-((x - mu) / sd) ** 2 / 2) * (1 + 0.25 * np.sin(x * rng.uniform(1, 3)))
+        y = y / y.max() * 1.7; base = i * 0.8; z = 100 - i
+        ax.fill_between(x, base, base + y, color=SQ_COOL(0.25 + 0.6 * i / 11), alpha=0.95, lw=0, zorder=z)
+        ax.plot(x, base + y, color=HERO, lw=1.0, zorder=z + 0.5); ax.text(-6.25, base + 0.1, name, ha='right', color=TXT2, fontsize=11)
+    ax.set_yticks([]); ax.set_xlim(-6, 6); lbl(ax, 'Rendimento giornaliero (%)', None)
+
+def draw_bubble(fig):
+    ax = main_ax(fig); names = ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'US500', 'NAS100', 'GER40', 'USOIL', 'BTCUSD', 'AUDUSD', 'USDCAD', 'JPN225']
+    vol = rng.uniform(5, 40, 12); ret = rng.normal(6, 8, 12); size = rng.uniform(300, 3600, 12)
+    ax.scatter(vol, ret, s=size, c=SQ_COOL(np.clip(0.3 + ret / 30, 0.2, 1)), alpha=0.6, edgecolor=LBLUE, lw=1)
+    for n_, v_, r_ in zip(names, vol, ret): ax.text(v_, r_, n_, ha='center', va='center', color=TXT2, fontsize=10)
+    b = int(np.argmax(ret / vol)); ax.scatter(vol[b], ret[b], s=size[b] * 1.3, facecolor='none', edgecolor=AMBER, lw=2.2)
+    ax.axhline(0, color=ZERO, lw=1); lbl(ax, 'Volatilità annua (%)', 'Rendimento della strategia (%)')
+
+def draw_funnel(fig):
+    ax = fig.add_axes([0.03, 0.04, 0.94, 0.92]); ax.axis('off'); ax.set_xlim(-1.05, 2.05); ax.set_ylim(0, 1)
+    st = [('Segnali generati', 1240), ('Filtro di sessione', 610), ('Filtro di volatilità', 352), ('Trade eseguiti', 198), ('Trade vincenti', 109)]
+    for i, (name, v) in enumerate(st):
+        w0 = v / st[0][1]; w1 = st[i + 1][1] / st[0][1] if i + 1 < len(st) else w0 * 0.85; y0 = 0.94 - i * 0.185; y1 = y0 - 0.16
+        ax.add_patch(plt.Polygon([(-w0, y0), (w0, y0), (w1, y1), (-w1, y1)], color=AMBER if i == len(st) - 1 else SQ_COOL(0.3 + 0.15 * i), alpha=0.9))
+        ax.text(0, (y0 + y1) / 2, f'{v:,}'.replace(',', '.'), ha='center', va='center', color='white', fontsize=18, weight='bold',
+                path_effects=[pe.withStroke(linewidth=3, foreground='#0b0f18')])
+        ax.text(1.08, (y0 + y1) / 2, name, ha='left', va='center', color=TXT2, fontsize=14)
+
+def draw_bollinger(fig):
+    ax = fig.add_axes([0.08, 0.36, 0.88, 0.6]); style(ax); ax.set_xticklabels([])
+    n, w = 90, 20; p = 100 + np.cumsum(rng.normal(0, 0.6, n + w)); x = np.arange(n)
+    ma = np.array([p[i:i + w].mean() for i in range(n)]); sd = np.array([p[i:i + w].std() for i in range(n)]); c_ = p[w:]
+    ax.fill_between(x, ma - 2 * sd, ma + 2 * sd, color=BLUE, alpha=0.1, lw=0)
+    for k_ in (-2, 2): ax.plot(x, ma + k_ * sd, color=LBLUE, lw=1.2)
+    ax.plot(x, ma, color=AMBER, lw=1.4, ls='--')
+    for i in range(n):
+        o, c = (c_[i - 1] if i else c_[0]), c_[i]; hh, ll = max(o, c) + abs(rng.normal(0, .2)), min(o, c) - abs(rng.normal(0, .2)); col = GREEN if c >= o else RED
+        ax.plot([i, i], [ll, hh], color=col, lw=0.9); ax.add_patch(plt.Rectangle((i - .32, min(o, c)), .64, abs(c - o) + .02, color=col))
+    ax.set_xlim(-1, n); lbl(ax, None, 'Prezzo')
+    d = np.diff(p); up = np.convolve(np.clip(d, 0, None), np.ones(14) / 14, 'same'); dn = np.convolve(np.clip(-d, 0, None), np.ones(14) / 14, 'same')
+    rsi = (100 - 100 / (1 + up / (dn + 1e-9)))[-n:]
+    ax2 = fig.add_axes([0.08, 0.08, 0.88, 0.23]); style(ax2)
+    ax2.axhspan(70, 100, color=RED, alpha=0.08); ax2.axhspan(0, 30, color=GREEN, alpha=0.08)
+    for y_ in (30, 70): ax2.axhline(y_, color=SPINE, ls='--', lw=1)
+    ax2.plot(x, rsi, color=PALE, lw=1.6); ax2.set_ylim(0, 100); ax2.set_xlim(-1, n); lbl(ax2, 'Barre', 'RSI')
+
+def draw_depth(fig):
+    ax = main_ax(fig); mid = 100.0
+    bids = np.linspace(mid - 0.01, mid - 2, 200); asks = np.linspace(mid + 0.01, mid + 2, 200)
+    bq = np.cumsum(rng.gamma(1.2, 10, 200) * (1 + 6 * np.exp(-((bids - 99.2) / 0.05) ** 2)))
+    aq = np.cumsum(rng.gamma(1.2, 10, 200) * (1 + 6 * np.exp(-((asks - 100.9) / 0.05) ** 2)))
+    ax.fill_between(bids, 0, bq, color=GREEN, alpha=0.25, lw=0); ax.plot(bids, bq, color=GREEN, lw=2)
+    ax.fill_between(asks, 0, aq, color=RED, alpha=0.25, lw=0); ax.plot(asks, aq, color=RED, lw=2)
+    top = max(bq.max(), aq.max()); ax.axvline(mid, color=HERO, ls='--', lw=1.2); ax.text(mid + 0.04, top * 0.95, 'prezzo', color=TXT2, fontsize=11)
+    ax.annotate('muro di acquisto', xy=(99.2, np.interp(99.2, bids[::-1], bq[::-1])), xytext=(98.2, top * 0.75), color=AMBER, fontsize=12, arrowprops=dict(arrowstyle='->', color=AMBER))
+    ax.annotate('muro di vendita', xy=(100.9, np.interp(100.9, asks, aq)), xytext=(100.95, top * 0.85), color=AMBER, fontsize=12, arrowprops=dict(arrowstyle='->', color=AMBER))
+    ax.set_xlim(98, 102); ax.set_ylim(0, top * 1.05); lbl(ax, 'Prezzo', 'Volume cumulato')
+
+def _treemap(vals, x, y, w, h, out):
+    if len(vals) == 1: out.append((x, y, w, h)); return
+    tot = sum(vals); acc, k = 0, 0
+    while k < len(vals) - 1 and acc + vals[k] < tot / 2: acc += vals[k]; k += 1
+    k = max(k, 1); fa = sum(vals[:k]) / tot
+    if w >= h: _treemap(vals[:k], x, y, w * fa, h, out); _treemap(vals[k:], x + w * fa, y, w * (1 - fa), h, out)
+    else: _treemap(vals[:k], x, y, w, h * fa, out); _treemap(vals[k:], x, y + h * fa, w, h * (1 - fa), out)
+
+def draw_treemap(fig):
+    ax = fig.add_axes([0.03, 0.03, 0.94, 0.94]); ax.axis('off'); ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+    items = sorted([('Breakout DAX', 22), ('Sessione Londra', 18), ('Oro trend', 14), ('Mean reversion NAS', 12), ('Swing EURUSD', 10), ('Stagionalità', 8), ('Gap S&P', 7), ('Petrolio', 5), ('Cash', 4)], key=lambda t: -t[1])
+    rects = []; _treemap([v for _, v in items], 0, 0, 1, 1, rects)
+    for (name, v), (x, y, w, h) in zip(items, rects):
+        r_ = rng.normal(0.4, 0.8); c = SQ(np.clip(0.5 + r_ / 3, 0, 1)) if name != 'Cash' else matplotlib.colors.to_rgba(NEUTRAL)
+        ax.add_patch(plt.Rectangle((x + 0.004, y + 0.004), w - 0.008, h - 0.008, color=c, alpha=0.85))
+        fs = 15 if w * h > 0.06 else 11
+        ax.text(x + 0.015, y + h - 0.02, name, color='white', fontsize=fs, va='top', weight='bold', path_effects=[pe.withStroke(linewidth=3, foreground='#0b0f18')])
+        ax.text(x + 0.015, y + h - 0.02 - fs / 300 - 0.03, f'{v}% · {r_:+.1f}R', color='white', fontsize=fs - 3, va='top', path_effects=[pe.withStroke(linewidth=3, foreground='#0b0f18')])
+
+# mente (scorta)
+def draw_brain_orb(fig):
+    ax, asp = _frame_ax(fig, 1.05); ax.set_aspect('equal'); az, el = -30, 20
+    n = 5200; phi = np.arccos(1 - 2 * rng.random(n)); th = rng.uniform(0, 2 * np.pi, n)
+    P = np.c_[np.sin(phi) * np.cos(th), np.sin(phi) * np.sin(th), np.cos(phi)] * 0.82
+    u, v, z = _view(P, az, el); zn = (z - z.min()) / np.ptp(z); col = _mix(BLUE, PALE, zn); col[:, 3] = 0.12 + 0.7 * zn
+    ax.scatter(u, v, s=0.8 + 3 * zn, c=col, lw=0)
+    t = np.linspace(0, 2 * np.pi, 300)
+    for k in range(4):
+        a = k * np.pi / 4; ring = np.c_[np.cos(t) * np.cos(a), np.cos(t) * np.sin(a), np.sin(t)] * 0.82
+        ru, rv, _ = _view(ring, az, el); ax.plot(ru, rv, color=LBLUE, lw=0.6, alpha=0.25)
+    N = rng.normal(0, 1, (70, 3)); N = N / np.linalg.norm(N, axis=1, keepdims=True) * (rng.random(70) ** 0.5 * 0.66)[:, None]
+    un, vn, _ = _view(N, az, el); fire = rng.choice(70, 7, replace=False)
+    for i in range(70):
+        for j in np.argsort(((N - N[i]) ** 2).sum(1))[1:4]:
+            hot = i in fire or j in fire; ax.plot([un[i], un[j]], [vn[i], vn[j]], color=AMBER if hot else LBLUE, lw=1.1 if hot else 0.7, alpha=0.7 if hot else 0.4)
+    ax.scatter(un, vn, s=14, color=PALE, lw=0, zorder=4)
+    if _glow(): ax.scatter(un[fire], vn[fire], s=500, color=AMBER, alpha=0.12, lw=0)
+    ax.scatter(un[fire], vn[fire], s=40, color=AMBER, lw=0, zorder=5)
+    if _glow():
+        for sz, al in ((6000, 0.04), (1800, 0.08)): ax.scatter(0, 0, s=sz, color=AMBER, alpha=al, lw=0)
+    _dust(ax, (-1.05 * asp, 1.05 * asp), (-1.05, 1.05), 600)
+
+def draw_hypnogram(fig):
+    ax = fig.add_axes([0.14, 0.42, 0.82, 0.53]); style(ax); ax.set_xticklabels([])
+    seq = []
+    for c in range(5):
+        deep = max(0, 30 - c * 8); rem = 10 + c * 6
+        seq += [4] * (6 if c == 0 else 2) + [2] * 6 + [1] * 18 + [0] * deep + [1] * 10 + [3] * rem
+    y = np.array(seq, float); t = np.arange(len(y)) / 60
+    ax.step(t, y, where='post', color=PALE, lw=1.6)
+    rem = y == 3; ax.fill_between(t, 2.85, 3.15, where=rem, step='post', color=AMBER, alpha=0.9, lw=0)
+    ax.fill_between(t, -0.15, 0.15, where=y == 0, step='post', color=BLUE, alpha=0.9, lw=0)
+    ax.set_yticks(range(5)); ax.set_yticklabels(['N3 profondo', 'N2', 'N1', 'REM', 'Veglia']); ax.set_ylim(-0.6, 4.6); ax.set_xlim(0, t[-1])
+    ax2 = fig.add_axes([0.14, 0.1, 0.82, 0.25]); style(ax2); cyc = np.arange(1, 6)
+    ax2.bar(cyc - 0.18, [max(0, 30 - c * 8) for c in range(5)], width=0.34, color=BLUE, label='Sonno profondo')
+    ax2.bar(cyc + 0.18, [10 + c * 6 for c in range(5)], width=0.34, color=AMBER, label='REM')
+    ax2.legend(loc='upper right', frameon=False, labelcolor=TXT, fontsize=10); lbl(ax2, 'Ciclo di sonno', 'Minuti')
+
+def draw_yerkes(fig):
+    ax = main_ax(fig); x = np.linspace(0, 10, 400); y = np.exp(-((x - 5) / 2.1) ** 2) * 100
+    for a, b, c in ((0, 3, BLUE), (3, 7, GREEN), (7, 10, RED)): ax.axvspan(a, b, color=c, alpha=0.08)
+    ax.plot(x, y, color=LBLUE, lw=3.2); ax.scatter([5], [100], s=260, color=AMBER, edgecolor='#ffe39a', lw=1.2, zorder=5)
+    for xx, t in ((1.5, 'Noia'), (5, 'Zona ottimale'), (8.5, 'Ansia')): ax.text(xx, 108, t, ha='center', color=TXT2, fontsize=14)
+    yy = np.exp(-((8.2 - 5) / 2.1) ** 2) * 100; ax.scatter([8.2], [yy], s=120, color=RED, zorder=5)
+    ax.annotate('', xy=(5.6, 96), xytext=(8.0, yy + 4), arrowprops=dict(arrowstyle='->', color=AMBER, lw=2, connectionstyle='arc3,rad=0.3'))
+    ax.set_xlim(0, 10); ax.set_ylim(0, 118); lbl(ax, 'Livello di stress (attivazione)', 'Performance (%)')
+
+def draw_emotion_wheel(fig):
+    ax = fig.add_axes([0.08, 0.08, 0.84, 0.84], projection='polar'); ax.set_facecolor('none')
+    emo = ['Fiducia', 'Calma', 'Gioia', 'Attesa', 'Paura', 'Avidità', 'Rabbia', 'Frustrazione']
+    th = np.linspace(0, 2 * np.pi, 8, endpoint=False); w = 2 * np.pi / 8 * 0.92
+    for r0, h, s in ((0.15, 0.3, 1.0), (0.47, 0.25, 0.7), (0.74, 0.2, 0.45)):
+        cols = [_rgba(LBLUE if i < 4 else (AMBER if emo[i] in ('Paura', 'Avidità') else RED), s * rng.uniform(0.6, 1)) for i in range(8)]
+        ax.bar(th, h, width=w, bottom=r0, color=cols, edgecolor=EDGE, lw=0.8)
+    for a, e in zip(th, emo): ax.text(a, 1.06, e, ha='center', va='center', color=AMBER if e in ('Paura', 'Avidità') else TXT2, fontsize=14)
+    ax.set_ylim(0, 1.15); ax.set_xticks([]); ax.set_yticks([]); ax.spines['polar'].set_visible(False); ax.grid(False)
+
+def draw_box_breath(fig):
+    ax, asp = _frame_ax(fig, 1.0); ax.set_aspect('equal'); s = 0.6
+    path = np.array([(-s, -s), (-s, s), (s, s), (s, -s), (-s, -s)]); L = np.vstack([np.linspace(path[i], path[i + 1], 120) for i in range(4)])
+    _glow_line(ax, L[:, 0], L[:, 1], PALE, lw=2.2, glow=10)
+    for (x, y, t, r) in ((-s - 0.08, 0, 'Inspira · 4 s', 90), (0, s + 0.08, 'Trattieni · 4 s', 0), (s + 0.08, 0, 'Espira · 4 s', -90), (0, -s - 0.08, 'Trattieni · 4 s', 0)):
+        ax.text(x, y, t, ha='center', va='center', rotation=r, color=TXT2, fontsize=13)
+    k = int(len(L) * 0.36); tr = L[max(0, k - 110):k + 1]
+    ax.add_collection(LineCollection(np.stack([tr[:-1], tr[1:]], 1), colors=[_rgba(AMBER, a) for a in np.linspace(0.02, 0.95, len(tr) - 1)], linewidths=4))
+    if _glow():
+        for sz, al in ((2400, 0.06), (700, 0.16)): ax.scatter(*L[k], s=sz, color=AMBER, alpha=al, lw=0)
+    ax.scatter(*L[k], s=90, color=AMBER, lw=0, zorder=5)
+    r = 0.42 * np.sqrt(rng.random(500)); a = rng.uniform(0, 2 * np.pi, 500)
+    ax.scatter(r * np.cos(a), r * np.sin(a), s=rng.uniform(0.5, 3, 500), color=LBLUE, alpha=0.35, lw=0)
+    ax.text(0, 0, '4 · 4 · 4 · 4', ha='center', va='center', color=HERO, fontsize=26, weight='bold')
+    _dust(ax, (-asp, asp), (-1, 1), 400)
+
+def draw_iris(fig):
+    ax, asp = _frame_ax(fig, 1.0); ax.set_aspect('equal'); n = 2600
+    a = rng.uniform(0, 2 * np.pi, n); r0 = 0.25 + rng.random(n) * 0.04; rm = 0.42 + rng.random(n) * 0.06; r1 = 0.6 + rng.random(n) * 0.3; da = rng.normal(0, 0.05, n)
+    A = np.c_[r0 * np.cos(a), r0 * np.sin(a)]; M = np.c_[rm * np.cos(a + da / 2), rm * np.sin(a + da / 2)]; B = np.c_[r1 * np.cos(a + da), r1 * np.sin(a + da)]
+    ci = _mix(AMBER, LBLUE, rng.random(n) * 0.5); ci[:, 3] = 0.55
+    co = _mix(LBLUE, BLUE, (r1 - 0.6) / 0.3); co[:, 3] = 0.45
+    ax.add_collection(LineCollection(np.stack([A, M], 1), colors=ci, linewidths=0.9)); ax.add_collection(LineCollection(np.stack([M, B], 1), colors=co, linewidths=0.8))
+    ax.add_patch(plt.Circle((0, 0), 0.24, color='#020409' if _glow() else '#0b1530'))
+    ax.add_patch(plt.Circle((0, 0), 0.93, fill=False, color=EDGE, lw=3))
+    ax.add_patch(matplotlib.patches.Ellipse((-0.08, 0.09), 0.09, 0.06, angle=30, color='white', alpha=0.85))
+    for k in range(12):
+        t = k * np.pi / 6; ax.plot([1.0 * np.cos(t), 1.07 * np.cos(t)], [1.0 * np.sin(t), 1.07 * np.sin(t)], color=TICK, lw=1.2)
+    _dust(ax, (-asp, asp), (-1, 1), 500)
+
+def draw_flow_channel(fig):
+    ax = main_ax(fig); x = np.linspace(0, 10, 100)
+    ax.fill_between(x, x + 1.6, 10, color=RED, alpha=0.08, lw=0); ax.fill_between(x, 0, x - 1.6, color=BLUE, alpha=0.08, lw=0)
+    ax.fill_between(x, x - 1.6, x + 1.6, color=AMBER, alpha=0.14, lw=0); ax.plot(x, x, color=AMBER, ls='--', lw=1.2)
+    ax.text(1.6, 8.3, 'ANSIA', color=RED, fontsize=16, weight='bold'); ax.text(7.2, 1.6, 'NOIA', color=LBLUE, fontsize=16, weight='bold')
+    ax.text(6.0, 6.9, 'FLOW', color=AMBER, fontsize=20, weight='bold', rotation=45)
+    pts = [(1, 1.4)]
+    for _ in range(9): pts.append((pts[-1][0] + rng.uniform(0.7, 1.0), pts[-1][1] + rng.uniform(0.4, 1.3)))
+    pts = np.array(pts); pts[:, 1] = np.clip(pts[:, 1], pts[:, 0] - 1.3, pts[:, 0] + 1.3)
+    ax.plot(pts[:, 0], pts[:, 1], color=PALE, lw=2, marker='o', ms=6); ax.scatter(*pts[-1], marker='*', s=340, color=AMBER, edgecolor='#ffe39a', zorder=5)
+    ax.set_xlim(0, 10); ax.set_ylim(0, 10); lbl(ax, 'Abilità', 'Sfida')
+
+def draw_focus_gauge(fig):
+    ax = fig.add_axes([0.05, 0.36, 0.9, 0.6]); ax.axis('off'); ax.set_aspect('equal'); ax.set_xlim(-1.25, 1.25); ax.set_ylim(-0.3, 1.15)
+    for a0, a1, c in ((120, 180, RED), (60, 120, SAND), (0, 60, GREEN)): ax.add_patch(Wedge((0, 0), 1.0, a0, a1, width=0.18, color=_rgba(c, 0.55)))
+    val = 0.78; ang = np.radians(180 - val * 180)
+    for k in range(11):
+        t = np.radians(180 - k * 18); ax.plot([0.74 * np.cos(t), 0.79 * np.cos(t)], [0.74 * np.sin(t), 0.79 * np.sin(t)], color=TICK, lw=1.2)
+    _glow_line(ax, [0, 0.86 * np.cos(ang)], [0, 0.86 * np.sin(ang)], AMBER, lw=4, glow=12)
+    ax.add_patch(plt.Circle((0, 0), 0.07, color=AMBER))
+    ax.text(0, -0.18, '78', ha='center', color=HERO, fontsize=34, weight='bold'); ax.text(0, 0.42, 'indice di focus', ha='center', color=TXT, fontsize=12)
+    ax2 = fig.add_axes([0.12, 0.06, 0.8, 0.24]); ax2.axis('off'); ax2.set_xlim(0, 1); ax2.set_ylim(0, 3)
+    for i, (nm, v) in enumerate((('Disciplina', 0.82), ('Pazienza', 0.64), ('Controllo emotivo', 0.71))):
+        y = 2.4 - i; ax2.text(0, y + 0.18, nm, color=TXT2, fontsize=12); ax2.add_patch(plt.Rectangle((0, y - 0.18), 1, 0.2, color=_rgba(LBLUE, 0.15)))
+        ax2.add_patch(plt.Rectangle((0, y - 0.18), v, 0.2, color=LBLUE)); ax2.text(1.0, y + 0.18, f'{int(v * 100)}%', color=AMBER, fontsize=12, ha='right')
+
 DRAW = {
     'montecarlo': draw_montecarlo, 'hist': draw_hist, 'heatmap': draw_heatmap, 'equity_dd': draw_equity_dd,
     'surface': draw_surface, 'scatter': draw_scatter, 'candles': draw_candles, 'table': draw_table,
@@ -1426,9 +1686,15 @@ DRAW = {
     'chord': draw_chord, 'tracto': draw_tracto, 'cleft': draw_cleft, 'action_potential': draw_action_potential, 'wave_rings': draw_wave_rings,
     'comfort': draw_comfort, 'habit': draw_habit, 'attractor': draw_attractor, 'calcium': draw_calcium, 'dendrite': draw_dendrite,
     'galaxy': draw_galaxy, 'hrv': draw_hrv, 'molecule': draw_molecule,
+    'plateau_wire': draw_plateau_wire, 'stacked_area': draw_stacked_area, 'lollipop': draw_lollipop, 'kelly': draw_kelly,
+    'rolling_sharpe': draw_rolling_sharpe, 'pairplot': draw_pairplot, 'ridgeline': draw_ridgeline, 'bubble': draw_bubble,
+    'funnel': draw_funnel, 'bollinger': draw_bollinger, 'depth': draw_depth, 'treemap': draw_treemap,
+    'brain_orb': draw_brain_orb, 'hypnogram': draw_hypnogram, 'yerkes': draw_yerkes, 'emotion_wheel': draw_emotion_wheel,
+    'box_breath': draw_box_breath, 'iris': draw_iris, 'flow_channel': draw_flow_channel, 'focus_gauge': draw_focus_gauge,
 }
 FRAMELESS = {'surface', 'cloud3d', 'graph', 'brain', 'neuron_burst', 'synapse', 'bar3d', 'brain_top', 'brain_lines', 'chord', 'tracto',
-             'cleft', 'wave_rings', 'comfort', 'habit', 'attractor', 'dendrite', 'galaxy', 'molecule'}
+             'cleft', 'wave_rings', 'comfort', 'habit', 'attractor', 'dendrite', 'galaxy', 'molecule', 'plateau_wire',
+             'brain_orb', 'box_breath', 'iris'}
 MENTAL_SECONDARY = ['eeg', 'raster', 'spectrogram', 'bandpower', 'calcium', 'hrv', 'action_potential']
 TRADING_SECONDARY = ['hist', 'equity_dd', 'heatmap', 'candles', 'montecarlo', 'percentiles', 'table', 'hexbin', 'rmultiple', 'violin', 'sensitivity', 'boxplot', 'hour_dual']
 SECONDARY = ['hist', 'equity_dd', 'heatmap', 'candles', 'montecarlo', 'percentiles', 'table']
