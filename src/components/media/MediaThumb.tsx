@@ -2,8 +2,28 @@ import { ReactNode, useState } from 'react'
 import { Check, Play, type LucideIcon } from 'lucide-react'
 import { useVimeoThumb } from '../../lib/useVimeoThumb'
 
+// Le copertine restano nella palette blu/viola delle sezioni cinema: i colori
+// verdi diventano blu, rossi/arancio/gialli diventano viola (grigi invariati).
+const COVER_BLUE = '#5A9AB1'
+const COVER_VIOLET = '#7C6CF0'
+export function coverTone(hex: string): string {
+  const m = /^#?([0-9a-f]{6})/i.exec(hex)
+  if (!m) return COVER_BLUE
+  const n = parseInt(m[1], 16)
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min
+  if (d < 0.08) return `#${m[1]}`
+  let h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+  h *= 60
+  if (h < 0) h += 360
+  if (h >= 185 && h <= 300) return `#${m[1]}`
+  return h > 300 || h < 60 ? COVER_VIOLET : COVER_BLUE
+}
+
 // Copertina GENERATA dal colore (nessun upload): glow radiali su base scura.
-export function proceduralCover(accent: string, accentEnd = accent): string {
+export function proceduralCover(accentIn: string, accentEndIn = accentIn): string {
+  const accent = coverTone(accentIn)
+  const accentEnd = coverTone(accentEndIn)
   return [
     `radial-gradient(110% 140% at 10% 0%, ${accent}D9 0%, ${accent}66 36%, ${accent}1F 66%, transparent 100%)`,
     `radial-gradient(90% 130% at 100% 100%, ${accentEnd}66 0%, transparent 62%)`,
@@ -123,7 +143,7 @@ export default function MediaThumb({
                 className="flex items-center font-bold uppercase leading-none"
                 style={{ fontSize: 'max(8px, 3.1cqw)', letterSpacing: '0.18em', color: 'rgba(255,255,255,0.8)', gap: '1.6cqw', marginBottom: '1.8cqw' }}
               >
-                <span style={{ width: '4.2cqw', height: 'max(2px, 0.55cqw)', borderRadius: 2, background: accent, flexShrink: 0 }} />
+                <span style={{ width: '4.2cqw', height: 'max(2px, 0.55cqw)', borderRadius: 2, background: 'var(--ist-media-accent)', flexShrink: 0 }} />
                 {kicker}
               </span>
             )}

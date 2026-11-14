@@ -34,12 +34,14 @@ const TABLE: Record<Kind, 'lessons' | 'live_events' | 'categories'> = {
 // la copertina caricata a mano dall'admin).
 const COL: Record<Kind, 'cover' | 'poster'> = { lesson: 'cover', live: 'cover', category: 'poster' }
 
-// Formato della tela e peso massimo per tipo.
+// Formato della tela e peso massimo per tipo. I token includono anche il
+// ragionamento del modello: lo stile "Monte Carlo data-art" produce SVG con
+// molti percorsi (copertine ~12–25 KB, locandine ~25–45 KB), quindi margine ampio.
 interface CanvasSpec { width: number; height: number; maxBytes: number; maxTokens: number }
 const CANVAS: Record<Kind, CanvasSpec> = {
-  lesson:   { width: 1600, height: 900,  maxBytes: 80_000,  maxTokens: 16_000 },
-  live:     { width: 1600, height: 900,  maxBytes: 80_000,  maxTokens: 16_000 },
-  category: { width: 1000, height: 1500, maxBytes: 100_000, maxTokens: 32_000 },
+  lesson:   { width: 1600, height: 900,  maxBytes: 80_000,  maxTokens: 32_000 },
+  live:     { width: 1600, height: 900,  maxBytes: 80_000,  maxTokens: 32_000 },
+  category: { width: 1000, height: 1500, maxBytes: 100_000, maxTokens: 48_000 },
 }
 
 interface CoverContext {
