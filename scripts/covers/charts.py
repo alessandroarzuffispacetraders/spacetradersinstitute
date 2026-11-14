@@ -846,14 +846,14 @@ def render_cover(main, out, seed, secondaries=None, kw=None):
     img = photograph(c, (1536, 1024), sharp_center=(.64, .45), sharp_radius=(.4, .45), tilt=(.05, .025), dark_left_bottom=(.55, .5), vignette=.38, gain=1.15)
     img.save(out, quality=88)
 
-def render_poster(main, out, seed, secondaries=None):
-    reseed(seed)
+def render_poster(main, out, seed, secondaries=None, kw=None):
+    reseed(seed); draw_main = (lambda f: DRAW[main](f, **kw)) if kw else DRAW[main]
     sec = secondaries or list(rng.choice([s for s in SECONDARY if s != main], 4, replace=False))
     W, H = 1500, 2250; c = new_canvas(W, H)
     panel(c, (-40, -60, 700, 360), dim(chart(700, 400, DRAW[sec[0]]), .8))
     panel(c, (740, -60, 1560, 360), dim(chart(800, 400, DRAW[sec[1]]), .8))
-    if main in FRAMELESS: c.alpha_composite(chart(1500, 1150, DRAW[main]), (0, 330))
-    else: panel(c, (60, 400, 1440, 1360), chart(1360, 940, DRAW[main]))
+    if main in FRAMELESS: c.alpha_composite(chart(1500, 1150, draw_main), (0, 330))
+    else: panel(c, (60, 400, 1440, 1360), chart(1360, 940, draw_main))
     panel(c, (-40, 1440, 760, 2000), dim(chart(780, 540, DRAW[sec[2]]), .35))
     panel(c, (800, 1560, 1560, 2300), dim(chart(740, 720, DRAW[sec[3]]), .35))
     img = photograph(c, (1024, 1536), sharp_center=(.5, .41), sharp_radius=(.58, .29), dark_bottom=.6, gain=1.12)

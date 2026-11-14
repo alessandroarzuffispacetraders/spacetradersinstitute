@@ -30,7 +30,8 @@ export default function StudentCategoryDetail() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { findCategory, loading } = useStudentCatalog(user?.id ?? '')
+  // 'all': anche le serie del Mental Coach si aprono qui (con ritorno alla loro area).
+  const { findCategory, loading } = useStudentCatalog(user?.id ?? '', 'all')
   const cat = findCategory(categoryId ?? '')
 
   const entries = useMemo(() => (cat ? flattenLessons([cat]) : []), [cat])
@@ -60,6 +61,8 @@ export default function StudentCategoryDetail() {
   }
 
   const catStats  = getCategoryStats(cat)
+  const isMental  = cat.section === 'mental'
+  const backUrl   = isMental ? '/student/mental-coach' : '/student/corsi'
   // Locandina AI della serie (verticale): ultima scelta per il banner orizzontale.
   const poster    = cat.posterUrl ?? null
   const totalSecs = entries.reduce((s, e) => s + Math.max(0, e.lesson.durationSeconds), 0)
@@ -91,12 +94,12 @@ export default function StudentCategoryDetail() {
         icon={phaseIcon(cat.phase)}
         topLeft={
           <button
-            onClick={() => navigate('/student/corsi')}
+            onClick={() => navigate(backUrl)}
             className="inline-flex items-center gap-1 h-9 pl-2 pr-3.5 rounded-full text-sm font-semibold text-white transition-opacity hover:opacity-80"
             style={{ background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.16)' }}
           >
             <ChevronLeft size={18} strokeWidth={2.5} />
-            Videocorsi
+            {isMental ? 'Mental Coach' : 'Videocorsi'}
           </button>
         }
         eyebrow={<>
