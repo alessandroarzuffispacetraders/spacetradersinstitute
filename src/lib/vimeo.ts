@@ -103,3 +103,101 @@ export function vimeoEmbedSrc(input: string, opts?: { autoplay?: boolean }): str
   if (opts?.autoplay) params.set('autoplay', '1')
   return `https://player.vimeo.com/video/${ref.id}?${params.toString()}`
 }
+
+// ─── Miniature (copertine stile "catalogo") ─────────────────────────────────────
+// L'oEmbed pubblico restituisce thumbnail_url. Cache in memoria + localStorage
+// (7 giorni se trovata, 1 giorno se assente) e coda con max 4 richieste in
+// parallelo: una pagina con 40 lezioni non spara 40 fetch insieme e le visite
+// successive sono istantanee. Se Vimeo la nega (privacy per dominio, app
+// nativa fuori dominio) → null, e la UI ripiega su copertina categoria /
+// copertina generata dal colore.
+
+const THUMB_LS_KEY = 'ist-vthumb-v1'
+const THUMB_HIT_TTL = 7 * 24 * 3600_000
+const THUMB_MISS_TTL = 24 * 3600_000
+const THUMB_MAX_PARALLEL = 4
+
+type ThumbEntry = { u: string | null; t: number }
+let thumbStore: Record<string, ThumbEntry> | null = null
+const thumbInflight = new Map<string, Promise<string | null>>()
+let thumbActive = 0
+const thumbQueue: Array<() => void> = []
+
+function getThumbStore(): Record<string, ThumbEntry> {
+  if (!thumbStore) {
+    try { thumbStore = JSON.parse(localStorage.getItem(THUMB_LS_KEY) || '{}') as Record<string, ThumbEntry> }
+    catch { thumbStore = {} }
+  }
+  return thumbStore
+}
+
+function persistThumbStore() {
+  try { localStorage.setItem(THUMB_LS_KEY, JSON.stringify(thumbStore ?? {})) } catch { /* storage pieno/bloccato */ }
+}
+
+function thumbKey(ref: VimeoRef): string {
+  return ref.hash ? `${ref.id}:${ref.hash}` : ref.id
+}
+
+// Le miniature Vimeo hanno la misura nel nome ("…-d_295x166"): la sostituiamo
+// per avere la risoluzione giusta (card piccola vs banner grande).
+function sizedThumb(url: string, width: number): string {
+  const height = Math.round((width * 9) / 16)
+  return url.replace(/_\d+x\d+(?=[^/]*$)/, `_${width}x${height}`)
+}
+
+function runThumbJob<T>(job: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const run = () => {
+      thumbActive++
+      job().then(resolve, reject).finally(() => {
+        thumbActive--
+        thumbQueue.shift()?.()
+      })
+    }
+    if (thumbActive < THUMB_MAX_PARALLEL) run()
+    else thumbQueue.push(run)
+  })
+}
+
+// Valore già noto senza rete: string = trovata, null = Vimeo l'ha negata,
+// undefined = mai chiesta (o scaduta).
+export function cachedVimeoThumbnail(input: string | null | undefined, width = 640): string | null | undefined {
+  const ref = parseVimeo(input)
+  if (!ref) return null
+  const entry = getThumbStore()[thumbKey(ref)]
+  if (!entry) return undefined
+  const ttl = entry.u ? THUMB_HIT_TTL : THUMB_MISS_TTL
+  if (Date.now() - entry.t > ttl) return undefined
+  return entry.u ? sizedThumb(entry.u, width) : null
+}
+
+export async function fetchVimeoThumbnail(input: string | null | undefined, width = 640): Promise<string | null> {
+  const ref = parseVimeo(input)
+  if (!ref) return null
+  const cached = cachedVimeoThumbnail(input, width)
+  if (cached !== undefined) return cached
+
+  const key = thumbKey(ref)
+  let pending = thumbInflight.get(key)
+  if (!pending) {
+    pending = runThumbJob(async () => {
+      try {
+        const res = await fetch(`https://vimeo.com/api/oembed.json?url=${encodeURIComponent(videoUrlOf(ref))}`)
+        if (!res.ok) return null
+        const data = await res.json() as { thumbnail_url?: unknown }
+        return typeof data.thumbnail_url === 'string' && data.thumbnail_url ? data.thumbnail_url : null
+      } catch {
+        return null
+      }
+    }).then(url => {
+      getThumbStore()[key] = { u: url, t: Date.now() }
+      persistThumbStore()
+      thumbInflight.delete(key)
+      return url
+    })
+    thumbInflight.set(key, pending)
+  }
+  const url = await pending
+  return url ? sizedThumb(url, width) : null
+}

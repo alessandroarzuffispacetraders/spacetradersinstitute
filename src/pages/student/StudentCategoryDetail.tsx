@@ -1,28 +1,37 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronDown, CheckCircle2, Play, Paperclip, BookOpen, Loader2 } from 'lucide-react'
-import { useStudentCatalog, getCourseStats, getCategoryStats } from '../../lib/content'
+import { useMemo } from 'react'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { ChevronLeft, Paperclip, Play, RotateCcw, Loader2 } from 'lucide-react'
+import { useStudentCatalog, getCourseStats, getCategoryStats, Course } from '../../lib/content'
 import { useAuth } from '../../context/AuthContext'
+import {
+  flattenLessons, pickResume, watchedFraction, remainingLabel, LessonEntry, RESUME_CTA,
+} from '../../lib/catalogView'
+import Billboard, { HeroButton, HeroTag } from '../../components/media/Billboard'
+import MediaThumb from '../../components/media/MediaThumb'
+import { phaseIcon } from '../../components/media/phase'
 
-const PHASE_STYLE: Record<string, { bg: string; text: string; border: string }> = {
-  Onboarding: { bg: 'rgba(124,187,208,0.12)', text: '#7CBBD0',  border: 'rgba(124,187,208,0.22)' },
-  Build:      { bg: 'rgba(70,211,154,0.12)',  text: '#46D39A',  border: 'rgba(70,211,154,0.22)'  },
-  Test:       { bg: 'rgba(246,200,95,0.12)',  text: '#F6C85F',  border: 'rgba(246,200,95,0.22)'  },
-  Deploy:     { bg: 'rgba(160,120,255,0.12)', text: '#A078FF',  border: 'rgba(160,120,255,0.22)' },
+// "3 h 20 min" / "45 min" da secondi.
+function totalDurationLabel(seconds: number): string | null {
+  const min = Math.round(seconds / 60)
+  if (min <= 0) return null
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  if (h === 0) return `${m} min`
+  return m ? `${h} h ${m} min` : `${h} h`
 }
 
+// Scheda categoria come la pagina di una serie: banner, selettore dei corsi
+// (le "stagioni") ed elenco delle lezioni (gli "episodi") con miniatura.
 export default function StudentCategoryDetail() {
   const { categoryId } = useParams<{ categoryId: string }>()
-  const navigate       = useNavigate()
+  const [params, setParams] = useSearchParams()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const { findCategory, loading } = useStudentCatalog(user?.id ?? '')
-  const cat            = findCategory(categoryId ?? '')
-  const [expandedCourse, setExpandedCourse] = useState<string | null>(null)
+  const cat = findCategory(categoryId ?? '')
 
-  // Default-expand the first course once the category has loaded.
-  useEffect(() => {
-    setExpandedCourse(cat?.courses[0]?.id ?? null)
-  }, [cat])
+  const entries = useMemo(() => (cat ? flattenLessons([cat]) : []), [cat])
+  const resume  = useMemo(() => pickResume(entries), [entries])
 
   if (loading) {
     return (
@@ -47,234 +56,228 @@ export default function StudentCategoryDetail() {
     )
   }
 
-  const catStats   = getCategoryStats(cat)
-  const phaseStyle = PHASE_STYLE[cat.phase] ?? PHASE_STYLE.Build
+  const catStats  = getCategoryStats(cat)
+  const totalSecs = entries.reduce((s, e) => s + Math.max(0, e.lesson.durationSeconds), 0)
+  const duration  = totalDurationLabel(totalSecs)
+
+  // Corso selezionato: da ?corso=…, altrimenti quello della lezione da riprendere.
+  const requested = params.get('corso')
+  const course: Course | undefined =
+    cat.courses.find(c => c.id === requested)
+    ?? cat.courses.find(c => c.id === resume?.entry.course.id)
+    ?? cat.courses[0]
+
+  const selectCourse = (id: string) => {
+    const next = new URLSearchParams(params)
+    next.set('corso', id)
+    setParams(next, { replace: true })
+  }
+
+  const openLesson = (id: string) => navigate(`/student/corsi/lezione/${id}`)
+  const statusTag  = catStats.pct === 100 ? 'Completato' : catStats.pct > 0 ? 'In corso' : null
 
   return (
-    <div className="p-5 lg:p-8 max-w-4xl mx-auto">
-
-      {/* Back */}
-      <button
-        onClick={() => navigate('/student/corsi')}
-        className="flex items-center gap-1.5 text-sm font-medium mb-6 transition-opacity hover:opacity-70"
-        style={{ color: 'var(--ist-text-muted)' }}
-      >
-        <ChevronLeft size={15} strokeWidth={2.5} />
-        Videocorsi
-      </button>
-
-      {/* ── Category header card ── */}
-      <div
-        className="rounded-3xl p-6 mb-6 relative overflow-hidden"
-        style={{
-          background: 'var(--ist-card-bg-premium)',
-          border: `1px solid ${cat.accent}25`,
-          boxShadow: 'var(--ist-card-shadow-premium)',
-        }}
-      >
-        {/* Accent bar */}
-        <div
-          className="absolute top-0 left-0 right-0 h-[3px]"
-          style={{ background: `linear-gradient(90deg, ${cat.accent}, ${cat.accent}40)` }}
-        />
-        {/* Subtle accent glow in background */}
-        <div
-          className="absolute top-0 left-0 w-64 h-32 pointer-events-none"
-          style={{
-            background: `radial-gradient(ellipse at 0% 0%, ${cat.accent}18 0%, transparent 70%)`,
-          }}
-        />
-
-        <div className="relative flex items-start gap-4">
-          <div
-            className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
-            style={{ background: `${cat.accent}15`, border: `1px solid ${cat.accent}25` }}
+    <div className="pb-10">
+      <Billboard
+        imageUrl={cat.coverUrl}
+        vimeoId={resume?.entry.lesson.vimeoId}
+        accent={cat.accent}
+        icon={phaseIcon(cat.phase)}
+        topLeft={
+          <button
+            onClick={() => navigate('/student/corsi')}
+            className="inline-flex items-center gap-1 h-9 pl-2 pr-3.5 rounded-full text-sm font-semibold text-white transition-opacity hover:opacity-80"
+            style={{ background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.16)' }}
           >
-            <BookOpen size={20} strokeWidth={2} style={{ color: cat.accent }} />
+            <ChevronLeft size={18} strokeWidth={2.5} />
+            Videocorsi
+          </button>
+        }
+        eyebrow={<>
+          <HeroTag>{cat.phase}</HeroTag>
+          {statusTag && <HeroTag tone={catStats.pct === 100 ? 'glass' : 'accent'}>{statusTag}</HeroTag>}
+        </>}
+        title={cat.title}
+        meta={<>
+          <span>{cat.courses.length} {cat.courses.length === 1 ? 'corso' : 'corsi'}</span>
+          <span aria-hidden>·</span>
+          <span>{catStats.total} lezioni</span>
+          {duration && <><span aria-hidden>·</span><span>{duration}</span></>}
+        </>}
+        description={cat.description}
+        progress={catStats.pct / 100}
+        progressLabel={`${catStats.done}/${catStats.total} completate`}
+        actions={resume && (
+          <HeroButton
+            icon={resume.mode === 'rewatch' ? RotateCcw : Play}
+            onClick={() => openLesson(resume.entry.lesson.id)}
+          >
+            {RESUME_CTA[resume.mode]}
+            {resume.mode !== 'rewatch' && resume.mode !== 'start' && (
+              <span className="font-semibold opacity-70">· Lezione {resume.entry.number}</span>
+            )}
+          </HeroButton>
+        )}
+      />
+
+      {/* ── Selettore corsi ("stagioni") ── */}
+      {cat.courses.length > 1 && (
+        <div className="media-scroller flex gap-2 overflow-x-auto px-4 lg:px-10 pt-2 pb-1 mb-4">
+          {cat.courses.map((c, i) => {
+            const s = getCourseStats(c)
+            const active = c.id === course?.id
+            return (
+              <button
+                key={c.id}
+                onClick={() => selectCourse(c.id)}
+                className="snap-start flex-shrink-0 flex items-center gap-2 h-10 px-4 rounded-full text-sm font-semibold transition-colors"
+                style={active
+                  ? { background: 'var(--ist-text)', color: 'var(--ist-bg)' }
+                  : { background: 'var(--ist-w8)', color: 'var(--ist-text-muted)', border: '1px solid var(--ist-border)' }
+                }
+              >
+                <span className="opacity-60 tabular-nums">{i + 1}</span>
+                <span className="max-w-[56vw] truncate">{c.title}</span>
+                <span className="text-[11px] font-medium opacity-60 tabular-nums">{s.done}/{s.total}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {course && (
+        <div className="px-4 lg:px-10 max-w-5xl">
+          {/* Intestazione del corso selezionato */}
+          <div className="mb-3 lg:mb-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg lg:text-2xl font-bold leading-tight" style={{ color: 'var(--ist-text)' }}>
+                {course.title}
+              </h2>
+              {!course.published && (
+                <span
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-dim)' }}
+                >
+                  BOZZA
+                </span>
+              )}
+            </div>
+            {course.description && course.description !== cat.description && (
+              <p className="text-sm leading-relaxed mt-1 max-w-3xl" style={{ color: 'var(--ist-text-muted)' }}>
+                {course.description}
+              </p>
+            )}
+            <p className="text-xs mt-1.5" style={{ color: 'var(--ist-text-dim)' }}>
+              {getCourseStats(course).done}/{course.lessons.length} lezioni completate
+            </p>
           </div>
 
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-              <span
-                className="text-[9px] font-bold px-2 py-0.5 rounded-full"
-                style={{ background: phaseStyle.bg, color: phaseStyle.text, border: `1px solid ${phaseStyle.border}` }}
-              >
-                {cat.phase}
-              </span>
-            </div>
-            <h1 className="text-xl font-bold leading-tight mb-1.5" style={{ color: 'var(--ist-text)' }}>
-              {cat.title}
-            </h1>
-            <p className="text-sm leading-relaxed mb-4" style={{ color: 'var(--ist-text-muted)' }}>
-              {cat.description}
+          {/* Episodi */}
+          {course.lessons.length === 0 ? (
+            <p className="text-sm py-10 text-center" style={{ color: 'var(--ist-text-dim)' }}>
+              Nessuna lezione in questo corso.
             </p>
-
-            {/* Progress */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1">
-                <div className="flex justify-between mb-1.5">
-                  <span className="text-[11px]" style={{ color: 'var(--ist-text-muted)' }}>
-                    {catStats.done}/{catStats.total} lezioni
-                  </span>
-                  <span className="text-[11px] font-bold" style={{ color: cat.accent }}>
-                    {catStats.pct}%
-                  </span>
-                </div>
-                <div className="h-1.5 rounded-full" style={{ background: 'var(--ist-w10)' }}>
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                      width: `${catStats.pct}%`,
-                      background: cat.accent,
-                      boxShadow: `0 0 8px ${cat.accent}55`,
-                      minWidth: catStats.pct > 0 ? 5 : 0,
-                    }}
-                  />
-                </div>
-              </div>
+          ) : (
+            <div>
+              {course.lessons.map((lesson, i) => (
+                <EpisodeRow
+                  key={lesson.id}
+                  entry={{ lesson, course, category: cat, number: i + 1 }}
+                  isNext={lesson.id === resume?.entry.lesson.id}
+                  isLast={i === course.lessons.length - 1}
+                  onClick={() => openLesson(lesson.id)}
+                />
+              ))}
             </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Riga "episodio": numero (desktop), miniatura, titolo, durata, descrizione.
+function EpisodeRow({
+  entry, isNext, isLast, onClick,
+}: {
+  entry: LessonEntry
+  isNext: boolean
+  isLast: boolean
+  onClick: () => void
+}) {
+  const { lesson, category, number } = entry
+  const remaining = remainingLabel(lesson)
+  const status = lesson.done ? 'Completata' : remaining
+
+  return (
+    <button
+      onClick={onClick}
+      className={`media-card group block w-[calc(100%+1.25rem)] text-left py-3 px-2.5 -mx-2.5 rounded-xl lg:w-full lg:py-4 lg:px-4 lg:mx-0 lg:rounded-2xl transition-colors ${isNext ? '' : 'hover:bg-[var(--ist-w5)]'}`}
+      style={{
+        background: isNext ? 'var(--ist-w6)' : undefined,
+        borderBottom: isLast || isNext ? '1px solid transparent' : '1px solid var(--ist-w7)',
+      }}
+    >
+      <div className="flex items-center gap-3 lg:gap-5">
+        <span
+          className="hidden lg:block w-7 text-center text-2xl font-bold tabular-nums flex-shrink-0"
+          style={{ color: isNext ? 'var(--ist-text)' : 'var(--ist-text-dim)' }}
+        >
+          {number}
+        </span>
+
+        <div className="w-[42%] max-w-[176px] sm:w-44 lg:w-52 lg:max-w-none flex-shrink-0">
+          <MediaThumb
+            vimeoId={lesson.vimeoId}
+            fallbackUrl={category.coverUrl}
+            accent={category.accent}
+            icon={phaseIcon(category.phase)}
+            label={String(number).padStart(2, '0')}
+            progress={watchedFraction(lesson)}
+            done={lesson.done}
+            rounded="rounded-lg"
+          />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm lg:text-base font-semibold leading-snug line-clamp-2" style={{ color: 'var(--ist-text)' }}>
+              <span className="lg:hidden">{number}. </span>{lesson.title}
+            </p>
+            {lesson.durationSeconds > 0 && (
+              <span className="hidden lg:block text-sm flex-shrink-0 tabular-nums" style={{ color: 'var(--ist-text-dim)' }}>
+                {lesson.duration}
+              </span>
+            )}
+          </div>
+
+          <p className="text-xs mt-0.5 lg:hidden" style={{ color: 'var(--ist-text-dim)' }}>
+            {[lesson.durationSeconds > 0 ? lesson.duration : null, status].filter(Boolean).join(' · ')}
+          </p>
+
+          {lesson.description && (
+            <p className="hidden lg:block text-sm leading-relaxed mt-1 line-clamp-2" style={{ color: 'var(--ist-text-muted)' }}>
+              {lesson.description}
+            </p>
+          )}
+
+          <div className="flex items-center gap-3 mt-1 text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>
+            {status && <span className="hidden lg:inline" style={{ color: lesson.done ? '#46D39A' : undefined }}>{status}</span>}
+            {lesson.attachments.length > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <Paperclip size={11} strokeWidth={2} />
+                {lesson.attachments.length} {lesson.attachments.length === 1 ? 'allegato' : 'allegati'}
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* ── Course list ── */}
-      <div className="space-y-3">
-        {cat.courses.map((course) => {
-          const stats      = getCourseStats(course)
-          const isExpanded = expandedCourse === course.id
-          const isComplete = stats.done === stats.total && stats.total > 0
-
-          return (
-            <div
-              key={course.id}
-              className="rounded-3xl overflow-hidden"
-              style={{
-                background: 'var(--ist-card-bg)',
-                border: '1px solid var(--ist-border)',
-                boxShadow: 'var(--ist-card-shadow)',
-              }}
-            >
-              {/* Course header */}
-              <button
-                onClick={() => setExpandedCourse(isExpanded ? null : course.id)}
-                className="w-full flex items-center gap-4 p-5 text-left transition-colors hover:bg-white/[0.015]"
-              >
-                <div
-                  className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
-                  style={isComplete
-                    ? { background: 'rgba(70,211,154,0.12)', border: '1px solid rgba(70,211,154,0.22)', color: '#46D39A' }
-                    : { background: `${cat.accent}12`, border: `1px solid ${cat.accent}22`, color: cat.accent }
-                  }
-                >
-                  {isComplete
-                    ? <CheckCircle2 size={17} strokeWidth={2} />
-                    : <Play size={15} strokeWidth={2} />
-                  }
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                    <p className="font-semibold text-sm" style={{ color: 'var(--ist-text)' }}>
-                      {course.title}
-                    </p>
-                    {!course.published && (
-                      <span
-                        className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                        style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-dim)' }}
-                      >
-                        BOZZA
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs" style={{ color: 'var(--ist-text-muted)' }}>
-                    {stats.done}/{stats.total} lezioni completate
-                  </p>
-                </div>
-
-                {/* Mini progress */}
-                <div className="hidden sm:flex items-center gap-2.5 flex-shrink-0">
-                  <div className="w-16 h-1.5 rounded-full" style={{ background: 'var(--ist-w10)' }}>
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${stats.pct}%`, background: cat.accent, minWidth: stats.pct > 0 ? 4 : 0 }}
-                    />
-                  </div>
-                  <span className="text-[11px] font-bold w-8 text-right" style={{ color: cat.accent }}>
-                    {stats.pct}%
-                  </span>
-                </div>
-
-                <ChevronDown
-                  size={15}
-                  strokeWidth={2}
-                  className={`flex-shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-                  style={{ color: 'var(--ist-text-muted)' }}
-                />
-              </button>
-
-              {/* Lesson list */}
-              {isExpanded && (
-                <div style={{ borderTop: '1px solid var(--ist-border)' }}>
-                  {course.lessons.map((lesson, i) => (
-                    <button
-                      key={lesson.id}
-                      onClick={() => navigate(`/student/corsi/lezione/${lesson.id}`)}
-                      className="w-full flex items-center gap-3.5 px-5 py-4 text-left transition-colors hover:bg-white/[0.02] group"
-                      style={{ borderBottom: i < course.lessons.length - 1 ? '1px solid var(--ist-w7)' : 'none' }}
-                    >
-                      {/* Status icon */}
-                      <div
-                        className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                        style={lesson.done
-                          ? { background: 'rgba(70,211,154,0.12)', color: '#46D39A' }
-                          : { background: 'var(--ist-w8)', border: '1px solid var(--ist-border)', color: 'var(--ist-text-muted)' }
-                        }
-                      >
-                        {lesson.done
-                          ? <CheckCircle2 size={14} strokeWidth={2} />
-                          : <Play size={12} strokeWidth={2} />
-                        }
-                      </div>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <p
-                          className="text-sm font-medium leading-tight"
-                          style={{
-                            color: lesson.done ? 'var(--ist-text-dim)' : 'var(--ist-text)',
-                            textDecoration: lesson.done ? 'line-through' : 'none',
-                          }}
-                        >
-                          {lesson.title}
-                        </p>
-                        {lesson.attachments.length > 0 && (
-                          <div className="flex items-center gap-1 mt-1">
-                            <Paperclip size={10} strokeWidth={2} style={{ color: 'var(--ist-text-dim)' }} />
-                            <span className="text-[10px]" style={{ color: 'var(--ist-text-dim)' }}>
-                              {lesson.attachments.length} {lesson.attachments.length === 1 ? 'allegato' : 'allegati'}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      <span className="text-xs flex-shrink-0" style={{ color: 'var(--ist-text-dim)' }}>
-                        {lesson.duration}
-                      </span>
-
-                      <ChevronDown
-                        size={13}
-                        strokeWidth={2}
-                        className="flex-shrink-0 -rotate-90 opacity-0 group-hover:opacity-100 transition-opacity"
-                        style={{ color: 'var(--ist-text-dim)' }}
-                      />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
+      {lesson.description && (
+        <p className="lg:hidden text-[13px] leading-relaxed mt-2 line-clamp-3" style={{ color: 'var(--ist-text-muted)' }}>
+          {lesson.description}
+        </p>
+      )}
+    </button>
   )
 }

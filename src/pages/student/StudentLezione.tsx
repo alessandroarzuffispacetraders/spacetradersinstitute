@@ -4,7 +4,10 @@ import {
   ChevronLeft, CheckCircle2, Play, Paperclip, Download,
   FileText, Sheet, Presentation, Archive, File, ChevronRight, Loader2,
 } from 'lucide-react'
-import { useStudentCatalog, Attachment } from '../../lib/content'
+import { useStudentCatalog, Attachment, Category, Course, Lesson } from '../../lib/content'
+import MediaThumb from '../../components/media/MediaThumb'
+import { phaseIcon } from '../../components/media/phase'
+import { watchedFraction } from '../../lib/catalogView'
 import { attachmentUrl } from '../../lib/storage'
 import VimeoPlayer from '../../components/ui/VimeoPlayer'
 import UpgradeWall from '../../components/auth/UpgradeWall'
@@ -78,57 +81,53 @@ function AttachmentCard({ att }: { att: Attachment }) {
 
 function PlaylistPanel({
   course,
+  category,
   currentId,
-  accent,
   onSelect,
 }: {
-  course: import('../../lib/content').Course
+  course: Course
+  category: Category
   currentId: string
-  accent: string
   onSelect: (id: string) => void
 }) {
   return (
-    <div>
+    <div className="py-1">
       {course.lessons.map((l, i) => {
         const isCurrent = l.id === currentId
         return (
           <button
             key={l.id}
             onClick={() => onSelect(l.id)}
-            className="w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.03]"
-            style={{
-              borderLeft: `3px solid ${isCurrent ? accent : 'transparent'}`,
-              background: isCurrent ? `${accent}0e` : 'transparent',
-              borderBottom: i < course.lessons.length - 1 ? '1px solid var(--ist-w7)' : 'none',
-            }}
+            className="media-card group w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.03]"
+            style={{ background: isCurrent ? 'var(--ist-w8)' : 'transparent' }}
           >
-            {/* Index / state */}
-            <div
-              className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold"
-              style={
-                l.done
-                  ? { background: 'rgba(70,211,154,0.13)', color: '#46D39A' }
-                  : isCurrent
-                    ? { background: `${accent}1a`, color: accent }
-                    : { background: 'var(--ist-w8)', color: 'var(--ist-text-dim)' }
-              }
+            <span
+              className="w-5 flex justify-center text-xs font-bold tabular-nums flex-shrink-0"
+              style={{ color: isCurrent ? 'var(--ist-text)' : 'var(--ist-text-dim)' }}
             >
-              {l.done
-                ? <CheckCircle2 size={13} strokeWidth={2} />
-                : isCurrent
-                  ? <Play size={11} strokeWidth={2} />
-                  : <span>{i + 1}</span>
-              }
+              {isCurrent ? <Play size={12} strokeWidth={2.5} fill="currentColor" /> : i + 1}
+            </span>
+
+            <div className="w-[104px] flex-shrink-0">
+              <MediaThumb
+                vimeoId={l.vimeoId}
+                fallbackUrl={category.coverUrl}
+                accent={category.accent}
+                icon={phaseIcon(category.phase)}
+                label={String(i + 1).padStart(2, '0')}
+                progress={isCurrent ? 0 : watchedFraction(l)}
+                done={l.done}
+                rounded="rounded-md"
+                thumbWidth={320}
+                showPlay={false}
+                className={isCurrent ? 'media-thumb-current' : ''}
+              />
             </div>
 
-            {/* Info */}
             <div className="flex-1 min-w-0">
               <p
-                className="text-xs font-medium leading-tight"
-                style={{
-                  color: isCurrent ? 'var(--ist-text)' : l.done ? 'var(--ist-text-dim)' : 'var(--ist-text-muted)',
-                  textDecoration: l.done && !isCurrent ? 'line-through' : 'none',
-                }}
+                className="text-xs font-semibold leading-snug line-clamp-2"
+                style={{ color: isCurrent ? 'var(--ist-text)' : l.done ? 'var(--ist-text-dim)' : 'var(--ist-text-muted)' }}
               >
                 {l.title}
               </p>
@@ -146,6 +145,51 @@ function PlaylistPanel({
         )
       })}
     </div>
+  )
+}
+
+// ─── Prossima lezione (con anteprima) ─────────────────────────────────────────
+
+function NextLessonCard({
+  lesson,
+  number,
+  category,
+  onClick,
+  className = '',
+}: {
+  lesson: Lesson
+  number: number
+  category: Category
+  onClick: () => void
+  className?: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`media-card group w-full flex items-center gap-3 p-2.5 pr-4 rounded-2xl text-left transition-colors ${className}`}
+      style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-border)' }}
+    >
+      <div className="w-24 flex-shrink-0">
+        <MediaThumb
+          vimeoId={lesson.vimeoId}
+          fallbackUrl={category.coverUrl}
+          accent={category.accent}
+          icon={phaseIcon(category.phase)}
+          label={String(number).padStart(2, '0')}
+          rounded="rounded-lg"
+          thumbWidth={320}
+        />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: 'var(--ist-accent-text)' }}>
+          Prossima lezione
+        </p>
+        <p className="text-xs font-semibold leading-snug line-clamp-2" style={{ color: 'var(--ist-text)' }}>
+          {lesson.title}
+        </p>
+      </div>
+      <ChevronRight size={15} strokeWidth={2.5} className="flex-shrink-0" style={{ color: 'var(--ist-text-muted)' }} />
+    </button>
   )
 }
 
@@ -345,37 +389,20 @@ export default function StudentLezione() {
               className="rounded-3xl overflow-hidden"
               style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: 'var(--ist-card-shadow)' }}
             >
-              <PlaylistPanel course={course} currentId={lesson.id} accent={category.accent} onSelect={id => navigate(`/student/corsi/lezione/${id}`)} />
+              <PlaylistPanel course={course} category={category} currentId={lesson.id} onSelect={id => navigate(`/student/corsi/lezione/${id}`)} />
             </div>
           )}
         </div>
 
         {/* Next lesson CTA — mobile */}
         {nextLesson && (
-          <button
+          <NextLessonCard
+            className="lg:hidden"
+            lesson={nextLesson}
+            number={lessonIdx + 2}
+            category={category}
             onClick={() => navigate(`/student/corsi/lezione/${nextLesson.id}`)}
-            className="lg:hidden w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all hover:-translate-y-0.5"
-            style={{
-              background: `${category.accent}12`,
-              border: `1px solid ${category.accent}28`,
-            }}
-          >
-            <div
-              className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ background: category.accent }}
-            >
-              <Play size={12} strokeWidth={2} fill="white" color="white" style={{ marginLeft: 1 }} />
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: category.accent }}>
-                Prossima lezione
-              </p>
-              <p className="text-xs font-medium truncate" style={{ color: 'var(--ist-text)' }}>
-                {nextLesson.title}
-              </p>
-            </div>
-            <ChevronRight size={14} strokeWidth={2} style={{ color: category.accent, flexShrink: 0 }} />
-          </button>
+          />
         )}
       </div>
 
@@ -413,39 +440,21 @@ export default function StudentLezione() {
         <div className="flex-1 overflow-y-auto no-scrollbar">
           <PlaylistPanel
             course={course}
+            category={category}
             currentId={lesson.id}
-            accent={category.accent}
             onSelect={id => navigate(`/student/corsi/lezione/${id}`)}
           />
         </div>
 
         {/* Next lesson CTA */}
         {nextLesson && (
-          <div className="p-4 flex-shrink-0" style={{ borderTop: '1px solid var(--ist-border)' }}>
-            <button
+          <div className="p-3 flex-shrink-0" style={{ borderTop: '1px solid var(--ist-border)' }}>
+            <NextLessonCard
+              lesson={nextLesson}
+              number={lessonIdx + 2}
+              category={category}
               onClick={() => navigate(`/student/corsi/lezione/${nextLesson.id}`)}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all hover:-translate-y-0.5"
-              style={{
-                background: `${category.accent}12`,
-                border: `1px solid ${category.accent}28`,
-              }}
-            >
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                style={{ background: category.accent }}
-              >
-                <Play size={12} strokeWidth={2} fill="white" color="white" style={{ marginLeft: 1 }} />
-              </div>
-              <div className="flex-1 min-w-0 text-left">
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: category.accent }}>
-                  Prossima lezione
-                </p>
-                <p className="text-xs font-medium truncate" style={{ color: 'var(--ist-text)' }}>
-                  {nextLesson.title}
-                </p>
-              </div>
-              <ChevronRight size={14} strokeWidth={2} style={{ color: category.accent, flexShrink: 0 }} />
-            </button>
+            />
           </div>
         )}
       </div>

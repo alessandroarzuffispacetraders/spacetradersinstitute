@@ -1,8 +1,12 @@
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Radio, Loader2, Play, CalendarDays, Info } from 'lucide-react'
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
-import { Clock, Radio, Calendar, ChevronRight, Loader2 } from 'lucide-react'
-import { useLiveEvents, liveDateLabel, liveDurationLabel } from '../../lib/live'
+import { useLiveEvents, liveDateLabel, liveDurationLabel, LiveEvent } from '../../lib/live'
+import Billboard, { HeroButton, HeroTag } from '../../components/media/Billboard'
+import MediaRow from '../../components/media/MediaRow'
+import MediaThumb from '../../components/media/MediaThumb'
 
 const HOST_ROLE_LABEL: Record<string, string> = {
   coach:        'Coach',
@@ -11,215 +15,230 @@ const HOST_ROLE_LABEL: Record<string, string> = {
   student:      '',
 }
 
+function hostLabel(e: LiveEvent): string {
+  const role = HOST_ROLE_LABEL[e.hostRole] ?? ''
+  return role ? `${e.host} · ${role}` : e.host
+}
+
+// "Oggi" / "Domani" / "Tra 3 giorni" per la prossima live.
+function relativeDay(iso: string | null): string | null {
+  if (!iso) return null
+  const start = new Date(iso)
+  const today = new Date()
+  const a = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime()
+  const b = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  const days = Math.round((a - b) / 86_400_000)
+  if (days < 0) return null
+  if (days === 0) return 'Oggi'
+  if (days === 1) return 'Domani'
+  return `Tra ${days} giorni`
+}
+
+function monthKey(iso: string | null): string {
+  if (!iso) return 'Senza data'
+  const label = new Date(iso).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
+// Sopra questa soglia i replay si dividono in una riga per mese.
+const REPLAYS_SINGLE_ROW_MAX = 10
+
 export default function StudentLive() {
   const navigate = useNavigate()
   const { events: allEvents, loading } = useLiveEvents()
-  // Le live del mental coach vivono SOLO nell'Area Mental Coach; i promemoria di
-  // calendario (eventType='reminder') non sono live → esclusi da questa sezione.
-  const events = allEvents.filter(e => e.hostRole !== 'mental_coach' && e.eventType !== 'reminder')
 
-  const live     = events.filter(e => e.status === 'live')
-  const upcoming = events.filter(e => e.status === 'upcoming')
-  const replays  = events.filter(e => e.status === 'replay')
+  const { live, upcoming, replays } = useMemo(() => {
+    // Le live del mental coach vivono SOLO nell'Area Mental Coach; i promemoria di
+    // calendario (eventType='reminder') non sono live → esclusi da questa sezione.
+    const events = allEvents.filter(e => e.hostRole !== 'mental_coach' && e.eventType !== 'reminder')
+    return {
+      live: events.filter(e => e.status === 'live'),
+      // In programma: dalla più vicina. Replay: dal più recente (senza data in fondo).
+      upcoming: events.filter(e => e.status === 'upcoming')
+        .sort((a, b) => (a.startsAt ?? '￿').localeCompare(b.startsAt ?? '￿')),
+      replays: events.filter(e => e.status === 'replay')
+        .sort((a, b) => (b.startsAt ?? '').localeCompare(a.startsAt ?? '')),
+    }
+  }, [allEvents])
 
-  return (
-    <div className="p-5 lg:p-8 max-w-4xl mx-auto">
-      <PageHeader title="Live & Replay" subtitle="Sessioni in diretta e registrazioni" />
+  const replayGroups = useMemo(() => {
+    if (replays.length <= REPLAYS_SINGLE_ROW_MAX) return [{ title: 'Replay', items: replays }]
+    const groups: { title: string; items: LiveEvent[] }[] = []
+    for (const r of replays) {
+      const key = monthKey(r.startsAt)
+      const g = groups.find(x => x.title === key)
+      if (g) g.items.push(r)
+      else groups.push({ title: key, items: [r] })
+    }
+    return groups
+  }, [replays])
 
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 size={22} strokeWidth={2} className="animate-spin" style={{ color: 'var(--ist-text-muted)' }} />
-        </div>
-      ) : events.length === 0 ? (
+  const open = (id: string) => navigate(`/student/live/${id}`)
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-32">
+        <Loader2 size={22} strokeWidth={2} className="animate-spin" style={{ color: 'var(--ist-text-muted)' }} />
+      </div>
+    )
+  }
+
+  if (live.length + upcoming.length + replays.length === 0) {
+    return (
+      <div className="p-5 lg:p-8 max-w-4xl mx-auto">
+        <PageHeader title="Live & Replay" subtitle="Sessioni in diretta e registrazioni" />
         <Card className="p-10 text-center">
           <Radio size={28} strokeWidth={1.5} className="mx-auto mb-3" style={{ color: 'var(--ist-text-dim)' }} />
           <p className="text-sm" style={{ color: 'var(--ist-text-muted)' }}>
             Nessuna live in programma al momento.
           </p>
         </Card>
-      ) : (
-      <>
-      {/* ── LIVE NOW ── gradient card, always dark */}
-      {live.map(event => (
-        <button
-          key={event.id}
-          data-inverted="true"
-          onClick={() => navigate(`/student/live/${event.id}`)}
-          className="w-full text-left mb-8 rounded-3xl overflow-hidden relative group transition-all hover:-translate-y-0.5"
-          style={{
-            background: `linear-gradient(135deg, #0A1628 0%, #0D2A3F 50%, #071420 100%)`,
-            border: '1px solid rgba(255,255,255,0.10)',
-            boxShadow: `0 24px 60px rgba(0,0,0,0.45), 0 0 60px ${event.accent}12`,
-          }}
-        >
-          {/* Blobs */}
-          <div className="absolute -top-16 -right-16 w-56 h-56 rounded-full pointer-events-none"
-            style={{ background: `radial-gradient(circle, ${event.accent}30 0%, transparent 70%)` }} />
-          <div className="absolute -bottom-20 -left-12 w-64 h-64 rounded-full pointer-events-none"
-            style={{ background: `radial-gradient(circle, ${event.accentEnd}20 0%, transparent 70%)` }} />
-          {/* Top accent */}
-          <div className="absolute top-0 left-0 right-0 h-[3px]"
-            style={{ background: `linear-gradient(90deg, ${event.accent}, ${event.accentEnd})` }} />
+      </div>
+    )
+  }
 
-          <div className="relative p-6 lg:p-7">
-            <div className="flex items-start gap-4">
-              <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
-                style={{ background: 'rgba(255,80,80,0.15)', border: '1px solid rgba(255,80,80,0.28)' }}
-              >
-                <Radio size={20} strokeWidth={2} style={{ color: '#FF5050' }} />
-              </div>
+  // Banner: la live in corso; altrimenti la prossima in programma; altrimenti l'ultimo replay.
+  const heroLive     = live[0] ?? null
+  const heroUpcoming = !heroLive ? upcoming[0] ?? null : null
+  const heroReplay   = !heroLive && !heroUpcoming ? replays[0] ?? null : null
+  const hero         = (heroLive ?? heroUpcoming ?? heroReplay) as LiveEvent
+  const pageTitle    = <p className="text-lg lg:text-2xl font-extrabold tracking-tight text-white">Live & Replay</p>
 
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <span
-                    className="flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full"
-                    style={{ background: 'rgba(255,80,80,0.18)', color: '#FF5050', border: '1px solid rgba(255,80,80,0.30)' }}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#FF5050] animate-pulse" />
-                    LIVE ORA
-                  </span>
-                </div>
+  return (
+    <div className="pb-8">
+      <Billboard
+        vimeoId={heroReplay?.replayVimeoId}
+        accent={hero.accent}
+        accentEnd={hero.accentEnd}
+        icon={heroUpcoming ? CalendarDays : Radio}
+        topLeft={pageTitle}
+        eyebrow={
+          heroLive ? (
+            <HeroTag tone="live">
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              In diretta
+            </HeroTag>
+          ) : heroUpcoming ? (<>
+            <HeroTag tone="accent">Prossima live</HeroTag>
+            {relativeDay(heroUpcoming.startsAt) && <HeroTag>{relativeDay(heroUpcoming.startsAt)}</HeroTag>}
+          </>) : (
+            <HeroTag tone="accent">Ultimo replay</HeroTag>
+          )
+        }
+        title={hero.title}
+        meta={<>
+          <span>{hostLabel(hero)}</span>
+          {!heroLive && liveDateLabel(hero) && <><span aria-hidden>·</span><span>{liveDateLabel(hero)}</span></>}
+          {liveDurationLabel(hero) && <><span aria-hidden>·</span><span>{liveDurationLabel(hero)}</span></>}
+        </>}
+        description={hero.description || (heroLive ? 'Entra e partecipa alla chat in tempo reale.' : undefined)}
+        actions={
+          heroLive ? (
+            <HeroButton icon={Play} onClick={() => open(heroLive.id)}>Entra ora</HeroButton>
+          ) : heroUpcoming ? (<>
+            <HeroButton icon={Info} onClick={() => open(heroUpcoming.id)}>Dettagli</HeroButton>
+            <HeroButton variant="secondary" icon={CalendarDays} onClick={() => navigate('/student/calendario')}>
+              Calendario
+            </HeroButton>
+          </>) : (
+            <HeroButton icon={Play} onClick={() => open(hero.id)}>Guarda il replay</HeroButton>
+          )
+        }
+      />
 
-                <h2 className="text-lg lg:text-xl font-bold text-white mb-1 leading-tight">
-                  {event.title}
-                </h2>
-                <p className="text-sm mb-3" style={{ color: 'rgba(255,255,255,0.55)' }}>
-                  {event.host} · {HOST_ROLE_LABEL[event.hostRole] ?? event.hostRole}
-                </p>
-                <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.50)' }}>
-                  {event.description}
-                </p>
-              </div>
+      <div className="mt-2 lg:mt-0">
+        {live.length > 1 && (
+          <MediaRow title="In diretta ora">
+            {live.map(e => <ReplayCard key={e.id} event={e} live onClick={() => open(e.id)} />)}
+          </MediaRow>
+        )}
 
-              <div
-                className="hidden sm:flex w-9 h-9 rounded-full items-center justify-center flex-shrink-0 transition-transform group-hover:translate-x-0.5"
-                style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)' }}
-              >
-                <ChevronRight size={15} strokeWidth={2.5} style={{ color: 'rgba(255,255,255,0.70)' }} />
-              </div>
-            </div>
+        {upcoming.length > 0 && (
+          <MediaRow title="In programma" actionLabel="Calendario" onAction={() => navigate('/student/calendario')}>
+            {upcoming.map(e => <UpcomingCard key={e.id} event={e} onClick={() => open(e.id)} />)}
+          </MediaRow>
+        )}
 
-            <div
-              className="mt-5 pt-4 flex items-center justify-between flex-wrap gap-3"
-              style={{ borderTop: `1px solid rgba(255,255,255,0.08)` }}
-            >
-              <p className="text-xs" style={{ color: 'rgba(255,255,255,0.38)' }}>
-                Entra e partecipa alla chat in tempo reale
-              </p>
-              <span
-                className="text-sm font-bold px-5 py-2 rounded-full transition-all group-hover:scale-105"
-                style={{
-                  background: `linear-gradient(135deg, ${event.accent}, ${event.accentEnd})`,
-                  color: 'white',
-                  boxShadow: `0 4px 18px ${event.accent}45`,
-                }}
-              >
-                Entra →
-              </span>
-            </div>
-          </div>
-        </button>
-      ))}
-
-      {/* ── UPCOMING ── */}
-      {upcoming.length > 0 && (
-        <section className="mb-8">
-          <h2
-            className="text-xs font-bold uppercase tracking-wider mb-4"
-            style={{ color: 'var(--ist-text-dim)' }}
-          >
-            In programma
-          </h2>
-          <div className="space-y-2.5">
-            {upcoming.map(event => (
-              <div
-                key={event.id}
-                className="flex items-center gap-4 p-4 lg:p-5 rounded-2xl"
-                style={{
-                  background: 'var(--ist-card-bg)',
-                  border: '1px solid var(--ist-border)',
-                  boxShadow: 'var(--ist-card-shadow)',
-                }}
-              >
-                <div
-                  className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: `${event.accent}12`, border: `1px solid ${event.accent}22` }}
-                >
-                  <Calendar size={17} strokeWidth={2} style={{ color: event.accent }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm mb-0.5" style={{ color: 'var(--ist-text)' }}>
-                    {event.title}
-                  </p>
-                  <p className="text-xs" style={{ color: 'var(--ist-text-muted)' }}>
-                    {event.host} · {liveDateLabel(event)}
-                  </p>
-                </div>
-                <span
-                  className="text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0"
-                  style={{ background: `${event.accent}12`, color: event.accent, border: `1px solid ${event.accent}22` }}
-                >
-                  Programmata
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* ── REPLAY ── */}
-      {replays.length > 0 && (
-        <section>
-          <h2
-            className="text-xs font-bold uppercase tracking-wider mb-4"
-            style={{ color: 'var(--ist-text-dim)' }}
-          >
-            Replay disponibili
-          </h2>
-          <div className="space-y-2.5">
-            {replays.map(replay => (
-              <button
-                key={replay.id}
-                onClick={() => navigate(`/student/live/${replay.id}`)}
-                className="w-full text-left group"
-              >
-                <Card className="p-5 flex items-center gap-4 transition-all hover:-translate-y-0.5 cursor-pointer">
-                  <div
-                    className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: `${replay.accent}12`, border: `1px solid ${replay.accent}22` }}
-                  >
-                    <Radio size={17} strokeWidth={2} style={{ color: replay.accent }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm mb-0.5" style={{ color: 'var(--ist-text)' }}>
-                      {replay.title}
-                    </p>
-                    <p className="text-xs mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>
-                      {replay.host} · {liveDateLabel(replay)}
-                    </p>
-                    {liveDurationLabel(replay) && (
-                      <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>
-                        <span className="flex items-center gap-1">
-                          <Clock size={11} strokeWidth={2} /> {liveDurationLabel(replay)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <ChevronRight
-                    size={15}
-                    strokeWidth={2}
-                    className="flex-shrink-0 transition-transform group-hover:translate-x-0.5"
-                    style={{ color: 'var(--ist-text-dim)' }}
-                  />
-                </Card>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-      </>
-      )}
+        {replayGroups.map(g => (
+          <MediaRow key={g.title} eyebrow={replayGroups.length > 1 ? 'Replay' : undefined} title={g.title}>
+            {g.items.map(e => <ReplayCard key={e.id} event={e} onClick={() => open(e.id)} />)}
+          </MediaRow>
+        ))}
+      </div>
     </div>
+  )
+}
+
+// Replay (o live in corso): miniatura del video registrato, durata, titolo.
+function ReplayCard({ event: e, live, onClick }: { event: LiveEvent; live?: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="media-card group w-full text-left">
+      <MediaThumb
+        vimeoId={e.replayVimeoId}
+        accent={e.accent}
+        accentEnd={e.accentEnd}
+        icon={Radio}
+        duration={liveDurationLabel(e) || undefined}
+        topLeft={live ? (
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.1em] px-2 py-1 rounded-md text-white" style={{ background: '#E5484D' }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+            Live
+          </span>
+        ) : undefined}
+      />
+      <div className="mt-2 px-0.5">
+        <p className="text-[13px] lg:text-sm font-semibold leading-snug line-clamp-2" style={{ color: 'var(--ist-text)' }}>
+          {e.title}
+        </p>
+        <p className="text-[11px] mt-0.5 truncate" style={{ color: 'var(--ist-text-dim)' }}>
+          {[e.host, liveDateLabel(e)].filter(Boolean).join(' · ')}
+        </p>
+      </div>
+    </button>
+  )
+}
+
+// Live in programma: "locandina" generata dal colore, con la data in grande.
+function UpcomingCard({ event: e, onClick }: { event: LiveEvent; onClick: () => void }) {
+  const d = e.startsAt ? new Date(e.startsAt) : null
+  return (
+    <button onClick={onClick} className="media-card group w-full text-left">
+      <MediaThumb accent={e.accent} accentEnd={e.accentEnd} icon={CalendarDays} showPlay={false}>
+        <div className="absolute inset-0 p-3.5 lg:p-4 flex flex-col justify-between">
+          {d ? (
+            <div className="text-white leading-none">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] mb-1" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                {d.toLocaleDateString('it-IT', { weekday: 'long' })}
+              </p>
+              <p className="font-black tracking-tight" style={{ fontSize: '19cqw' }}>
+                {d.getDate()}
+                <span className="font-extrabold uppercase ml-1.5" style={{ fontSize: '0.42em' }}>
+                  {d.toLocaleDateString('it-IT', { month: 'short' }).replace('.', '')}
+                </span>
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm font-bold text-white">Da programmare</p>
+          )}
+          {d && (
+            <span
+              className="self-start text-[11px] font-bold px-2 py-1 rounded-md text-white tabular-nums"
+              style={{ background: 'rgba(0,0,0,0.5)' }}
+            >
+              ore {d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+              {relativeDay(e.startsAt) && ` · ${relativeDay(e.startsAt)}`}
+            </span>
+          )}
+        </div>
+      </MediaThumb>
+      <div className="mt-2 px-0.5">
+        <p className="text-[13px] lg:text-sm font-semibold leading-snug line-clamp-2" style={{ color: 'var(--ist-text)' }}>
+          {e.title}
+        </p>
+        <p className="text-[11px] mt-0.5 truncate" style={{ color: 'var(--ist-text-dim)' }}>
+          {hostLabel(e)}
+        </p>
+      </div>
+    </button>
   )
 }

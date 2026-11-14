@@ -294,3 +294,54 @@ html.is-android *::after {
   height: 100%;
   border: 0;
 }
+
+/* ===== Catalogo stile "streaming" (Videocorsi, Live & Replay) ===== */
+/* Righe orizzontali con snap, miniature 16:9, banner grande sempre scuro. */
+:root { --ist-media-accent: #7CBBD0; --ist-media-ring: rgba(255,255,255,0.85); }
+.light { --ist-media-ring: rgba(15,25,35,0.7); }
+
+.media-scroller {
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 1rem;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+@media (min-width: 1024px) {
+  .media-scroller { scroll-padding-inline: 2.5rem; }
+}
+
+.media-thumb { transition: box-shadow 200ms ease, transform 150ms ease; }
+.media-thumb-img { transition: opacity 400ms ease, transform 500ms cubic-bezier(0.22,1,0.36,1); }
+.media-thumb-play { opacity: 0; transition: opacity 200ms ease; }
+
+@media (hover: hover) {
+  .media-card:hover .media-thumb-img { transform: scale(1.05); }
+  .media-card:hover .media-thumb-play { opacity: 1; }
+  .media-card:hover .media-thumb { box-shadow: 0 0 0 2px var(--ist-media-ring), 0 14px 34px rgba(0,0,0,0.4); }
+  .media-row:hover .media-row-arrow { opacity: 1; }
+}
+.media-card:active .media-thumb { transform: scale(0.98); }
+.media-card:focus-visible { outline: none; }
+.media-card:focus-visible .media-thumb { box-shadow: 0 0 0 2px var(--ist-media-accent); }
+
+.media-row-arrow {
+  background: var(--ist-nav-bg);
+  color: var(--ist-text);
+  border: 1px solid var(--ist-border-strong);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  opacity: 0;
+  transition: opacity 200ms ease;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  z-index: 5;
+}
+
+/* Banner: sempre scuro. In tema scuro il bordo inferiore sfuma nel gradiente
+   della pagina (maschera), in tema chiaro resta un bordo netto. */
+.media-hero-bg { background: #05070d; }
+.media-hero {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent 100%);
+}
+.light .media-hero { -webkit-mask-image: none; mask-image: none; }
+.media-thumb-current { box-shadow: 0 0 0 2px var(--ist-media-accent); }

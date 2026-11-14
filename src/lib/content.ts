@@ -28,6 +28,7 @@ export interface Lesson {
   vimeoId: string | null    // raw Vimeo URL/id pasted by the admin (null if none)
   done: boolean             // per-student, from lesson_progress
   lastPositionSeconds: number
+  lastWatchedAt: string | null  // ISO, lesson_progress.updated_at ("Continua a guardare")
   attachments: Attachment[]
 }
 
@@ -138,7 +139,7 @@ function byPosition<T extends { position: number }>(a: T, b: T) {
 // (pass an empty Map for the admin view, where completion is irrelevant).
 function buildTree(
   rawCats: RawCategory[] | null,
-  progress: Map<string, { done: boolean; pos: number }>,
+  progress: Map<string, { done: boolean; pos: number; at: string | null }>,
 ): Category[] {
   return (rawCats ?? [])
     .slice()
@@ -178,6 +179,7 @@ function buildTree(
                 vimeoId: les.vimeo_id,
                 done: pr?.done ?? false,
                 lastPositionSeconds: pr?.pos ?? 0,
+                lastWatchedAt: pr?.at ?? null,
                 attachments: (les.attachments ?? [])
                   .slice()
                   .sort(byPosition)
@@ -216,14 +218,14 @@ export function useStudentCatalog(userId: string, section: ContentSection | 'all
       catQuery,
       userId
         ? supabase.from('lesson_progress')
-            .select('lesson_id, completed, last_position_seconds')
+            .select('lesson_id, completed, last_position_seconds, updated_at')
             .eq('user_id', userId)
-        : Promise.resolve({ data: [] as { lesson_id: string; completed: boolean; last_position_seconds: number }[] }),
+        : Promise.resolve({ data: [] as { lesson_id: string; completed: boolean; last_position_seconds: number; updated_at: string | null }[] }),
     ])
 
-    const progress = new Map<string, { done: boolean; pos: number }>()
+    const progress = new Map<string, { done: boolean; pos: number; at: string | null }>()
     for (const p of (progressRes.data ?? [])) {
-      progress.set(p.lesson_id, { done: !!p.completed, pos: p.last_position_seconds ?? 0 })
+      progress.set(p.lesson_id, { done: !!p.completed, pos: p.last_position_seconds ?? 0, at: p.updated_at ?? null })
     }
 
     setCategories(buildTree(rawCats as RawCategory[] | null, progress))
