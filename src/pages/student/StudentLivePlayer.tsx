@@ -1,15 +1,17 @@
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ChevronLeft, Send, Radio, Calendar, ExternalLink, Loader2 } from 'lucide-react'
-import { useAuth } from '../../context/AuthContext'
+import { ChevronLeft, CalendarDays, ExternalLink, Loader2, Radio } from 'lucide-react'
 import { useUI } from '../../context/UIContext'
-import VimeoPlayer from '../../components/ui/VimeoPlayer'
-import { useLiveEvent, liveDateLabel, LiveRole } from '../../lib/live'
+import CinemaPlayer from '../../components/player/CinemaPlayer'
+import MediaRow from '../../components/media/MediaRow'
+import ReplayCard from '../../components/media/ReplayCard'
+import { proceduralCover } from '../../components/media/MediaThumb'
+import { useLiveEvent, useLiveEvents, liveDateLabel, liveDurationLabel, LiveEvent, LiveRole } from '../../lib/live'
 import { liveEmbedSrc } from '../../lib/liveEmbed'
-import { useChatMessages, DbMessage } from '../../lib/chat'
-import { UserRole } from '../../types'
 
-// ─── constants ────────────────────────────────────────────────────────────────
+// Pagina di una live / replay in stile streaming: palco nero in alto (player
+// dei replay, live incorporata o invito a entrare su Zoom), poi titolo e
+// dettagli, poi "Altri replay". La chat non c'è più (richiesta esplicita).
 
 const ROLE_LABEL: Record<LiveRole, string> = {
   admin:        'Admin',
@@ -17,285 +19,44 @@ const ROLE_LABEL: Record<LiveRole, string> = {
   mental_coach: 'Mental Coach',
   student:      '',
 }
-const ROLE_BADGE: Record<LiveRole, { bg: string; text: string }> = {
-  admin:        { bg: 'rgba(90,154,177,0.22)',  text: '#7CBBD0' },
-  coach:        { bg: 'rgba(90,154,177,0.22)',  text: '#7CBBD0' },
-  mental_coach: { bg: 'rgba(160,120,255,0.20)', text: '#A078FF' },
-  student:      { bg: 'transparent',            text: 'transparent' },
+
+// "Oggi" / "Domani" / "Tra 3 giorni"
+function relativeDay(iso: string | null): string | null {
+  if (!iso) return null
+  const start = new Date(iso)
+  const today = new Date()
+  const a = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime()
+  const b = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  const days = Math.round((a - b) / 86_400_000)
+  if (days < 0) return null
+  if (days === 0) return 'Oggi'
+  if (days === 1) return 'Domani'
+  return `Tra ${days} giorni`
 }
-const AVATAR_GRAD: Record<LiveRole, string> = {
-  admin:        'linear-gradient(135deg,#5A9AB1,#286680)',
-  coach:        'linear-gradient(135deg,#5A9AB1,#286680)',
-  mental_coach: 'linear-gradient(135deg,#7c3aed,#a78bfa)',
-  student:      'linear-gradient(135deg,#374151,#6b7280)',
-}
-
-function formatTs(iso: string) {
-  return new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-}
-
-// ─── Chat bubble (messaggio reale) ─────────────────────────────────────────────
-
-function ChatBubble({ msg, own }: { msg: DbMessage; own: boolean }) {
-  const role = (msg.author_role ?? 'student') as LiveRole
-  const isStaff = role !== 'student'
-  const badge = ROLE_BADGE[role]
-
-  return (
-    <div className="px-4 py-2.5 flex gap-2.5 group transition-colors hover:bg-black/[0.03]">
-      <div
-        className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold text-white mt-px"
-        style={{ background: AVATAR_GRAD[role] }}
-      >
-        {msg.author_name.charAt(0)}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-          <span
-            className="text-[11px] font-semibold"
-            style={{ color: own ? 'var(--ist-accent-text)' : isStaff ? badge.text : 'var(--ist-text)' }}
-          >
-            {own ? 'Tu' : msg.author_name}
-          </span>
-          {isStaff && (
-            <span
-              className="text-[9px] font-bold px-1.5 py-px rounded-full"
-              style={{ background: badge.bg, color: badge.text }}
-            >
-              {ROLE_LABEL[role]}
-            </span>
-          )}
-          <span className="text-[9px] ml-auto flex-shrink-0" style={{ color: 'var(--ist-text-dim)' }}>
-            {formatTs(msg.created_at)}
-          </span>
-        </div>
-        <p className="text-[12px] leading-relaxed break-words" style={{ color: 'var(--ist-text-muted)' }}>
-          {msg.content}
-        </p>
-      </div>
-    </div>
-  )
-}
-
-// ─── Chat panel (reale, con scroll proprio) ────────────────────────────────────
-
-function LiveChatPanel({
-  messages, loading, userId, input, setInput, onSend, isLive,
-}: {
-  messages: DbMessage[]
-  loading: boolean
-  userId: string
-  input: string
-  setInput: (v: string) => void
-  onSend: () => void
-  isLive: boolean
-}) {
-  const chatRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight
-  }, [messages])
-
-  return (
-    <div className="flex flex-col h-full" style={{ minHeight: 360 }}>
-      {/* Header */}
-      <div
-        className="px-4 py-3 flex items-center gap-2.5 flex-shrink-0"
-        style={{
-          borderBottom: '1px solid var(--ist-border)',
-          background: 'var(--ist-nav-bg)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-        }}
-      >
-        {isLive
-          ? <span className="w-1.5 h-1.5 rounded-full bg-[#FF5050] animate-pulse flex-shrink-0" />
-          : <Radio size={12} strokeWidth={2} style={{ color: 'var(--ist-text-dim)', flexShrink: 0 }} />
-        }
-        <span className="text-sm font-semibold flex-1" style={{ color: 'var(--ist-text)' }}>
-          {isLive ? 'Chat live' : 'Chat'}
-        </span>
-        <span className="text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>
-          {messages.length} msg
-        </span>
-      </div>
-
-      {/* Messages */}
-      <div ref={chatRef} className="flex-1 overflow-y-auto no-scrollbar py-1.5" style={{ minHeight: 0 }}>
-        {loading ? (
-          <div className="flex justify-center py-10">
-            <Loader2 size={18} strokeWidth={2} className="animate-spin" style={{ color: 'var(--ist-text-dim)' }} />
-          </div>
-        ) : messages.length === 0 ? (
-          <p className="text-center text-[11px] py-10 px-4" style={{ color: 'var(--ist-text-dim)' }}>
-            Ancora nessun messaggio. Scrivi tu il primo!
-          </p>
-        ) : (
-          messages.map(msg => (
-            <ChatBubble key={msg.id} msg={msg} own={msg.user_id === userId} />
-          ))
-        )}
-      </div>
-
-      {/* Input */}
-      <div className="p-3 flex-shrink-0" style={{ borderTop: '1px solid var(--ist-border)' }}>
-        <div
-          className="flex items-end gap-2 px-3 py-2.5 rounded-2xl"
-          style={{ background: 'var(--ist-w8)', border: '1px solid var(--ist-border)' }}
-        >
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend() } }}
-            placeholder="Scrivi un messaggio..."
-            rows={1}
-            className="flex-1 bg-transparent outline-none resize-none text-sm leading-relaxed no-scrollbar"
-            style={{ color: 'var(--ist-text)', maxHeight: 80 }}
-          />
-          <button
-            onClick={onSend}
-            disabled={!input.trim()}
-            className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-45"
-            style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)' }}
-          >
-            <Send size={13} strokeWidth={2} color="white" />
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Stage (live/upcoming = Zoom · replay = Vimeo) ─────────────────────────────
-
-function LiveStage({ event }: { event: NonNullable<ReturnType<typeof useLiveEvent>['event']> }) {
-  if (event.status === 'replay') {
-    return <VimeoPlayer vimeoId={event.replayVimeoId} accent={event.accent} />
-  }
-
-  const isLive = event.status === 'live'
-
-  // Embed in-app: solo quando è davvero in diretta e il link è embeddabile.
-  const embedSrc = isLive ? liveEmbedSrc(event.liveEmbedUrl) : null
-  if (embedSrc) {
-    return (
-      <div className="space-y-2.5">
-        <div
-          data-inverted="true"
-          className="relative w-full rounded-2xl lg:rounded-3xl overflow-hidden"
-          style={{
-            aspectRatio: '16/9',
-            background: '#07090f',
-            border: '1px solid rgba(255,255,255,0.08)',
-            boxShadow: '0 24px 64px rgba(0,0,0,0.55)',
-          }}
-        >
-          <iframe
-            src={embedSrc}
-            title={event.title}
-            className="absolute inset-0 w-full h-full"
-            style={{ border: 0 }}
-            allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
-            allowFullScreen
-          />
-        </div>
-        {event.zoomUrl && (
-          <a
-            href={event.zoomUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-1.5 text-xs font-medium transition-opacity hover:opacity-70"
-            style={{ color: 'var(--ist-text-muted)' }}
-          >
-            <ExternalLink size={12} strokeWidth={2} />
-            Preferisci Zoom? Entra nella stanza
-          </a>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <div
-      data-inverted="true"
-      className="relative w-full rounded-2xl lg:rounded-3xl overflow-hidden flex flex-col items-center justify-center text-center gap-4 px-6"
-      style={{
-        aspectRatio: '16/9',
-        background: `radial-gradient(ellipse at 20% 30%, ${event.accent}28 0%, transparent 55%), #07090f`,
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 24px 64px rgba(0,0,0,0.55)',
-      }}
-    >
-      {isLive ? (
-        <span className="flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full"
-          style={{ background: 'rgba(255,80,80,0.90)', color: 'white' }}>
-          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-          LIVE ORA
-        </span>
-      ) : (
-        <span className="flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full"
-          style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)' }}>
-          <Calendar size={11} strokeWidth={2} />
-          {liveDateLabel(event)}
-        </span>
-      )}
-
-      <p className="text-sm max-w-sm" style={{ color: 'rgba(255,255,255,0.55)' }}>
-        {isLive
-          ? 'La sessione è in diretta su Zoom. Entra e partecipa anche dalla chat qui sotto.'
-          : 'La live non è ancora iniziata. Potrai entrare su Zoom quando sarà in diretta.'}
-      </p>
-
-      {event.zoomUrl ? (
-        <a
-          href={event.zoomUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 text-sm font-bold px-6 py-2.5 rounded-full transition-transform hover:scale-105"
-          style={{
-            background: `linear-gradient(135deg, ${event.accent}, ${event.accentEnd})`,
-            color: 'white',
-            boxShadow: `0 6px 22px ${event.accent}55`,
-          }}
-        >
-          <ExternalLink size={15} strokeWidth={2.5} />
-          Entra nella live (Zoom)
-        </a>
-      ) : (
-        <span className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
-          Link Zoom non ancora disponibile
-        </span>
-      )}
-    </div>
-  )
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function StudentLivePlayer() {
   const { liveId } = useParams<{ liveId: string }>()
   const navigate   = useNavigate()
-  const { user }   = useAuth()
   const { setHideBottomNav } = useUI()
-
   const { event, loading } = useLiveEvent(liveId)
-  const channelId = liveId ? `live_${liveId}` : null
-  const userId = user?.id ?? ''
-  const { messages, loading: chatLoading, sendMessage } = useChatMessages(channelId, userId)
-  const [input, setInput] = useState('')
-
-  const isLive = event?.status === 'live'
+  const { events: allEvents } = useLiveEvents()
 
   useEffect(() => {
     setHideBottomNav(true)
     return () => setHideBottomNav(false)
   }, [setHideBottomNav])
 
-  const onSend = () => {
-    const text = input.trim()
-    if (!text || !user) return
-    sendMessage(text, user.name, user.role as UserRole)
-    setInput('')
-  }
+  // Le live del mental coach vivono nella sua area: si torna lì e si propongono
+  // solo i suoi replay; tutte le altre tornano a Live & Replay.
+  const isMental  = event?.hostRole === 'mental_coach'
+  const backPath  = isMental ? '/student/mental-coach' : '/student/live'
+  const backLabel = isMental ? 'Mental Coach' : 'Live & Replay'
+
+  const otherReplays = useMemo(() => allEvents
+    .filter(e => e.status === 'replay' && e.eventType !== 'reminder' && e.id !== liveId)
+    .filter(e => (e.hostRole === 'mental_coach') === isMental)
+    .sort((a, b) => (b.startsAt ?? '').localeCompare(a.startsAt ?? ''))
+    .slice(0, 20), [allEvents, liveId, isMental])
 
   if (loading) {
     return (
@@ -316,72 +77,187 @@ export default function StudentLivePlayer() {
     )
   }
 
+  const isLive     = event.status === 'live'
+  const isUpcoming = event.status === 'upcoming'
+  const role       = ROLE_LABEL[event.hostRole] || ''
+  const date       = liveDateLabel(event)
+  const duration   = liveDurationLabel(event)
+
   return (
-    <div className="flex flex-col lg:flex-row" style={{ minHeight: '100vh' }}>
+    <div className="pb-16">
+      {/* ── Palco ── */}
+      <section data-inverted="true" className="bg-black lg:px-6 lg:py-5">
+        {event.status === 'replay' ? (
+          <CinemaPlayer
+            key={event.id}
+            vimeoId={event.replayVimeoId}
+            title={event.title}
+            subtitle={event.host}
+            backLabel={backLabel}
+            onBack={() => navigate(backPath)}
+          />
+        ) : (
+          <LiveStage event={event} onBack={() => navigate(backPath)} backLabel={backLabel} />
+        )}
+      </section>
 
-      {/* ── LEFT / STAGE + INFO ── */}
-      <div className="flex-1 min-w-0 p-4 lg:p-6 lg:pr-3 flex flex-col gap-5">
+      {/* ── Dettagli ── */}
+      <div className="px-4 lg:px-10 pt-5 lg:pt-8 max-w-[1100px]">
+        <div className="flex items-center gap-2 flex-wrap mb-2">
+          {isLive ? (
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] px-2.5 py-1 rounded-md text-white" style={{ background: '#E5484D' }}>
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> In diretta
+            </span>
+          ) : (
+            <span
+              className="inline-flex items-center text-[10px] font-bold uppercase tracking-[0.12em] px-2.5 py-1 rounded-md"
+              style={{ background: 'var(--ist-w8)', color: 'var(--ist-accent-text)' }}
+            >
+              {isUpcoming ? 'Prossima live' : 'Replay'}
+            </span>
+          )}
+          {isUpcoming && relativeDay(event.startsAt) && (
+            <span
+              className="inline-flex items-center text-[10px] font-bold uppercase tracking-[0.12em] px-2.5 py-1 rounded-md"
+              style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+            >
+              {relativeDay(event.startsAt)}
+            </span>
+          )}
+        </div>
 
-        {/* Back */}
-        <button
-          onClick={() => navigate('/student/live')}
-          className="flex items-center gap-1.5 text-sm font-medium w-fit transition-opacity hover:opacity-70"
-          style={{ color: 'var(--ist-text-muted)' }}
+        <h1
+          className="text-[26px] lg:text-[40px] font-extrabold tracking-tight leading-[1.08]"
+          style={{ color: 'var(--ist-text)', textWrap: 'balance' }}
         >
-          <ChevronLeft size={15} strokeWidth={2.5} />
-          Live & Replay
-        </button>
-
-        {/* Stage */}
-        <LiveStage event={event} />
-
-        {/* Info */}
-        <div>
-          <h1 className="text-lg font-bold leading-tight mb-1" style={{ color: 'var(--ist-text)' }}>
-            {event.title}
-          </h1>
-          <p className="text-sm mb-2" style={{ color: 'var(--ist-text-muted)' }}>
-            {event.host} · {ROLE_LABEL[event.hostRole] || event.hostRole}
-            {' · '}<span style={{ color: 'var(--ist-text-dim)' }}>{liveDateLabel(event)}</span>
-          </p>
-          <p className="text-sm leading-relaxed" style={{ color: 'var(--ist-text-muted)' }}>
+          {event.title}
+        </h1>
+        <div className="mt-2.5 flex items-center gap-x-2.5 gap-y-1 flex-wrap text-sm" style={{ color: 'var(--ist-text-muted)' }}>
+          <span>{role ? `${event.host} · ${role}` : event.host}</span>
+          {!isLive && date && <><span aria-hidden>·</span><span>{date}</span></>}
+          {duration && <><span aria-hidden>·</span><span>{duration}</span></>}
+        </div>
+        {event.description && (
+          <p className="mt-4 text-[15px] leading-relaxed max-w-3xl" style={{ color: 'var(--ist-text-muted)' }}>
             {event.description}
           </p>
-        </div>
+        )}
 
-        {/* Mobile chat */}
-        <div
-          className="lg:hidden rounded-3xl overflow-hidden"
-          style={{
-            background: 'var(--ist-card-bg)',
-            border: '1px solid var(--ist-border)',
-            boxShadow: 'var(--ist-card-shadow)',
-          }}
-        >
-          <LiveChatPanel
-            messages={messages} loading={chatLoading} userId={userId}
-            input={input} setInput={setInput} onSend={onSend} isLive={isLive}
-          />
-        </div>
+        {isUpcoming && (
+          <div className="mt-5">
+            <button
+              onClick={() => navigate('/student/calendario')}
+              className="inline-flex items-center gap-2 h-11 px-4 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
+              style={{ background: 'var(--ist-w8)', color: 'var(--ist-text)', border: '1px solid var(--ist-border)' }}
+            >
+              <CalendarDays size={16} strokeWidth={2.2} />
+              Vedi nel calendario
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* ── RIGHT / CHAT sidebar (desktop) ── */}
-      <div
-        className="hidden lg:flex flex-col w-[320px] xl:w-[360px] flex-shrink-0"
-        style={{
-          borderLeft: '1px solid var(--ist-border)',
-          height: '100vh',
-          position: 'sticky',
-          top: 0,
-          background: 'var(--ist-nav-bg)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-        }}
-      >
-        <LiveChatPanel
-          messages={messages} loading={chatLoading} userId={userId}
-          input={input} setInput={setInput} onSend={onSend} isLive={isLive}
+      {/* ── Altri replay ── */}
+      {otherReplays.length > 0 && (
+        <div className="mt-10">
+          <MediaRow title="Altri replay" actionLabel={isMental ? undefined : 'Vedi tutti'} onAction={isMental ? undefined : () => navigate('/student/live')}>
+            {otherReplays.map(e => (
+              <ReplayCard key={e.id} event={e} onClick={() => navigate(`/student/live/${e.id}`, { replace: true })} />
+            ))}
+          </MediaRow>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Palco per live in corso / in programma ───────────────────────────────────
+// In diretta con link incorporabile → la live dentro l'app; altrimenti una
+// "locandina" con stato e pulsante Zoom.
+function LiveStage({ event, onBack, backLabel }: { event: LiveEvent; onBack: () => void; backLabel: string }) {
+  const isLive   = event.status === 'live'
+  const embedSrc = isLive ? liveEmbedSrc(event.liveEmbedUrl) : null
+
+  const back = (
+    <button
+      onClick={onBack}
+      className="absolute z-20 top-2 left-2 lg:top-4 lg:left-5 inline-flex items-center gap-1 h-10 pl-1.5 pr-3 rounded-full text-sm font-semibold text-white transition-colors hover:bg-white/10"
+      style={{ background: 'rgba(0,0,0,0.35)' }}
+    >
+      <ChevronLeft size={24} strokeWidth={2.4} />
+      <span className="hidden sm:inline">{backLabel}</span>
+    </button>
+  )
+
+  if (embedSrc) {
+    return (
+      <div className="relative mx-auto w-full bg-black" style={{ aspectRatio: '16 / 9', maxWidth: 'calc(78vh * 16 / 9)' }}>
+        <iframe
+          src={embedSrc}
+          title={event.title}
+          className="absolute inset-0 w-full h-full"
+          style={{ border: 0 }}
+          allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+          allowFullScreen
         />
+        {back}
+      </div>
+    )
+  }
+
+  const d = event.startsAt ? new Date(event.startsAt) : null
+
+  return (
+    <div
+      className="relative mx-auto w-full overflow-hidden flex flex-col items-center justify-center text-center gap-3 px-6"
+      style={{
+        aspectRatio: '16 / 9',
+        maxWidth: 'calc(78vh * 16 / 9)',
+        backgroundColor: '#05070d',
+        backgroundImage: proceduralCover(event.accent, event.accentEnd),
+      }}
+    >
+      {back}
+      <div className="absolute inset-0" style={{ background: 'rgba(5,7,13,0.45)' }} />
+      <div className="relative flex flex-col items-center gap-3">
+        {isLive ? (
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em] px-3 py-1.5 rounded-md text-white" style={{ background: '#E5484D' }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> In diretta su Zoom
+          </span>
+        ) : d ? (
+          <div className="text-white leading-none">
+            <p className="text-xs lg:text-sm font-bold uppercase tracking-[0.18em]" style={{ color: 'rgba(255,255,255,0.75)' }}>
+              {d.toLocaleDateString('it-IT', { weekday: 'long' })} · ore {d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+            </p>
+            <p className="mt-2 text-6xl lg:text-8xl font-black tracking-tight">
+              {d.getDate()}
+              <span className="ml-2 text-3xl lg:text-5xl font-extrabold uppercase">
+                {d.toLocaleDateString('it-IT', { month: 'short' }).replace('.', '')}
+              </span>
+            </p>
+          </div>
+        ) : (
+          <Radio size={40} strokeWidth={1.8} className="text-white" />
+        )}
+
+        <p className="text-sm max-w-sm" style={{ color: 'rgba(255,255,255,0.7)' }}>
+          {isLive
+            ? 'La sessione è in corso: entra dal pulsante qui sotto.'
+            : 'La live non è ancora iniziata. Potrai entrare quando sarà in diretta.'}
+        </p>
+
+        {isLive && event.zoomUrl && (
+          <a
+            href={event.zoomUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 h-11 px-6 rounded-xl text-sm font-bold"
+            style={{ background: '#ffffff', color: '#05070d' }}
+          >
+            <ExternalLink size={16} strokeWidth={2.5} />
+            Entra su Zoom
+          </a>
+        )}
       </div>
     </div>
   )

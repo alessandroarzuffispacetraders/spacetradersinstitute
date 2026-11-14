@@ -345,3 +345,22 @@ html.is-android *::after {
 }
 .light .media-hero { -webkit-mask-image: none; mask-image: none; }
 .media-thumb-current { box-shadow: 0 0 0 2px var(--ist-media-accent); }
+
+/* ===== Player stile cinema (CinemaPlayer) ===== */
+.cinema-track { height: 4px; transition: height 150ms ease; }
+.cinema-bar:hover .cinema-track { height: 6px; }
+.cinema-knob { transform: translateY(-50%) scale(0); transition: transform 150ms ease; }
+.cinema-bar:hover .cinema-knob, .cinema-knob.is-active { transform: translateY(-50%) scale(1); }
+.cinema-volume-range { width: 0; opacity: 0; accent-color: var(--ist-media-accent); transition: width 200ms ease, opacity 200ms ease; }
+.cinema-volume:hover .cinema-volume-range, .cinema-volume-range:focus { width: 84px; opacity: 1; margin: 0 6px 0 2px; }
+@keyframes cinemaFlash { 0% { opacity: 0; transform: translateY(-50%) scale(0.85); } 20% { opacity: 1; transform: translateY(-50%) scale(1); } 100% { opacity: 0; transform: translateY(-50%) scale(1); } }
+.cinema-flash { animation: cinemaFlash 650ms ease forwards; }
+@keyframes cinemaCountdown { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.cinema-countdown { transform-origin: left center; animation: cinemaCountdown linear forwards; }
+/* Schermo intero sul nostro contenitore: riempie lo schermo, Vimeo fa il letterbox */
+.cinema:fullscreen { width: 100% !important; height: 100% !important; max-width: none !important; aspect-ratio: auto !important; }
+.cinema:-webkit-full-screen { width: 100% !important; height: 100% !important; max-width: none !important; aspect-ratio: auto !important; }
+/* Elemento "in riproduzione" dentro una riga */
+.media-current .media-thumb { box-shadow: 0 0 0 2px var(--ist-media-accent); }
+/* L'iframe Vimeo arriva in ritardo (dopo l'oEmbed): lo adattiamo via CSS. */
+.cinema iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }

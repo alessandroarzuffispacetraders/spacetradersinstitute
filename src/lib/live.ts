@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
 import { useIsPreview } from './previewMode'
+import { generateCover, isMissingCoverColumn } from './covers'
 
 // ─── Tipi (camelCase, stessa forma del vecchio mock liveData) ───────────────────
 
@@ -29,6 +30,10 @@ export interface LiveEvent {
   accentEnd: string
   position: number
   ownerId: string | null
+  // Copertina AI del replay (SVG senza testo) + parola chiave scritta dall'app.
+  coverUrl: string | null
+  coverKeyword: string | null
+  coverStatus: string | null     // null | 'pending' | 'ready' | 'error'
 }
 
 interface RawLive {
@@ -51,10 +56,32 @@ interface RawLive {
   accent_end: string
   position: number
   owner_id: string | null
+  cover_url?: string | null
+  cover_keyword?: string | null
+  cover_status?: string | null
 }
 
 const COLS =
   'id,title,description,host,host_role,status,event_type,is_external,audience,notify,starts_at,zoom_url,live_embed_url,replay_vimeo_id,duration_minutes,accent,accent_end,position,owner_id'
+const COLS_WITH_COVERS = `${COLS},cover_url,cover_keyword,cover_status`
+
+// Le colonne delle copertine AI arrivano con la migrazione phase_video_covers.sql:
+// finché non è applicata, la query che le chiede fallisce (42703) e ripieghiamo
+// sulle colonne di prima (ricordandolo per il resto della sessione).
+let liveCoversAvailable: boolean | null = null
+type QueryResult = { data: unknown; error: { code?: string; message?: string } | null }
+
+async function selectLive(build: (cols: string) => PromiseLike<QueryResult>): Promise<QueryResult> {
+  if (liveCoversAvailable !== false) {
+    const res = await build(COLS_WITH_COVERS)
+    if (!isMissingCoverColumn(res.error)) {
+      if (!res.error) liveCoversAvailable = true
+      return res
+    }
+    liveCoversAvailable = false
+  }
+  return build(COLS)
+}
 
 function toLive(r: RawLive): LiveEvent {
   return {
@@ -77,6 +104,9 @@ function toLive(r: RawLive): LiveEvent {
     accentEnd: r.accent_end,
     position: r.position,
     ownerId: r.owner_id,
+    coverUrl: r.cover_url ?? null,
+    coverKeyword: r.cover_keyword ?? null,
+    coverStatus: r.cover_status ?? null,
   }
 }
 
@@ -113,7 +143,7 @@ function previewIso(offsetDays: number, h: number, m: number): string {
 }
 function previewEvents(): LiveEvent[] {
   const mk = (id: string, title: string, host: string, hostRole: LiveRole, status: LiveStatus, startsAt: string | null, accent: string, accentEnd: string, durationMinutes: number | null, description = ''): LiveEvent =>
-    ({ id, title, description, host, hostRole, status, eventType: 'live', isExternal: false, audience: 'all', notify: true, startsAt, zoomUrl: null, liveEmbedUrl: null, replayVimeoId: null, durationMinutes, accent, accentEnd, position: 0, ownerId: null })
+    ({ id, title, description, host, hostRole, status, eventType: 'live', isExternal: false, audience: 'all', notify: true, startsAt, zoomUrl: null, liveEmbedUrl: null, replayVimeoId: null, durationMinutes, accent, accentEnd, position: 0, ownerId: null, coverUrl: null, coverKeyword: null, coverStatus: null })
   return [
     mk('pv-live', 'Sessione operativa in diretta', 'Coach Marco', 'coach', 'live', null, '#7CBBD0', '#286680', null, 'Analizziamo il mercato in tempo reale e rispondiamo alle domande in chat.'),
     mk('pv-up1', 'Live analisi di mercato', 'Coach Marco', 'coach', 'upcoming', previewIso(2, 18, 0), '#7CBBD0', '#286680', 60),
@@ -135,7 +165,7 @@ export function useLiveEvents() {
   const load = useCallback(async () => {
     if (preview) return
     setLoading(true)
-    const { data } = await supabase.from('live_events').select(COLS).order('position', { ascending: false })
+    const { data } = await selectLive(cols => supabase.from('live_events').select(cols).order('position', { ascending: false }))
     setEvents(((data as RawLive[] | null) ?? []).map(toLive))
     setLoading(false)
   }, [preview])
@@ -153,7 +183,7 @@ export function useLiveEvent(id: string | undefined) {
     let active = true
     if (!id) { setEvent(null); setLoading(false); return }
     setLoading(true)
-    supabase.from('live_events').select(COLS).eq('id', id).maybeSingle().then(({ data }) => {
+    selectLive(cols => supabase.from('live_events').select(cols).eq('id', id).maybeSingle()).then(({ data }) => {
       if (!active) return
       setEvent(data ? toLive(data as RawLive) : null)
       setLoading(false)
@@ -222,32 +252,47 @@ export function useLiveAdmin(opts?: { ownerId?: string; onlyOwn?: boolean }) {
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
-    let query = supabase.from('live_events').select(COLS).order('position', { ascending: false })
-    if (onlyOwn && ownerId) query = query.eq('owner_id', ownerId)
-    const { data } = await query
+    const { data } = await selectLive(cols => {
+      let query = supabase.from('live_events').select(cols).order('position', { ascending: false })
+      if (onlyOwn && ownerId) query = query.eq('owner_id', ownerId)
+      return query
+    })
     setEvents(((data as RawLive[] | null) ?? []).map(toLive))
     if (!silent) setLoading(false)
   }, [onlyOwn, ownerId])
 
   useEffect(() => { load() }, [load])
 
+  // Copertina AI automatica quando una live diventa (o nasce) replay e non ne ha
+  // ancora una: in background, a fine generazione ricarichiamo la lista.
+  const autoCover = useCallback((id: string) => {
+    if (liveCoversAvailable === false) return
+    generateCover('live', id).finally(() => { void load(true) })
+  }, [load])
+  const needsCover = (id: string) => !events.find(e => e.id === id)?.coverUrl
+
   const createLive = useCallback(async (input: LiveInput): Promise<boolean> => {
     // Nuova live IN CIMA: l'ordine di visualizzazione è per position DESC, quindi
     // le diamo (max position esistente) + 1. Il +1 sul massimo (non events.length)
     // evita collisioni quando ci sono buchi lasciati da cancellazioni.
     const nextPos = events.reduce((m, e) => Math.max(m, e.position), -1) + 1
-    const { error } = await supabase.from('live_events').insert({
+    const { data, error } = await supabase.from('live_events').insert({
       ...toRow(input), position: nextPos, owner_id: ownerId ?? null,
-    })
+    }).select('id').single()
     if (!error) await load(true)
+    const newId = (data as { id?: string } | null)?.id
+    if (!error && newId && input.eventType === 'live' && input.status === 'replay') autoCover(newId)
     return !error
-  }, [events, load, ownerId])
+  }, [events, load, ownerId, autoCover])
 
   const updateLive = useCallback(async (id: string, input: LiveInput): Promise<boolean> => {
+    const missing = needsCover(id)
     const { error } = await supabase.from('live_events').update(toRow(input)).eq('id', id)
     if (!error) await load(true)
+    if (!error && missing && input.eventType === 'live' && input.status === 'replay') autoCover(id)
     return !error
-  }, [load])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, autoCover, events])
 
   const deleteLive = useCallback(async (id: string): Promise<boolean> => {
     const { error } = await supabase.from('live_events').delete().eq('id', id)
@@ -257,17 +302,23 @@ export function useLiveAdmin(opts?: { ownerId?: string; onlyOwn?: boolean }) {
 
   // Azioni ciclo di vita
   const setLiveStatus = useCallback(async (id: string, status: LiveStatus): Promise<boolean> => {
+    const missing = needsCover(id)
     const { error } = await supabase.from('live_events').update({ status }).eq('id', id)
     if (!error) await load(true)
+    if (!error && missing && status === 'replay') autoCover(id)
     return !error
-  }, [load])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, autoCover, events])
 
   const setReplay = useCallback(async (id: string, vimeoId: string): Promise<boolean> => {
+    const missing = needsCover(id)
     const { error } = await supabase.from('live_events')
       .update({ replay_vimeo_id: vimeoId.trim() || null, status: 'replay' }).eq('id', id)
     if (!error) await load(true)
+    if (!error && missing) autoCover(id)
     return !error
-  }, [load])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, autoCover, events])
 
   // Riordino su/giù: `events` è già in ordine di visualizzazione (position DESC).
   // "Su" = verso la cima; scambiamo la position con la live adiacente. Lo scambio

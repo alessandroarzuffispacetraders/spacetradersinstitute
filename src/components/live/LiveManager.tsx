@@ -1,10 +1,20 @@
 import { useState, useEffect, useRef } from 'react'
-import { Radio, Edit2, Trash2, X, Plus, Loader2, Play, Square, Save, ChevronUp, ChevronDown, Video, Bell, ExternalLink } from 'lucide-react'
+import { Radio, Edit2, Trash2, X, Plus, Loader2, Play, Square, Save, ChevronUp, ChevronDown, Video, Bell, ExternalLink, WandSparkles } from 'lucide-react'
 import {
   useLiveAdmin, LiveEvent, LiveInput, LiveStatus, LiveRole, LiveAudience,
   liveDateLabel, liveDurationLabel,
 } from '../../lib/live'
 import { parseVimeo, fetchVimeoDuration } from '../../lib/vimeo'
+import CoverEditorModal, { CoverChip, CoverSubject } from '../admin/CoverEditorModal'
+
+// Copertina AI del replay (stessa finestra delle lezioni).
+function liveCoverSubject(e: LiveEvent): CoverSubject {
+  return {
+    kind: 'live', id: e.id, title: e.title,
+    coverUrl: e.coverUrl, keyword: e.coverKeyword, status: e.coverStatus,
+    accent: e.accent, accentEnd: e.accentEnd, icon: Radio, kicker: 'Replay',
+  }
+}
 
 // Chiave del video (id+hash) per non ri-rilevare la durata sullo stesso replay.
 const vimeoKeyOf = (v: string) => { const r = parseVimeo(v); return r ? `${r.id}:${r.hash ?? ''}` : '' }
@@ -351,6 +361,8 @@ export default function LiveManager({ api, defaultHost }: {
   const [modal, setModal] = useState<{ open: boolean; editing?: LiveEvent }>({ open: false })
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [replayDraft, setReplayDraft] = useState<Record<string, string>>({})
+  const [coverId, setCoverId] = useState<string | null>(null)
+  const coverEvent = coverId ? api.events.find(e => e.id === coverId) ?? null : null
 
   if (api.loading) {
     return <div className="flex items-center justify-center py-24"><Loader2 size={24} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} /></div>
@@ -420,6 +432,9 @@ export default function LiveManager({ api, defaultHost }: {
                     {!isRem && event.status === 'live' && (
                       <ActionBtn icon={<Square size={11} strokeWidth={2} />} label="Termina" danger onClick={() => api.setLiveStatus(event.id, 'replay')} />
                     )}
+                    {!isRem && event.status === 'replay' && (
+                      <ActionBtn icon={<WandSparkles size={11} strokeWidth={2} />} label="Copertina" onClick={() => setCoverId(event.id)} />
+                    )}
                     <ActionBtn icon={<Edit2 size={11} strokeWidth={2} />} label="Modifica" onClick={() => setModal({ open: true, editing: event })} />
                     <ActionBtn icon={<Trash2 size={11} strokeWidth={2} />} label="Elimina" danger onClick={() => setDeleteConfirm(event.id)} />
                   </>
@@ -428,8 +443,9 @@ export default function LiveManager({ api, defaultHost }: {
             </div>
 
             {/* Replay: salva il link della registrazione */}
-            {event.status === 'replay' && (
+            {event.status === 'replay' && !isRem && (
               <div className="mt-3 pt-3 flex items-center gap-2" style={{ borderTop: '1px solid var(--ist-w7)' }}>
+                <CoverChip subject={liveCoverSubject(event)} onClick={() => setCoverId(event.id)} width={72} />
                 {event.replayVimeoId ? (
                   <p className="text-xs flex-1 truncate flex items-center gap-1.5" style={{ color: '#46D39A' }}>
                     ✓ Replay salvato: <span style={{ color: 'var(--ist-text-muted)' }}>{event.replayVimeoId}</span>
@@ -458,6 +474,14 @@ export default function LiveManager({ api, defaultHost }: {
           </div>
         )
       })}
+
+      {coverEvent && (
+        <CoverEditorModal
+          subject={liveCoverSubject(coverEvent)}
+          onClose={() => setCoverId(null)}
+          onChanged={() => { void api.reload() }}
+        />
+      )}
 
       {modal.open && (
         <LiveModal

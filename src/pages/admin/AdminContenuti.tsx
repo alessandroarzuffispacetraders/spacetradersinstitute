@@ -3,7 +3,7 @@ import PageHeader from '../../components/ui/PageHeader'
 import {
   ChevronDown, Plus, Edit2, Trash2,
   Paperclip, Video, FolderOpen, BookOpen, Radio, Clock,
-  ChevronUp, Eye, EyeOff, Loader2, X, Upload, Sparkles, ImagePlus,
+  ChevronUp, Eye, EyeOff, Loader2, X, Upload, Sparkles, ImagePlus, WandSparkles,
 } from 'lucide-react'
 import {
   useContentAdmin, Category, Course, Lesson,
@@ -13,6 +13,9 @@ import { parseVimeo, fetchVimeoDuration } from '../../lib/vimeo'
 import { uploadAttachment, deleteAttachment, uploadCategoryCover, deleteCategoryCover } from '../../lib/storage'
 import { useLiveAdmin } from '../../lib/live'
 import LiveManager from '../../components/live/LiveManager'
+import CoverEditorModal, { CoverChip, CoverSubject } from '../../components/admin/CoverEditorModal'
+import { phaseIcon } from '../../components/media/phase'
+import { listMissingCovers, generateMissingCovers } from '../../lib/covers'
 import { useAuth } from '../../context/AuthContext'
 
 type Tab = 'corsi' | 'live'
@@ -177,6 +180,26 @@ function MoveBtns({ onUp, onDown, isFirst, isLast }: {
       </button>
     </div>
   )
+}
+
+function lessonCoverSubject(lesson: Lesson, category: Category, number: number): CoverSubject {
+  return {
+    kind: 'lesson', id: lesson.id, title: lesson.title,
+    coverUrl: lesson.coverUrl, keyword: lesson.coverKeyword, status: lesson.coverStatus,
+    accent: category.accent, icon: phaseIcon(category.phase),
+    kicker: `Lezione ${String(number).padStart(2, '0')}`,
+  }
+}
+
+// Lezione + categoria + numero nel corso (per la finestra della copertina).
+function findLessonContext(cats: Category[], id: string): { lesson: Lesson; category: Category; number: number } | null {
+  for (const c of cats) {
+    for (const cr of c.courses) {
+      const i = cr.lessons.findIndex(x => x.id === id)
+      if (i >= 0) return { lesson: cr.lessons[i], category: c, number: i + 1 }
+    }
+  }
+  return null
 }
 
 function findAdminLesson(cats: Category[], id: string): Lesson | null {
@@ -432,8 +455,9 @@ function EditorModal({ state, admin, onClose }: {
 
 // ─── Lesson row ───────────────────────────────────────────────────────────────
 
-function LessonRow({ lesson, courseId, isLast, isFirst, admin, onEdit }: {
-  lesson: Lesson; courseId: string; isLast: boolean; isFirst: boolean; admin: AdminApi; onEdit: () => void
+function LessonRow({ lesson, courseId, category, number, isLast, isFirst, admin, onEdit, onCover }: {
+  lesson: Lesson; courseId: string; category: Category; number: number
+  isLast: boolean; isFirst: boolean; admin: AdminApi; onEdit: () => void; onCover: () => void
 }) {
   return (
     <div
@@ -454,6 +478,7 @@ function LessonRow({ lesson, courseId, isLast, isFirst, admin, onEdit }: {
       >
         <Video size={9} strokeWidth={2} />
       </div>
+      <CoverChip subject={lessonCoverSubject(lesson, category, number)} onClick={onCover} width={56} />
       <span className="flex-1 text-[11px] font-medium truncate" style={{ color: 'var(--ist-text-muted)' }}>
         {lesson.title}
       </span>
@@ -470,6 +495,7 @@ function LessonRow({ lesson, courseId, isLast, isFirst, admin, onEdit }: {
         </span>
       </div>
       <div className="flex items-center gap-0.5 flex-shrink-0">
+        <ActionBtn icon={<WandSparkles size={10} strokeWidth={2} />} label="Copertina" onClick={onCover} />
         <ActionBtn icon={<Edit2 size={10} strokeWidth={2} />} label="Modifica" onClick={onEdit} />
         <ActionBtn
           icon={<Trash2 size={10} strokeWidth={2} />} label="Elimina" danger
@@ -482,7 +508,9 @@ function LessonRow({ lesson, courseId, isLast, isFirst, admin, onEdit }: {
 
 // ─── Courses Tab ─────────────────────────────────────────────────────────────
 
-function CoursesTab({ admin, openModal }: { admin: AdminApi; openModal: (s: ModalState) => void }) {
+function CoursesTab({ admin, openModal, openCover }: {
+  admin: AdminApi; openModal: (s: ModalState) => void; openCover: (lessonId: string) => void
+}) {
   const cats = admin.categories
   const [expanded, setExpanded] = useState<ExpandState>({ categories: new Set(), courses: new Set() })
 
@@ -605,10 +633,13 @@ function CoursesTab({ admin, openModal }: { admin: AdminApi; openModal: (s: Moda
                               key={lesson.id}
                               lesson={lesson}
                               courseId={course.id}
+                              category={cat}
+                              number={i + 1}
                               isFirst={i === 0}
                               isLast={i === course.lessons.length - 1}
                               admin={admin}
                               onEdit={() => openModal({ kind: 'lesson', mode: 'edit', id: lesson.id, entity: lesson })}
+                              onCover={() => openCover(lesson.id)}
                             />
                           ))}
                           <button
@@ -652,6 +683,74 @@ function CoursesTab({ admin, openModal }: { admin: AdminApi; openModal: (s: Moda
 }
 
 
+// ─── Copertine AI mancanti (lezioni + replay) ───────────────────────────────
+
+function MissingCoversBar({ onProgressReload }: { onProgressReload: () => void }) {
+  const [state, setState] = useState<
+    | { phase: 'idle' }
+    | { phase: 'checking' }
+    | { phase: 'running'; done: number; total: number; failed: number }
+    | { phase: 'finished'; total: number; failed: number }
+    | { phase: 'message'; text: string; error?: boolean }
+  >({ phase: 'idle' })
+
+  const run = async () => {
+    setState({ phase: 'checking' })
+    const { items, error } = await listMissingCovers()
+    if (error) { setState({ phase: 'message', text: error, error: true }); return }
+    if (items.length === 0) { setState({ phase: 'message', text: 'Tutte le lezioni e i replay hanno già la copertina.' }); return }
+    if (!confirm(`Generare ${items.length} copertine (lezioni e replay)? Ci vorrà qualche minuto: tieni aperta questa pagina finché non finisce.`)) {
+      setState({ phase: 'idle' }); return
+    }
+    const res = await generateMissingCovers(items, (done, total, failed) => {
+      setState({ phase: 'running', done, total, failed })
+      if (done > 0 && done % 4 === 0) onProgressReload()
+    })
+    onProgressReload()
+    setState({ phase: 'finished', total: items.length, failed: res.failed })
+  }
+
+  const busy = state.phase === 'checking' || state.phase === 'running'
+  const pct = state.phase === 'running' && state.total ? Math.round((state.done / state.total) * 100) : 0
+
+  return (
+    <div className="flex items-center gap-3 px-5 py-3 rounded-2xl mb-6 flex-wrap" style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)' }}>
+      <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(90,154,177,0.14)', color: 'var(--ist-accent-text)' }}>
+        <WandSparkles size={15} strokeWidth={2} />
+      </div>
+      <div className="flex-1 min-w-[180px]">
+        <p className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>Copertine AI</p>
+        {state.phase === 'running' ? (
+          <div className="mt-1">
+            <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: 'var(--ist-text-muted)' }}>
+              <span>{state.done}/{state.total} create{state.failed > 0 ? ` · ${state.failed} non riuscite` : ''} — tieni aperta questa pagina</span>
+              <span>{pct}%</span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--ist-w10)' }}>
+              <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #7CBBD0, #286680)' }} />
+            </div>
+          </div>
+        ) : (
+          <p className="text-[11px]" style={{ color: state.phase === 'message' && state.error ? '#FF6B7A' : 'var(--ist-text-muted)' }}>
+            {state.phase === 'message' ? state.text
+              : state.phase === 'finished' ? `Fatto: ${state.total - state.failed} copertine create${state.failed ? `, ${state.failed} non riuscite (riprova dalla singola lezione)` : ''}.`
+              : 'Le nuove lezioni la ricevono da sole. Qui crei quelle che mancano a lezioni e replay già esistenti.'}
+          </p>
+        )}
+      </div>
+      <button
+        onClick={run}
+        disabled={busy}
+        className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0 flex-shrink-0"
+        style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)', border: '1px solid rgba(255,255,255,0.12)' }}
+      >
+        {busy ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} strokeWidth={2.2} />}
+        {state.phase === 'checking' ? 'Controllo…' : state.phase === 'running' ? 'In corso…' : 'Genera quelle mancanti'}
+      </button>
+    </div>
+  )
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function AdminContenuti() {
@@ -661,6 +760,8 @@ export default function AdminContenuti() {
   const liveAdmin = useLiveAdmin({ ownerId: user?.id })
   const [tab, setTab] = useState<Tab>('corsi')
   const [modal, setModal] = useState<ModalState | null>(null)
+  const [coverLessonId, setCoverLessonId] = useState<string | null>(null)
+  const coverCtx = coverLessonId ? findLessonContext(admin.categories, coverLessonId) : null
 
   const totalCats    = admin.categories.length
   const totalCourses = admin.categories.reduce((s, c) => s + c.courses.length, 0)
@@ -707,6 +808,8 @@ export default function AdminContenuti() {
         ))}
       </div>
 
+      <MissingCoversBar onProgressReload={() => { void admin.reload(); void liveAdmin.reload() }} />
+
       {/* Tabs */}
       <div className="flex gap-1 mb-5 p-1 rounded-2xl w-fit" style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-border)' }}>
         {tabs.map(t => (
@@ -751,9 +854,17 @@ export default function AdminContenuti() {
       {tab === 'corsi' && (
         admin.loading
           ? <div className="flex items-center justify-center py-24"><Loader2 size={24} className="animate-spin" style={{ color: 'var(--ist-accent-text)' }} /></div>
-          : <CoursesTab admin={admin} openModal={setModal} />
+          : <CoursesTab admin={admin} openModal={setModal} openCover={setCoverLessonId} />
       )}
       {tab === 'live' && <LiveManager api={liveAdmin} defaultHost={user?.name} />}
+
+      {coverCtx && (
+        <CoverEditorModal
+          subject={lessonCoverSubject(coverCtx.lesson, coverCtx.category, coverCtx.number)}
+          onClose={() => setCoverLessonId(null)}
+          onChanged={() => { void admin.reload() }}
+        />
+      )}
 
       {modal && <EditorModal key={`${modal.kind}-${modal.mode}-${'id' in modal ? modal.id : 'parentId' in modal ? modal.parentId : 'new'}`} state={modal} admin={admin} onClose={() => setModal(null)} />}
     </div>

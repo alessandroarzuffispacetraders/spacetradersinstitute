@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabase'
 import { useIsPreview } from './previewMode'
+import { generateCover, isMissingCoverColumn } from './covers'
 
 // Sezione del catalogo: 'trading' (videocorsi principali) o 'mental' (Area Mental
 // Coach). Riusa la stessa struttura categorie→corsi→lezioni; è solo un filtro.
@@ -29,6 +30,11 @@ export interface Lesson {
   done: boolean             // per-student, from lesson_progress
   lastPositionSeconds: number
   lastWatchedAt: string | null  // ISO, lesson_progress.updated_at ("Continua a guardare")
+  // Copertina generata dall'AI (SVG senza testo) + parola chiave scritta dall'app.
+  // null finché non è generata o se la migrazione delle copertine non c'è ancora.
+  coverUrl: string | null
+  coverKeyword: string | null
+  coverStatus: string | null    // null | 'pending' | 'ready' | 'error'
   attachments: Attachment[]
 }
 
@@ -110,6 +116,7 @@ interface RawLesson {
   id: string; course_id: string; title: string; description: string
   duration_seconds: number; vimeo_id: string | null; published: boolean
   position: number; attachments: RawAttachment[] | null
+  cover_url?: string | null; cover_keyword?: string | null; cover_status?: string | null
 }
 interface RawCourse {
   id: string; category_id: string; title: string; description: string
@@ -120,16 +127,40 @@ interface RawCategory {
   phase: string; published: boolean; is_free: boolean; cover_url: string | null; position: number; section: string; courses: RawCourse[] | null
 }
 
-const SELECT = `
+function selectFor(lessonCovers: boolean): string {
+  return `
   id, title, description, accent, phase, published, is_free, cover_url, position, section,
   courses (
     id, category_id, title, description, phase, published, position,
     lessons (
-      id, course_id, title, description, duration_seconds, vimeo_id, published, position,
+      id, course_id, title, description, duration_seconds, vimeo_id, published, position,${lessonCovers ? '\n      cover_url, cover_keyword, cover_status,' : ''}
       attachments ( id, lesson_id, name, type, size_bytes, object_key, position )
     )
   )
 `
+}
+
+// Le colonne delle copertine AI arrivano con la migrazione phase_video_covers.sql:
+// finché non è applicata la query che le chiede fallisce (42703) e ripieghiamo
+// sulla lista di colonne di prima, ricordandolo per il resto della sessione.
+let lessonCoversAvailable: boolean | null = null
+
+async function fetchCategories(section: ContentSection | 'all') {
+  const run = (lessonCovers: boolean) => {
+    let q = supabase.from('categories').select(selectFor(lessonCovers))
+    if (section !== 'all') q = q.eq('section', section)
+    return q
+  }
+  if (lessonCoversAvailable !== false) {
+    const res = await run(true)
+    if (!isMissingCoverColumn(res.error)) {
+      if (!res.error) lessonCoversAvailable = true
+      return res
+    }
+    lessonCoversAvailable = false
+  }
+  return run(false)
+}
 
 function byPosition<T extends { position: number }>(a: T, b: T) {
   return a.position - b.position
@@ -180,6 +211,9 @@ function buildTree(
                 done: pr?.done ?? false,
                 lastPositionSeconds: pr?.pos ?? 0,
                 lastWatchedAt: pr?.at ?? null,
+                coverUrl: les.cover_url ?? null,
+                coverKeyword: les.cover_keyword ?? null,
+                coverStatus: les.cover_status ?? null,
                 attachments: (les.attachments ?? [])
                   .slice()
                   .sort(byPosition)
@@ -212,10 +246,8 @@ export function useStudentCatalog(userId: string, section: ContentSection | 'all
     if (preview) { setCategories([]); setLoading(false); return }
     setLoading(true)
 
-    let catQuery = supabase.from('categories').select(SELECT)
-    if (section !== 'all') catQuery = catQuery.eq('section', section)
     const [{ data: rawCats }, progressRes] = await Promise.all([
-      catQuery,
+      fetchCategories(section),
       userId
         ? supabase.from('lesson_progress')
             .select('lesson_id, completed, last_position_seconds, updated_at')
@@ -228,7 +260,7 @@ export function useStudentCatalog(userId: string, section: ContentSection | 'all
       progress.set(p.lesson_id, { done: !!p.completed, pos: p.last_position_seconds ?? 0, at: p.updated_at ?? null })
     }
 
-    setCategories(buildTree(rawCats as RawCategory[] | null, progress))
+    setCategories(buildTree(rawCats as unknown as RawCategory[] | null, progress))
     setLoading(false)
   }, [userId, section, preview])
 
@@ -302,8 +334,8 @@ export function useContentAdmin(section: ContentSection = 'trading') {
   // silent=true skips the full-page spinner (used after mutations).
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
-    const { data } = await supabase.from('categories').select(SELECT).eq('section', section)
-    setCategories(buildTree(data as RawCategory[] | null, new Map()))
+    const { data } = await fetchCategories(section)
+    setCategories(buildTree(data as unknown as RawCategory[] | null, new Map()))
     if (!silent) setLoading(false)
   }, [section])
 
@@ -367,13 +399,19 @@ export function useContentAdmin(section: ContentSection = 'trading') {
       const crs = c.courses.find(x => x.id === courseId)
       if (crs) { count = crs.lessons.length; break }
     }
-    const { error } = await supabase.from('lessons').insert({
+    const { data, error } = await supabase.from('lessons').insert({
       course_id: courseId, title: input.title.trim(), description: input.description.trim(),
       duration_seconds: Math.max(0, Math.round(input.durationMinutes * 60)),
       vimeo_id: input.vimeoId?.trim() || null,
       position: count, published: true,
-    })
+    }).select('id').single()
     if (!error) await load(true)
+    // Copertina AI automatica per la nuova lezione: in background, senza
+    // bloccare il salvataggio; a fine generazione ricarichiamo l'albero.
+    const newId = (data as { id?: string } | null)?.id
+    if (!error && newId && lessonCoversAvailable !== false) {
+      generateCover('lesson', newId).finally(() => { void load(true) })
+    }
     return !error
   }, [categories, load])
 

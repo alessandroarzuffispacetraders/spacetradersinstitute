@@ -9,6 +9,8 @@ interface MediaRowProps {
   // Larghezza di ogni elemento: su mobile si vede uno spicchio del successivo
   // (invita a scorrere), su desktop una larghezza fissa.
   itemClassName?: string
+  // Elemento da mostrare per primo all'apertura (es. l'episodio in riproduzione).
+  initialIndex?: number
   children: ReactNode
 }
 
@@ -17,6 +19,7 @@ interface MediaRowProps {
 export default function MediaRow({
   title, eyebrow, actionLabel, onAction,
   itemClassName = 'w-[70vw] sm:w-[42vw] md:w-[30vw] lg:w-[280px] xl:w-[300px]',
+  initialIndex,
   children,
 }: MediaRowProps) {
   const scroller = useRef<HTMLDivElement>(null)
@@ -31,6 +34,18 @@ export default function MediaRow({
   }, [])
 
   const count = Children.count(children)
+
+  // Porta in vista l'elemento iniziale (senza animazione, solo all'apertura).
+  useEffect(() => {
+    const el = scroller.current
+    if (!el || !initialIndex || initialIndex <= 0) return
+    const item = el.children[initialIndex] as HTMLElement | undefined
+    if (!item) return
+    const pad = parseFloat(getComputedStyle(el).paddingLeft) || 0
+    el.scrollLeft = Math.max(0, item.offsetLeft - pad)
+    update()
+  }, [initialIndex, update])
+
   useEffect(() => {
     update()
     const el = scroller.current
@@ -47,21 +62,21 @@ export default function MediaRow({
 
   return (
     <section className="media-row relative mb-7 lg:mb-10">
-      <div className="flex items-end justify-between gap-3 px-4 lg:px-10 mb-2.5">
+      <div className="flex items-end justify-between gap-3 px-4 lg:px-10 mb-3 lg:mb-4">
         <div className="min-w-0">
           {eyebrow && (
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] mb-0.5 truncate" style={{ color: 'var(--ist-accent-text)' }}>
+            <p className="text-[10px] lg:text-[11px] font-bold uppercase tracking-[0.14em] mb-1 truncate" style={{ color: 'var(--ist-accent-text)' }}>
               {eyebrow}
             </p>
           )}
-          <h2 className="text-base lg:text-xl font-bold leading-tight truncate" style={{ color: 'var(--ist-text)' }}>
+          <h2 className="text-[22px] lg:text-[28px] font-extrabold tracking-tight leading-tight truncate" style={{ color: 'var(--ist-text)' }}>
             {title}
           </h2>
         </div>
         {actionLabel && onAction && (
           <button
             onClick={onAction}
-            className="flex items-center gap-0.5 text-xs font-semibold flex-shrink-0 transition-opacity hover:opacity-70"
+            className="flex items-center gap-0.5 text-xs lg:text-sm font-semibold flex-shrink-0 mb-0.5 lg:mb-1 transition-opacity hover:opacity-70"
             style={{ color: 'var(--ist-text-muted)' }}
           >
             {actionLabel}

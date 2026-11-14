@@ -1,15 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ChevronLeft, CheckCircle2, Play, Paperclip, Download,
-  FileText, Sheet, Presentation, Archive, File, ChevronRight, Loader2,
+  CheckCircle2, Check, Play, Paperclip, Download, RotateCcw,
+  FileText, Sheet, Presentation, Archive, File, Loader2, Plus,
 } from 'lucide-react'
-import { useStudentCatalog, Attachment, Category, Course, Lesson } from '../../lib/content'
+import { useStudentCatalog, Attachment, Category, Lesson } from '../../lib/content'
 import MediaThumb from '../../components/media/MediaThumb'
-import { phaseIcon } from '../../components/media/phase'
-import { watchedFraction } from '../../lib/catalogView'
+import MediaRow from '../../components/media/MediaRow'
+import LessonCard from '../../components/media/LessonCard'
+import { lessonThumbProps } from '../../components/media/thumbProps'
 import { attachmentUrl } from '../../lib/storage'
-import VimeoPlayer from '../../components/ui/VimeoPlayer'
+import CinemaPlayer from '../../components/player/CinemaPlayer'
 import UpgradeWall from '../../components/auth/UpgradeWall'
 import { isFreeUser } from '../../lib/freeTier'
 import { useUI } from '../../context/UIContext'
@@ -77,125 +78,120 @@ function AttachmentCard({ att }: { att: Attachment }) {
   )
 }
 
-// ─── Playlist Panel ──────────────────────────────────────────────────────────
+// ─── Fine video: prossima lezione con conto alla rovescia ─────────────────────
 
-function PlaylistPanel({
-  course,
-  category,
-  currentId,
-  onSelect,
-}: {
-  course: Course
-  category: Category
-  currentId: string
-  onSelect: (id: string) => void
-}) {
-  return (
-    <div className="py-1">
-      {course.lessons.map((l, i) => {
-        const isCurrent = l.id === currentId
-        return (
-          <button
-            key={l.id}
-            onClick={() => onSelect(l.id)}
-            className="media-card group w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.03]"
-            style={{ background: isCurrent ? 'var(--ist-w8)' : 'transparent' }}
-          >
-            <span
-              className="w-5 flex justify-center text-xs font-bold tabular-nums flex-shrink-0"
-              style={{ color: isCurrent ? 'var(--ist-text)' : 'var(--ist-text-dim)' }}
-            >
-              {isCurrent ? <Play size={12} strokeWidth={2.5} fill="currentColor" /> : i + 1}
-            </span>
+const NEXT_COUNTDOWN_S = 8
 
-            <div className="w-[104px] flex-shrink-0">
-              <MediaThumb
-                vimeoId={l.vimeoId}
-                fallbackUrl={category.coverUrl}
-                accent={category.accent}
-                icon={phaseIcon(category.phase)}
-                label={String(i + 1).padStart(2, '0')}
-                progress={isCurrent ? 0 : watchedFraction(l)}
-                done={l.done}
-                rounded="rounded-md"
-                thumbWidth={320}
-                showPlay={false}
-                className={isCurrent ? 'media-thumb-current' : ''}
-              />
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <p
-                className="text-xs font-semibold leading-snug line-clamp-2"
-                style={{ color: isCurrent ? 'var(--ist-text)' : l.done ? 'var(--ist-text-dim)' : 'var(--ist-text-muted)' }}
-              >
-                {l.title}
-              </p>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[10px]" style={{ color: 'var(--ist-text-dim)' }}>{l.duration}</span>
-                {l.attachments.length > 0 && (
-                  <span className="flex items-center gap-0.5 text-[10px]" style={{ color: 'var(--ist-text-dim)' }}>
-                    <Paperclip size={9} strokeWidth={2} />
-                    {l.attachments.length}
-                  </span>
-                )}
-              </div>
-            </div>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-// ─── Prossima lezione (con anteprima) ─────────────────────────────────────────
-
-function NextLessonCard({
-  lesson,
-  number,
-  category,
-  onClick,
-  className = '',
+function NextUpOverlay({
+  lesson, number, category, onPlay, onReplay,
 }: {
   lesson: Lesson
   number: number
   category: Category
-  onClick: () => void
-  className?: string
+  onPlay: () => void
+  onReplay: () => void
 }) {
+  const [left, setLeft] = useState(NEXT_COUNTDOWN_S)
+  const [cancelled, setCancelled] = useState(false)
+  // In un ref: il genitore ricrea onPlay a ogni render (es. movimento del mouse)
+  // e non deve far ripartire il conto alla rovescia.
+  const onPlayRef = useRef(onPlay)
+  onPlayRef.current = onPlay
+
+  useEffect(() => {
+    if (cancelled) return
+    if (left <= 0) { onPlayRef.current(); return }
+    const t = window.setTimeout(() => setLeft(l => l - 1), 1000)
+    return () => window.clearTimeout(t)
+  }, [left, cancelled])
+
   return (
-    <button
-      onClick={onClick}
-      className={`media-card group w-full flex items-center gap-3 p-2.5 pr-4 rounded-2xl text-left transition-colors ${className}`}
-      style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-border)' }}
-    >
-      <div className="w-24 flex-shrink-0">
-        <MediaThumb
-          vimeoId={lesson.vimeoId}
-          fallbackUrl={category.coverUrl}
-          accent={category.accent}
-          icon={phaseIcon(category.phase)}
-          label={String(number).padStart(2, '0')}
-          rounded="rounded-lg"
-          thumbWidth={320}
-        />
+    <div className="absolute inset-0 flex items-end justify-end p-3 pb-20 lg:p-8 lg:pb-28 pointer-events-none">
+      <div
+        className="pointer-events-auto w-[min(92%,360px)] rounded-xl overflow-hidden"
+        style={{ background: 'rgba(10,12,18,0.94)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 20px 60px rgba(0,0,0,0.6)' }}
+      >
+        <div className="hidden sm:block">
+          <MediaThumb {...lessonThumbProps(lesson, category, number)} rounded="" showPlay={false} />
+        </div>
+        <div className="p-3 lg:p-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: 'rgba(255,255,255,0.6)' }}>
+            {cancelled ? 'Prossima lezione' : `Prossima lezione tra ${left}`}
+          </p>
+          <p className="text-sm lg:text-base font-bold leading-snug text-white line-clamp-2">
+            {number}. {lesson.title}
+          </p>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              onClick={onPlay}
+              className="relative overflow-hidden flex-1 inline-flex items-center justify-center gap-1.5 h-10 rounded-lg text-sm font-bold"
+              style={{ background: '#ffffff', color: '#05070d' }}
+            >
+              {!cancelled && (
+                <span
+                  className="cinema-countdown absolute inset-0"
+                  style={{ background: 'rgba(5,7,13,0.14)', animationDuration: `${NEXT_COUNTDOWN_S}s` }}
+                />
+              )}
+              <Play size={15} strokeWidth={2.5} fill="currentColor" className="relative" />
+              <span className="relative">Guarda ora</span>
+            </button>
+            {cancelled ? (
+              <button
+                onClick={onReplay}
+                className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-sm font-semibold text-white"
+                style={{ background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.18)' }}
+              >
+                <RotateCcw size={14} strokeWidth={2.5} /> Rivedi
+              </button>
+            ) : (
+              <button
+                onClick={() => setCancelled(true)}
+                className="h-10 px-3 rounded-lg text-sm font-semibold text-white"
+                style={{ background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.18)' }}
+              >
+                Annulla
+              </button>
+            )}
+          </div>
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: 'var(--ist-accent-text)' }}>
-          Prossima lezione
-        </p>
-        <p className="text-xs font-semibold leading-snug line-clamp-2" style={{ color: 'var(--ist-text)' }}>
-          {lesson.title}
-        </p>
+    </div>
+  )
+}
+
+function CourseDoneOverlay({ onBack, onReplay }: { onBack: () => void; onReplay: () => void }) {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="pointer-events-auto text-center">
+        <div className="mx-auto mb-3 w-12 h-12 rounded-full flex items-center justify-center" style={{ background: '#46D39A' }}>
+          <Check size={26} strokeWidth={3} className="text-white" />
+        </div>
+        <p className="text-lg lg:text-2xl font-extrabold text-white">Hai finito questo corso</p>
+        <div className="mt-4 flex items-center justify-center gap-2.5">
+          <button
+            onClick={onBack}
+            className="inline-flex items-center h-10 px-4 rounded-lg text-sm font-bold"
+            style={{ background: '#ffffff', color: '#05070d' }}
+          >
+            Torna al corso
+          </button>
+          <button
+            onClick={onReplay}
+            className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg text-sm font-semibold text-white"
+            style={{ background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.18)' }}
+          >
+            <RotateCcw size={14} strokeWidth={2.5} /> Rivedi
+          </button>
+        </div>
       </div>
-      <ChevronRight size={15} strokeWidth={2.5} className="flex-shrink-0" style={{ color: 'var(--ist-text-muted)' }} />
-    </button>
+    </div>
   )
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-
-type MobileTab = 'playlist' | 'allegati'
+// Stile streaming: palco nero con il player in alto, poi titolo e azioni,
+// allegati, e la fila degli "episodi" del corso (aperta su quello in corso).
 
 export default function StudentLezione() {
   const { lessonId } = useParams<{ lessonId: string }>()
@@ -204,7 +200,6 @@ export default function StudentLezione() {
   const { user } = useAuth()
   // 'all': il player deve trovare la lezione sia nei corsi trading che mental.
   const { findLesson, markDone, saveLastPosition, loading } = useStudentCatalog(user?.id ?? '', 'all')
-  const [mobileTab, setMobileTab] = useState<MobileTab>('playlist')
   const [marking, setMarking] = useState(false)
 
   const found = findLesson(lessonId ?? '')
@@ -245,7 +240,10 @@ export default function StudentLezione() {
 
   const { lesson, course, category } = found
   const lessonIdx  = course.lessons.findIndex(l => l.id === lesson.id)
+  const number     = lessonIdx + 1
   const nextLesson = course.lessons[lessonIdx + 1] ?? null
+  const courseUrl  = `/student/corsi/${category.id}?corso=${course.id}`
+  const openLesson = (id: string) => navigate(`/student/corsi/lezione/${id}`, { replace: true })
 
   const handleToggleDone = async () => {
     setMarking(true)
@@ -254,210 +252,137 @@ export default function StudentLezione() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row min-h-screen">
-
-      {/* ── LEFT / MAIN ── */}
-      <div className="flex-1 min-w-0 p-4 lg:p-6 lg:pr-3 flex flex-col gap-5">
-
-        {/* Mobile back button — replaces breadcrumb on small screens */}
-        <button
-          onClick={() => navigate(`/student/corsi/${category.id}`)}
-          className="lg:hidden flex items-center gap-1.5 text-sm font-medium -mb-1 transition-opacity hover:opacity-70"
-          style={{ color: 'var(--ist-text-muted)' }}
-        >
-          <ChevronLeft size={16} strokeWidth={2.5} />
-          {category.title}
-        </button>
-
-        {/* Breadcrumb — desktop only */}
-        <nav className="hidden lg:flex items-center gap-1.5 text-xs flex-wrap">
-          <button
-            onClick={() => navigate('/student/corsi')}
-            className="transition-opacity hover:opacity-70 font-medium"
-            style={{ color: 'var(--ist-text-muted)' }}
-          >
-            Videocorsi
-          </button>
-          <ChevronRight size={11} strokeWidth={2.5} style={{ color: 'var(--ist-text-dim)' }} />
-          <button
-            onClick={() => navigate(`/student/corsi/${category.id}`)}
-            className="transition-opacity hover:opacity-70 font-medium"
-            style={{ color: 'var(--ist-text-muted)' }}
-          >
-            {category.title}
-          </button>
-          <ChevronRight size={11} strokeWidth={2.5} style={{ color: 'var(--ist-text-dim)' }} />
-          <span className="truncate max-w-[180px]" style={{ color: 'var(--ist-text-dim)' }}>
-            {lesson.title}
-          </span>
-        </nav>
-
-        {/* Video player — riprende dall'ultimo punto, salva la posizione e
-            segna la lezione completata a fine video. */}
-        <VimeoPlayer
+    <div className="pb-16">
+      {/* ── Palco ── */}
+      <section data-inverted="true" className="bg-black lg:px-6 lg:py-5">
+        <CinemaPlayer
           key={lesson.id}
           vimeoId={lesson.vimeoId}
-          accent={category.accent}
+          title={lesson.title}
+          subtitle={`Lezione ${number}`}
+          backLabel={course.title}
+          onBack={() => navigate(courseUrl)}
           startAt={lesson.lastPositionSeconds}
           onProgress={sec => saveLastPosition(lesson.id, sec)}
           onEnded={() => { if (!lesson.done) markDone(lesson.id, true) }}
+          nextLabel="Prossima lezione"
+          onNext={nextLesson ? () => openLesson(nextLesson.id) : undefined}
+          renderEnd={({ replay }) => nextLesson
+            ? (
+              <NextUpOverlay
+                lesson={nextLesson}
+                number={number + 1}
+                category={category}
+                onPlay={() => openLesson(nextLesson.id)}
+                onReplay={replay}
+              />
+            )
+            : <CourseDoneOverlay onBack={() => navigate(courseUrl)} onReplay={replay} />
+          }
         />
+      </section>
 
-        {/* Lesson info */}
-        <div>
-          <div className="flex items-start gap-3 mb-2 flex-wrap">
-            <h1 className="text-lg lg:text-xl font-bold leading-tight flex-1 min-w-0" style={{ color: 'var(--ist-text)' }}>
+      {/* ── Info lezione ── */}
+      <div className="px-4 lg:px-10 pt-5 lg:pt-8">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6 lg:gap-12 max-w-[1280px]">
+          <div className="min-w-0">
+            <button
+              onClick={() => navigate(courseUrl)}
+              className="text-[11px] font-bold uppercase tracking-[0.14em] mb-1.5 transition-opacity hover:opacity-70 text-left"
+              style={{ color: 'var(--ist-accent-text)' }}
+            >
+              {category.title === course.title ? course.title : `${category.title} · ${course.title}`}
+            </button>
+            <h1
+              className="text-[26px] lg:text-[40px] font-extrabold tracking-tight leading-[1.08]"
+              style={{ color: 'var(--ist-text)', textWrap: 'balance' }}
+            >
               {lesson.title}
             </h1>
-            {lesson.done && (
-              <span
-                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0"
-                style={{ background: 'rgba(70,211,154,0.12)', color: '#46D39A', border: '1px solid rgba(70,211,154,0.22)' }}
-              >
-                <CheckCircle2 size={12} strokeWidth={2.5} />
-                Completata
-              </span>
+            <div className="mt-2.5 flex items-center gap-x-2.5 gap-y-1 flex-wrap text-sm" style={{ color: 'var(--ist-text-muted)' }}>
+              <span>Lezione {number} di {course.lessons.length}</span>
+              {lesson.durationSeconds > 0 && <><span aria-hidden>·</span><span>{lesson.duration}</span></>}
+              {lesson.done && (
+                <span
+                  className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.1em] px-2 py-0.5 rounded-md"
+                  style={{ background: 'rgba(70,211,154,0.14)', color: '#46D39A' }}
+                >
+                  <Check size={12} strokeWidth={3} /> Completata
+                </span>
+              )}
+            </div>
+            {lesson.description && (
+              <p className="mt-4 text-[15px] leading-relaxed max-w-3xl" style={{ color: 'var(--ist-text-muted)' }}>
+                {lesson.description}
+              </p>
             )}
-          </div>
-          <p className="text-sm leading-relaxed" style={{ color: 'var(--ist-text-muted)' }}>
-            {lesson.description}
-          </p>
 
-          {/* Mark complete / re-review toggle */}
-          <button
-            onClick={handleToggleDone}
-            disabled={marking}
-            className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold transition-all hover:-translate-y-0.5 disabled:opacity-50"
-            style={lesson.done
-              ? { background: 'var(--ist-w6)', border: '1px solid var(--ist-border)', color: 'var(--ist-text-muted)' }
-              : { background: 'linear-gradient(135deg, #46D39A 0%, #2BA877 100%)', border: '1px solid rgba(70,211,154,0.30)', color: '#fff' }
-            }
-          >
-            {marking
-              ? <Loader2 size={14} className="animate-spin" />
-              : <CheckCircle2 size={14} strokeWidth={2.5} />}
-            {lesson.done ? 'Segna come da rivedere' : 'Segna come completata'}
-          </button>
-        </div>
-
-        {/* Allegati — desktop */}
-        {lesson.attachments.length > 0 && (
-          <div className="hidden lg:block">
-            <h2 className="text-xs font-semibold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: 'var(--ist-text-dim)' }}>
-              <Paperclip size={12} strokeWidth={2} />
-              Allegati ({lesson.attachments.length})
-            </h2>
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
-              {lesson.attachments.map(att => <AttachmentCard key={att.id} att={att} />)}
-            </div>
-          </div>
-        )}
-
-        {/* Mobile tabs */}
-        <div className="lg:hidden space-y-3">
-          <div
-            className="flex gap-1 p-1 rounded-2xl"
-            style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-border)' }}
-          >
-            {(['playlist', 'allegati'] as MobileTab[]).map(tab => (
+            <div className="mt-5 flex items-center gap-2.5 flex-wrap">
+              {nextLesson && (
+                <button
+                  onClick={() => openLesson(nextLesson.id)}
+                  className="inline-flex items-center gap-2 h-11 px-5 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
+                  style={{ background: 'var(--ist-text)', color: 'var(--ist-bg)' }}
+                >
+                  <Play size={16} strokeWidth={2.5} fill="currentColor" />
+                  Prossima lezione
+                </button>
+              )}
               <button
-                key={tab}
-                onClick={() => setMobileTab(tab)}
-                className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all"
-                style={mobileTab === tab ? {
-                  background: 'var(--ist-card-bg)',
-                  color: 'var(--ist-text)',
-                  boxShadow: '0 1px 6px rgba(0,0,0,0.15)',
-                } : {
-                  color: 'var(--ist-text-muted)',
-                }}
-              >
-                {tab === 'playlist'
-                  ? `Playlist (${course.lessons.length})`
-                  : `Allegati (${lesson.attachments.length})`
+                onClick={handleToggleDone}
+                disabled={marking}
+                className="inline-flex items-center gap-2 h-11 px-4 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
+                style={lesson.done
+                  ? { background: 'rgba(70,211,154,0.14)', color: '#46D39A', border: '1px solid rgba(70,211,154,0.28)' }
+                  : { background: 'var(--ist-w8)', color: 'var(--ist-text)', border: '1px solid var(--ist-border)' }
                 }
+                title={lesson.done ? 'Segna come da rivedere' : 'Segna come completata'}
+              >
+                {marking
+                  ? <Loader2 size={16} className="animate-spin" />
+                  : lesson.done ? <CheckCircle2 size={16} strokeWidth={2.5} /> : <Plus size={16} strokeWidth={2.5} />}
+                {lesson.done ? 'Completata' : 'Segna come completata'}
               </button>
-            ))}
+            </div>
           </div>
 
-          {mobileTab === 'allegati' ? (
-            lesson.attachments.length > 0
-              ? <div className="space-y-2">{lesson.attachments.map(att => <AttachmentCard key={att.id} att={att} />)}</div>
-              : <p className="text-sm text-center py-8" style={{ color: 'var(--ist-text-dim)' }}>Nessun allegato.</p>
-          ) : (
-            <div
-              className="rounded-3xl overflow-hidden"
-              style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: 'var(--ist-card-shadow)' }}
-            >
-              <PlaylistPanel course={course} category={category} currentId={lesson.id} onSelect={id => navigate(`/student/corsi/lezione/${id}`)} />
-            </div>
+          {/* Allegati */}
+          {lesson.attachments.length > 0 && (
+            <aside>
+              <h2 className="text-[11px] font-bold uppercase tracking-[0.14em] mb-3 flex items-center gap-1.5" style={{ color: 'var(--ist-text-dim)' }}>
+                <Paperclip size={12} strokeWidth={2.2} />
+                Materiali della lezione
+              </h2>
+              <div className="space-y-2">
+                {lesson.attachments.map(att => <AttachmentCard key={att.id} att={att} />)}
+              </div>
+            </aside>
           )}
         </div>
-
-        {/* Next lesson CTA — mobile */}
-        {nextLesson && (
-          <NextLessonCard
-            className="lg:hidden"
-            lesson={nextLesson}
-            number={lessonIdx + 2}
-            category={category}
-            onClick={() => navigate(`/student/corsi/lezione/${nextLesson.id}`)}
-          />
-        )}
       </div>
 
-      {/* ── RIGHT SIDEBAR — desktop playlist ── */}
-      <div
-        className="hidden lg:flex flex-col w-[320px] xl:w-[360px] flex-shrink-0"
-        style={{
-          borderLeft: '1px solid var(--ist-border)',
-          height: '100vh',
-          position: 'sticky',
-          top: 0,
-          background: 'var(--ist-nav-bg)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          overflowY: 'auto',
-        }}
-      >
-        {/* Sidebar header */}
-        <div
-          className="px-5 py-4 flex-shrink-0"
-          style={{ borderBottom: '1px solid var(--ist-border)' }}
-        >
-          <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: 'var(--ist-text-dim)' }}>
-            Playlist
-          </p>
-          <p className="text-sm font-semibold leading-tight" style={{ color: 'var(--ist-text)' }}>
-            {course.title}
-          </p>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--ist-text-muted)' }}>
-            {course.lessons.filter(l => l.done).length}/{course.lessons.length} completate
-          </p>
+      {/* ── Episodi del corso ── */}
+      {course.lessons.length > 1 && (
+        <div className="mt-10">
+          <MediaRow
+            eyebrow={course.title}
+            title="Episodi"
+            actionLabel="Vedi corso"
+            onAction={() => navigate(courseUrl)}
+            initialIndex={lessonIdx}
+          >
+            {course.lessons.map((l, i) => (
+              <div key={l.id} className={l.id === lesson.id ? 'media-current' : ''}>
+                <LessonCard
+                  entry={{ lesson: l, course, category, number: i + 1 }}
+                  onClick={() => openLesson(l.id)}
+                  subtitle={l.id === lesson.id ? 'In riproduzione' : `Lezione ${i + 1}`}
+                />
+              </div>
+            ))}
+          </MediaRow>
         </div>
-
-        {/* Playlist */}
-        <div className="flex-1 overflow-y-auto no-scrollbar">
-          <PlaylistPanel
-            course={course}
-            category={category}
-            currentId={lesson.id}
-            onSelect={id => navigate(`/student/corsi/lezione/${id}`)}
-          />
-        </div>
-
-        {/* Next lesson CTA */}
-        {nextLesson && (
-          <div className="p-3 flex-shrink-0" style={{ borderTop: '1px solid var(--ist-border)' }}>
-            <NextLessonCard
-              lesson={nextLesson}
-              number={lessonIdx + 2}
-              category={category}
-              onClick={() => navigate(`/student/corsi/lezione/${nextLesson.id}`)}
-            />
-          </div>
-        )}
-      </div>
+      )}
     </div>
   )
 }

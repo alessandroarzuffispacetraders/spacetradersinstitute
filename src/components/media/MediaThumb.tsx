@@ -11,8 +11,22 @@ export function proceduralCover(accent: string, accentEnd = accent): string {
   ].join(', ')
 }
 
-interface MediaThumbProps {
-  imageUrl?: string | null      // immagine preferita (copertina caricata dall'admin)
+// Parola chiave delle copertine AI: una riga (o due, se sono due parole lunghe),
+// dimensionata in unità del contenitore (cqw) così non esce mai dalla card.
+function keywordLayout(keyword: string): { lines: string[]; size: number } {
+  const kw = keyword.trim().replace(/\s+/g, ' ')
+  const words = kw.split(' ')
+  const twoLines = words.length > 1 && kw.length > 9
+  const half = Math.ceil(words.length / 2)
+  const lines = twoLines ? [words.slice(0, half).join(' '), words.slice(half).join(' ')] : [kw]
+  const longest = Math.max(...lines.map(l => l.length))
+  // ~66% della larghezza disponibile; un maiuscolo Inter 800 è largo ~0.7em.
+  const size = Math.max(7, Math.min(twoLines ? 12.5 : 16, 66 / (longest * 0.7)))
+  return { lines, size }
+}
+
+export interface MediaThumbProps {
+  imageUrl?: string | null      // immagine preferita (copertina AI o caricata dall'admin)
   vimeoId?: string | null       // altrimenti la miniatura del video
   fallbackUrl?: string | null   // altrimenti un'immagine di ripiego (copertina categoria)
   accent: string
@@ -20,6 +34,8 @@ interface MediaThumbProps {
   icon?: LucideIcon             // filigrana sulla copertina generata
   iconSize?: string             // larghezza della filigrana (default 46%)
   label?: string                // numero grande ("03") se non c'è una miniatura propria
+  keyword?: string | null       // parola chiave scritta sopra la copertina AI (imageUrl)
+  kicker?: string               // etichetta piccola sopra la parola chiave ("Lezione 03")
   progress?: number             // 0..1 → barra "già visto"
   done?: boolean
   duration?: string
@@ -36,7 +52,7 @@ interface MediaThumbProps {
 // immagine di ripiego → copertina generata. Sempre "scura" (data-inverted),
 // così testi e badge restano bianchi anche col tema chiaro.
 export default function MediaThumb({
-  imageUrl, vimeoId, fallbackUrl, accent, accentEnd, icon: Icon, iconSize = '46%', label, progress = 0,
+  imageUrl, vimeoId, fallbackUrl, accent, accentEnd, icon: Icon, iconSize = '46%', label, keyword, kicker, progress = 0,
   done, duration, topLeft, thumbWidth = 640, rounded = 'rounded-xl', aspect = 'aspect-video', showPlay = true,
   className = '', children,
 }: MediaThumbProps) {
@@ -51,6 +67,8 @@ export default function MediaThumb({
   const imgReady = !!src && loadedSrc === src
   const ownImage = imgReady && (src === imageUrl || src === vimeoThumb)
   const showLabel = !!label && !ownImage
+  // Copertina AI caricata: l'app ci scrive sopra la parola chiave.
+  const kw = imgReady && !!imageUrl && src === imageUrl && keyword?.trim() ? keywordLayout(keyword) : null
 
   return (
     <div
@@ -87,6 +105,35 @@ export default function MediaThumb({
           className="absolute inset-0 pointer-events-none"
           style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.12) 42%, transparent 64%)' }}
         />
+      )}
+
+      {kw && (
+        <>
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: 'linear-gradient(90deg, rgba(5,7,13,0.55) 0%, rgba(5,7,13,0.12) 46%, transparent 66%), linear-gradient(to top, rgba(5,7,13,0.6) 0%, transparent 52%)' }}
+          />
+          <div
+            className="absolute left-[6%] max-w-[78%] pointer-events-none"
+            style={{ bottom: progress > 0 ? '11%' : '8%' }}
+          >
+            {kicker && (
+              <span
+                className="flex items-center font-bold uppercase leading-none"
+                style={{ fontSize: 'max(8px, 3.1cqw)', letterSpacing: '0.18em', color: 'rgba(255,255,255,0.8)', gap: '1.6cqw', marginBottom: '1.8cqw' }}
+              >
+                <span style={{ width: '4.2cqw', height: 'max(2px, 0.55cqw)', borderRadius: 2, background: accent, flexShrink: 0 }} />
+                {kicker}
+              </span>
+            )}
+            <span
+              className="block font-extrabold uppercase text-white"
+              style={{ fontSize: `${kw.size}cqw`, lineHeight: 0.94, letterSpacing: '-0.02em', textShadow: '0 2px 18px rgba(0,0,0,0.45)' }}
+            >
+              {kw.lines.map((line, i) => <span key={i} className="block whitespace-nowrap">{line}</span>)}
+            </span>
+          </div>
+        </>
       )}
 
       {showLabel && (

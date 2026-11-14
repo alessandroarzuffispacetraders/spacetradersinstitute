@@ -4,10 +4,11 @@ import { ChevronLeft, Paperclip, Play, RotateCcw, Loader2 } from 'lucide-react'
 import { useStudentCatalog, getCourseStats, getCategoryStats, Course } from '../../lib/content'
 import { useAuth } from '../../context/AuthContext'
 import {
-  flattenLessons, pickResume, watchedFraction, remainingLabel, LessonEntry, RESUME_CTA,
+  flattenLessons, pickResume, remainingLabel, LessonEntry, RESUME_CTA,
 } from '../../lib/catalogView'
 import Billboard, { HeroButton, HeroTag } from '../../components/media/Billboard'
 import MediaThumb from '../../components/media/MediaThumb'
+import { lessonThumbProps } from '../../components/media/thumbProps'
 import { phaseIcon } from '../../components/media/phase'
 
 // "3 h 20 min" / "45 min" da secondi.
@@ -79,7 +80,7 @@ export default function StudentCategoryDetail() {
   return (
     <div className="pb-10">
       <Billboard
-        imageUrl={cat.coverUrl}
+        imageUrl={cat.coverUrl ?? resume?.entry.lesson.coverUrl}
         vimeoId={resume?.entry.lesson.vimeoId}
         accent={cat.accent}
         icon={phaseIcon(cat.phase)}
@@ -150,7 +151,7 @@ export default function StudentCategoryDetail() {
           {/* Intestazione del corso selezionato */}
           <div className="mb-3 lg:mb-4">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-lg lg:text-2xl font-bold leading-tight" style={{ color: 'var(--ist-text)' }}>
+              <h2 className="text-[22px] lg:text-[28px] font-extrabold tracking-tight leading-tight" style={{ color: 'var(--ist-text)' }}>
                 {course.title}
               </h2>
               {!course.published && (
@@ -228,13 +229,8 @@ function EpisodeRow({
 
         <div className="w-[42%] max-w-[176px] sm:w-44 lg:w-52 lg:max-w-none flex-shrink-0">
           <MediaThumb
-            vimeoId={lesson.vimeoId}
-            fallbackUrl={category.coverUrl}
-            accent={category.accent}
-            icon={phaseIcon(category.phase)}
-            label={String(number).padStart(2, '0')}
-            progress={watchedFraction(lesson)}
-            done={lesson.done}
+            {...lessonThumbProps(lesson, category, number)}
+            duration={undefined}
             rounded="rounded-lg"
           />
         </div>

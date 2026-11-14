@@ -7,6 +7,7 @@ import { useLiveEvents, liveDateLabel, liveDurationLabel, LiveEvent } from '../.
 import Billboard, { HeroButton, HeroTag } from '../../components/media/Billboard'
 import MediaRow from '../../components/media/MediaRow'
 import MediaThumb from '../../components/media/MediaThumb'
+import ReplayCard from '../../components/media/ReplayCard'
 
 const HOST_ROLE_LABEL: Record<string, string> = {
   coach:        'Coach',
@@ -107,6 +108,7 @@ export default function StudentLive() {
   return (
     <div className="pb-8">
       <Billboard
+        imageUrl={hero.coverUrl}
         vimeoId={heroReplay?.replayVimeoId}
         accent={hero.accent}
         accentEnd={hero.accentEnd}
@@ -166,35 +168,6 @@ export default function StudentLive() {
         ))}
       </div>
     </div>
-  )
-}
-
-// Replay (o live in corso): miniatura del video registrato, durata, titolo.
-function ReplayCard({ event: e, live, onClick }: { event: LiveEvent; live?: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="media-card group w-full text-left">
-      <MediaThumb
-        vimeoId={e.replayVimeoId}
-        accent={e.accent}
-        accentEnd={e.accentEnd}
-        icon={Radio}
-        duration={liveDurationLabel(e) || undefined}
-        topLeft={live ? (
-          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.1em] px-2 py-1 rounded-md text-white" style={{ background: '#E5484D' }}>
-            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-            Live
-          </span>
-        ) : undefined}
-      />
-      <div className="mt-2 px-0.5">
-        <p className="text-[13px] lg:text-sm font-semibold leading-snug line-clamp-2" style={{ color: 'var(--ist-text)' }}>
-          {e.title}
-        </p>
-        <p className="text-[11px] mt-0.5 truncate" style={{ color: 'var(--ist-text-dim)' }}>
-          {[e.host, liveDateLabel(e)].filter(Boolean).join(' · ')}
-        </p>
-      </div>
-    </button>
   )
 }
 

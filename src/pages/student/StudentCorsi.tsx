@@ -12,15 +12,20 @@ import {
 } from '../../lib/catalogView'
 import Billboard, { HeroButton, HeroTag } from '../../components/media/Billboard'
 import MediaRow from '../../components/media/MediaRow'
-import MediaThumb from '../../components/media/MediaThumb'
+import SeriesCard from '../../components/media/SeriesCard'
 import LessonCard from '../../components/media/LessonCard'
 import { phaseIcon } from '../../components/media/phase'
+
+const PHASES = ['Onboarding', 'Build', 'Test', 'Deploy']
+// Fino a questo numero di serie: una sola riga; oltre, una riga per fase.
+const SINGLE_ROW_MAX = 8
 
 // Videocorsi in stile catalogo streaming:
 //  1. banner con la lezione da riprendere (o da iniziare)
 //  2. "Continua a guardare" (lezioni lasciate a metà, dalla più recente)
-//  3. "Il tuo percorso" (le categorie/tappe, con stato e avanzamento)
-//  4. una riga per ogni corso, con le lezioni come episodi
+//  3. le categorie come "serie" (i corsi sono i capitoli, le lezioni le
+//     puntate), in righe per fase e nell'ordine del catalogo. Passando col
+//     mouse (o toccando, da telefono) la card si apre con copertina e dettagli.
 export default function StudentCorsi() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -37,6 +42,20 @@ export default function StudentCorsi() {
 
   // Tappa "attuale" del percorso = prima categoria non ancora completata.
   const currentIndex = categories.findIndex(c => getCategoryStats(c).pct < 100)
+
+  // Serie in un'unica riga, nell'ordine del catalogo. Solo se sono tante si
+  // dividono per fase (categorie consecutive della stessa fase = stessa riga).
+  const seriesRows = useMemo(() => {
+    const all = categories.map((cat, index) => ({ cat, index }))
+    if (categories.length <= SINGLE_ROW_MAX) return [{ phase: '', items: all }]
+    const rows: { phase: string; items: { cat: Category; index: number }[] }[] = []
+    categories.forEach((cat, index) => {
+      const last = rows[rows.length - 1]
+      if (last && last.phase === cat.phase) last.items.push({ cat, index })
+      else rows.push({ phase: cat.phase, items: [{ cat, index }] })
+    })
+    return rows
+  }, [categories])
 
   const openLesson   = (lessonId: string) => navigate(`/student/corsi/lezione/${lessonId}`)
   const openCategory = (categoryId: string, courseId?: string) =>
@@ -109,6 +128,7 @@ export default function StudentCorsi() {
   return (
     <div className="pb-8">
       <Billboard
+        imageUrl={heroLesson.coverUrl}
         vimeoId={heroLesson.vimeoId}
         fallbackUrl={hero.category.coverUrl}
         accent={hero.category.accent}
@@ -162,107 +182,26 @@ export default function StudentCorsi() {
           </MediaRow>
         )}
 
-        {categories.length > 0 && (
+        {/* Le serie (categorie), nell'ordine del catalogo, una riga per fase */}
+        {seriesRows.map((row, r) => (
           <MediaRow
-            title="Il tuo percorso"
-            itemClassName="w-[80vw] sm:w-[52vw] md:w-[40vw] lg:w-[340px] xl:w-[380px]"
+            key={`${row.phase}-${r}`}
+            eyebrow={seriesRows.length > 1 ? `Fase ${PHASES.indexOf(row.phase) + 1 || r + 1}` : undefined}
+            title={seriesRows.length > 1 ? row.phase : 'Il tuo percorso'}
+            itemClassName="w-[78vw] sm:w-[46vw] md:w-[34vw] lg:w-[320px] xl:w-[340px]"
           >
-            {categories.map((cat, i) => (
-              <PathCard
+            {row.items.map(({ cat, index }) => (
+              <SeriesCard
                 key={cat.id}
                 category={cat}
-                step={i + 1}
-                isCurrent={i === currentIndex}
-                onClick={() => openCategory(cat.id)}
+                isCurrent={index === currentIndex}
+                onOpen={() => openCategory(cat.id)}
+                onPlay={openLesson}
               />
             ))}
           </MediaRow>
-        )}
-
-        {categories.map(cat => cat.courses
-          .filter(course => course.lessons.length > 0)
-          .map(course => (
-            <MediaRow
-              key={course.id}
-              eyebrow={course.title === cat.title ? cat.phase : `${cat.phase} · ${cat.title}`}
-              title={course.title}
-              actionLabel="Vedi tutto"
-              onAction={() => openCategory(cat.id, course.id)}
-            >
-              {course.lessons.map((lesson, i) => (
-                <LessonCard
-                  key={lesson.id}
-                  entry={{ lesson, course, category: cat, number: i + 1 }}
-                  onClick={() => openLesson(lesson.id)}
-                />
-              ))}
-            </MediaRow>
-          )))}
+        ))}
       </div>
     </div>
-  )
-}
-
-// Card "tappa del percorso": copertina della categoria con titolo sovrapposto,
-// stato (Completato / Sei qui / In corso) e barra di avanzamento.
-function PathCard({
-  category: cat, step, isCurrent, onClick,
-}: {
-  category: Category
-  step: number
-  isCurrent: boolean
-  onClick: () => void
-}) {
-  const stats  = getCategoryStats(cat)
-  const done   = stats.pct === 100
-  const status = done ? 'Completato' : isCurrent ? 'Sei qui' : stats.pct > 0 ? 'In corso' : null
-
-  return (
-    <button onClick={onClick} className="media-card group w-full text-left">
-      <MediaThumb
-        imageUrl={cat.coverUrl}
-        accent={cat.accent}
-        icon={phaseIcon(cat.phase)}
-        progress={stats.pct > 0 && !done ? stats.pct / 100 : 0}
-        showPlay={false}
-        className={isCurrent ? 'media-thumb-current' : ''}
-        topLeft={<>
-          <HeroTag>{cat.phase}</HeroTag>
-          {status && (
-            <span
-              className="text-[10px] font-bold uppercase tracking-[0.1em] px-2 py-1 rounded-md"
-              style={done
-                ? { background: '#46D39A', color: '#05170f' }
-                : isCurrent
-                  ? { background: 'var(--ist-media-accent)', color: '#05070d' }
-                  : { background: 'rgba(0,0,0,0.55)', color: '#fff' }
-              }
-            >
-              {status}
-            </span>
-          )}
-        </>}
-      >
-        <div
-          className="absolute inset-x-0 bottom-0 px-3.5 pb-3.5 pt-10 lg:px-4 lg:pb-4"
-          style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.35) 60%, transparent 100%)' }}
-        >
-          <p className="text-[10px] font-bold uppercase tracking-[0.16em] mb-0.5" style={{ color: 'rgba(255,255,255,0.7)' }}>
-            Tappa {step}
-          </p>
-          <h3 className="text-lg lg:text-xl font-extrabold leading-tight text-white line-clamp-2">
-            {cat.title}
-          </h3>
-        </div>
-      </MediaThumb>
-      <div className="mt-2 px-0.5 flex items-center justify-between gap-2 text-[11px]">
-        <span className="truncate" style={{ color: 'var(--ist-text-dim)' }}>
-          {cat.courses.length} {cat.courses.length === 1 ? 'corso' : 'corsi'} · {stats.total} lezioni
-        </span>
-        <span className="font-semibold flex-shrink-0" style={{ color: done ? '#46D39A' : 'var(--ist-text-muted)' }}>
-          {stats.done}/{stats.total}
-        </span>
-      </div>
-    </button>
   )
 }
