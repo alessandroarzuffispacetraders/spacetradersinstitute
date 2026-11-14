@@ -312,15 +312,17 @@ def draw_overfit_bars(fig):
     ax.axhline(0, color='#2a3552', lw=1); lbl(ax, 'Complessità (n. regole)', 'Sharpe Out-of-Sample')
 
 def draw_corr_matrix(fig):
-    ax = fig.add_axes([0.14, 0.12, 0.72, 0.82]); style(ax); n = 8
+    ax = fig.add_axes([0.13, 0.08, 0.84, 0.86]); style(ax); n = 8
     A = rng.normal(0, 1, (n, n)); C = np.corrcoef(A @ A.T + rng.normal(0, 2, (n, n)))
-    im = ax.imshow(C, cmap=SQ, vmin=-1, vmax=1, alpha=0.82)
     for i in range(n):
         for j in range(n):
-            ax.text(j, i, f'{C[i, j]:.2f}', ha='center', va='center', fontsize=8, color=CELL_A if abs(C[i, j]) > .5 else CELL_B)
+            if i < j: ax.add_patch(plt.Circle((j, i), 0.46 * abs(C[i, j]) ** 0.6, color=BLUE if C[i, j] > 0 else RED, alpha=0.35 + 0.6 * abs(C[i, j])))
+            elif i > j: ax.text(j, i, f'{C[i, j]:.2f}', ha='center', va='center', fontsize=10, color=LBLUE if C[i, j] > 0 else RED)
+            else: ax.add_patch(plt.Rectangle((j - 0.45, i - 0.45), 0.9, 0.9, color=_rgba(AMBER, 0.25)))
     names = ['EU', 'GU', 'UJ', 'XAU', 'NAS', 'SPX', 'DAX', 'WTI']
-    ax.set_xticks(range(n)); ax.set_xticklabels(names); ax.set_yticks(range(n)); ax.set_yticklabels(names); ax.grid(False)
-    cb = fig.colorbar(im, cax=fig.add_axes([0.89, 0.12, 0.025, 0.82])); cb.outline.set_color(SPINE); cb.ax.tick_params(colors=TICK, labelsize=8)
+    ax.set_xticks(range(n)); ax.set_xticklabels(names); ax.set_yticks(range(n)); ax.set_yticklabels(names)
+    ax.set_xlim(-0.5, n - 0.5); ax.set_ylim(n - 0.5, -0.5); ax.set_aspect('equal'); ax.grid(False)
+    for k in range(n + 1): ax.axhline(k - 0.5, color=GRID, lw=0.6); ax.axvline(k - 0.5, color=GRID, lw=0.6)
 
 def draw_mc_expect(fig):
     draw_montecarlo(fig, n=260)
@@ -445,14 +447,16 @@ def draw_percentile_bands(fig):
     ax.plot(x, np.median(P, axis=0), color=HERO, lw=2.4); lbl(ax, 'Trade', 'Equity (x)')
 
 def draw_table_heat(fig):
-    ax = fig.add_axes([0.13, 0.08, 0.84, 0.86]); style(ax)
-    rows = ['P10', 'P25', 'P50', 'P75', 'P90', 'P95']; cols = ['MAE', 'MFE', 'MFE/MAE', 'Stop', 'Target', 'Win %']
-    V = rng.uniform(0, 1, (len(rows), len(cols)))
-    ax.imshow(V, cmap=SQ, aspect='auto', alpha=0.75)
-    for i in range(len(rows)):
+    ax = fig.add_axes([0.02, 0.04, 0.96, 0.92]); ax.axis('off'); ax.set_xlim(0, 7.1); ax.set_ylim(0, 7.9)
+    cols = ['MAE', 'MFE', 'MFE/MAE', 'Stop', 'Target', 'Win %']; rows = ['P10', 'P25', 'P50', 'P75', 'P90', 'P95']
+    for j, c in enumerate(cols): ax.text(1.1 + j, 7.25, c, color=TXT2, fontsize=14, weight='bold')
+    for i, r in enumerate(rows):
+        y = 6.3 - i; ax.text(0.15, y, r, color=TXT2, fontsize=15, va='center'); ax.plot([0.1, 7.05], [y - 0.5, y - 0.5], color=GRID, lw=1)
         for j in range(len(cols)):
-            ax.text(j, i, f'{rng.uniform(5, 95):.1f}', ha='center', va='center', fontsize=11, color='#0b0f18')
-    ax.set_xticks(range(len(cols))); ax.set_xticklabels(cols); ax.set_yticks(range(len(rows))); ax.set_yticklabels(rows); ax.grid(False)
+            v = rng.uniform(0.15, 1); c = LBLUE if j < 3 else (GREEN if j == 5 else SAND)
+            ax.add_patch(plt.Rectangle((1.05 + j, y - 0.28), 0.86 * v, 0.56, color=_rgba(c, 0.38)))
+            ax.text(1.12 + j, y, f'{v * 60:.1f}', color=TXT2, fontsize=14, va='center')
+    ax.add_patch(plt.Rectangle((0.08, 3.8), 6.98, 1.0, fill=False, ec=AMBER, lw=1.8))
 
 def draw_pred_actual(fig):
     ax = main_ax(fig); n = 500
@@ -817,6 +821,591 @@ def draw_bandpower(fig):
     ax.bar(range(5), v, color=[AMBER if i == 2 else BARS(0.4 + 0.12 * i) for i in range(5)], width=0.7)
     ax.set_xticks(range(5)); ax.set_xticklabels(bands, fontsize=12); lbl(ax, None, 'Potenza relativa')
 
+# ── grafici unici: un protagonista diverso per ogni copertina ─────────────────
+from matplotlib.patches import Wedge, Patch
+
+def _chaikin(pts, it=4):
+    P = np.asarray(pts, float)
+    for _ in range(it):
+        Q = 0.75 * P[:-1] + 0.25 * P[1:]; R = 0.25 * P[:-1] + 0.75 * P[1:]
+        P = np.vstack([P[:1], np.column_stack([Q, R]).reshape(-1, 2), P[-1:]])
+    return P
+
+def _frame_ax(fig, pad=1.0):
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis('off')
+    W, H = fig.get_size_inches(); asp = W / H
+    ax.set_xlim(-pad * asp, pad * asp); ax.set_ylim(-pad, pad); return ax, asp
+
+def _dust(ax, xr, yr, n=700, alpha=0.28):
+    d = rng.uniform([xr[0], yr[0]], [xr[1], yr[1]], (n, 2))
+    ax.scatter(d[:, 0], d[:, 1], s=rng.uniform(0.3, 3, n), color=LBLUE, alpha=alpha, lw=0)
+
+def _glow_line(ax, x, y, c, lw=2.0, glow=7):
+    if _glow(): ax.plot(x, y, color=c, lw=glow, alpha=0.07, solid_capstyle='round')
+    ax.plot(x, y, color=c, lw=lw, solid_capstyle='round')
+
+# trading (live)
+def draw_underwater(fig):
+    ax = main_ax(fig); P = mc_paths(150, 260, 0.0008, 0.011); x = np.arange(P.shape[1])
+    dd = (P / np.maximum.accumulate(P, axis=1) - 1) * 100; worst = dd.min(1)
+    wn = (worst - worst.min()) / (np.ptp(worst) + 1e-9)
+    for i in np.argsort(wn): ax.plot(x, dd[i], color=SQ_COOL(0.25 + 0.7 * wn[i]), lw=0.7, alpha=0.4)
+    p5 = np.percentile(dd, 5, axis=0); ax.fill_between(x, p5, 0, color=BLUE, alpha=0.07, lw=0)
+    ax.plot(x, np.median(dd, axis=0), color=HERO, lw=2.4); ax.plot(x, p5, color=RED, lw=1.5, ls='--')
+    ax.text(8, worst.min() * 0.93, f'DD massimo al 95%: {np.percentile(worst, 5):.1f}%', color=AMBER, fontsize=12)
+    ax.set_xlim(0, x[-1]); ax.set_ylim(worst.min() * 1.05, 1.5); lbl(ax, 'Trade', 'Drawdown (%)')
+
+def draw_bar3d(fig):
+    ax = fig.add_axes([-0.04, 0.0, 1.08, 1.0], projection='3d'); ax.set_facecolor('none')
+    n = 8; xs, ys = np.meshgrid(np.arange(n), np.arange(n)); xs, ys = xs.ravel().astype(float), ys.ravel().astype(float)
+    z = 0.35 + 1.15 * np.exp(-(((xs - 4.6) / 2.3) ** 2 + ((ys - 3.3) / 2.1) ** 2)) + rng.normal(0, 0.05, xs.size)
+    zn = (z - z.min()) / np.ptp(z); cols = SQ_COOL(0.2 + 0.75 * zn); cols[np.argmax(z)] = matplotlib.colors.to_rgba(AMBER)
+    ax.bar3d(xs, ys, np.zeros_like(z), 0.72, 0.72, z, color=cols, shade=True, edgecolor=SURF_EDGE, linewidth=0.3)
+    ax.view_init(elev=27, azim=-57)
+    for a in (ax.xaxis, ax.yaxis, ax.zaxis):
+        a.set_pane_color((0, 0, 0, 0)); a._axinfo['grid']['color'] = GRID3D; a.line.set_color(LINE3D)
+    ax.tick_params(colors=TXT, labelsize=9)
+    ax.set_xlabel('Stop (pip)', color=TXT, labelpad=8); ax.set_ylabel('Target (R)', color=TXT, labelpad=8); ax.set_zlabel('Profit factor', color=TXT)
+
+def draw_radar(fig):
+    ax = fig.add_axes([0.14, 0.1, 0.72, 0.8], projection='polar'); ax.set_facecolor('none')
+    lab = ['Sharpe', 'Profit factor', 'Win rate', 'Recovery', 'Expectancy', 'Stabilità', 'Drawdown']
+    th = np.linspace(0, 2 * np.pi, len(lab), endpoint=False); th2 = np.r_[th, th[:1]]
+    a = rng.uniform(0.6, 0.95, len(lab)); b = rng.uniform(0.3, 0.55, len(lab))
+    for vals, c, ls, fa in ((b, SAND, '--', 0.08), (a, LBLUE, '-', 0.25)):
+        v = np.r_[vals, vals[:1]]; ax.plot(th2, v, color=c, lw=2.2, ls=ls); ax.fill(th2, v, color=c, alpha=fa)
+    ax.scatter(th, a, s=46, color=AMBER, zorder=5)
+    ax.set_xticks(th); ax.set_xticklabels(lab, color=TXT2, fontsize=12); ax.set_yticklabels([]); ax.set_ylim(0, 1)
+    ax.grid(color=GRID, lw=0.9); ax.spines['polar'].set_color(SPINE)
+
+def draw_contour(fig):
+    ax = main_ax(fig)
+    f = lambda x, y: 1.0 * np.exp(-((x - 6.5) ** 2 + (y - 6) ** 2) / 6) + 0.6 * np.exp(-((x - 2.5) ** 2 + (y - 3) ** 2) / 3) \
+        + 0.35 * np.exp(-((x - 7.5) ** 2 + (y - 2) ** 2) / 2) + 0.05 * np.sin(x) * np.cos(y * 1.3)
+    X, Y = np.meshgrid(np.linspace(0, 10, 220), np.linspace(0, 10, 220)); Z = f(X, Y)
+    ax.contourf(X, Y, Z, levels=16, cmap=SQ_COOL, alpha=0.92); ax.contour(X, Y, Z, levels=16, colors=[EDGE], linewidths=0.5, alpha=0.6)
+    for s in rng.uniform(0.8, 9.2, (6, 2)):
+        p = s.copy(); path = [p.copy()]
+        for _ in range(70):
+            e = 1e-3; g = np.array([f(p[0] + e, p[1]) - f(p[0] - e, p[1]), f(p[0], p[1] + e) - f(p[0], p[1] - e)]) / (2 * e)
+            p = p + 0.35 * g / (np.linalg.norm(g) + 0.05); path.append(p.copy())
+        path = np.array(path); ax.plot(path[:, 0], path[:, 1], color=PALE, lw=1.4, marker='o', ms=2.2)
+        ax.scatter(*path[-1], marker='*', s=260, color=AMBER, edgecolor='#ffe39a', lw=1, zorder=6)
+    ax.set_xlim(0, 10); ax.set_ylim(0, 10); lbl(ax, 'Param A', 'Param B')
+
+def draw_rings(fig):
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis('off'); ax.set_aspect('equal'); ax.set_xlim(-2.3, 1.3); ax.set_ylim(-1.35, 1.35)
+    items = [('Lezioni completate', 0.78, BLUE), ('Live seguite', 0.56, LBLUE), ('Diario compilato', 0.91, AMBER), ('Community', 0.64, PALE)]
+    for i, (name, p, c) in enumerate(items):
+        r = 1.1 - i * 0.25
+        ax.add_patch(Wedge((0, 0), r, 0, 360, width=0.18, color=_rgba(c, 0.13)))
+        ax.add_patch(Wedge((0, 0), r, 90 - 360 * p, 90, width=0.18, color=c))
+        ax.text(-1.35, 0.78 - i * 0.5, name, color=TXT2, fontsize=13, ha='right')
+        ax.text(-1.35, 0.6 - i * 0.5, f'{int(p * 100)}%', color=c, fontsize=22, ha='right', weight='bold')
+    ax.text(0, 0.04, 'IST', color=HERO, fontsize=30, ha='center', va='center', weight='bold')
+    ax.text(0, -0.2, 'app', color=TXT, fontsize=12, ha='center', va='center')
+
+def draw_waterfall(fig):
+    ax = main_ax(fig, (0.11, 0.16, 0.85, 0.79))
+    steps = [('Profitto\nlordo', 4200), ('Commissioni', -380), ('Challenge', -540), ('Profit\nsplit', -820), ('Swap', -120), ('Slippage', -160)]
+    cum = 0
+    for i, (n, v) in enumerate(steps):
+        ax.bar(i, abs(v), bottom=cum if v > 0 else cum + v, color=GREEN if v > 0 else RED, width=0.62, alpha=0.9)
+        ax.text(i, max(cum, cum + v) + 70, f'{v:+,}'.replace(',', '.'), ha='center', color=TXT2, fontsize=10)
+        ax.plot([i + 0.31, i + 0.69], [cum + v] * 2, color=SPINE, ls='--', lw=1); cum += v
+    ax.bar(len(steps), cum, color=LBLUE, width=0.62); ax.text(len(steps), cum + 70, f'{cum:,}'.replace(',', '.'), ha='center', color=AMBER, fontsize=11, weight='bold')
+    ax.set_xticks(range(len(steps) + 1)); ax.set_xticklabels([s[0] for s in steps] + ['Netto'], fontsize=10)
+    ax.set_ylim(0, 4800); lbl(ax, None, 'Euro')
+
+def draw_violin(fig):
+    ax = main_ax(fig); yrs = ['2020', '2021', '2022', '2023', '2024', '2025']
+    data = [rng.normal(rng.uniform(0.5, 1.6), rng.uniform(2.5, 4.2), 70) for _ in yrs]
+    parts = ax.violinplot(data, showmeans=False, showmedians=False, showextrema=False)
+    for b in parts['bodies']: b.set_facecolor(BLUE); b.set_edgecolor(LBLUE); b.set_alpha(0.55)
+    for i, d in enumerate(data):
+        q1, q3 = np.percentile(d, [25, 75]); ax.vlines(i + 1, q1, q3, color=HERO, lw=3.5); ax.scatter(i + 1, np.median(d), color=AMBER, s=30, zorder=4)
+    ax.axhline(10, color=AMBER, ls='--', lw=1.6); ax.text(0.6, 10.6, 'aspettativa: +10% al mese', color=AMBER, fontsize=12)
+    ax.axhline(0, color=ZERO, lw=1); ax.set_xticks(range(1, 7)); ax.set_xticklabels(yrs); ax.set_ylim(-12, 13.5)
+    lbl(ax, 'Anno', 'Rendimento mensile (%)')
+
+def draw_rmultiple(fig):
+    ax = main_ax(fig, (0.09, 0.12, 0.8, 0.83)); n = 110
+    r = np.where(rng.random(n) < 0.42, rng.uniform(1.2, 3.2, n), -1.0 + rng.normal(0, 0.05, n))
+    ax.bar(np.arange(n), r, color=[GREEN if v > 0 else RED for v in r], width=0.75, alpha=0.85); ax.axhline(0, color=ZERO, lw=1)
+    ax.text(2, 3.45, f'Expectancy = {r.mean():+.2f}R', color=AMBER, fontsize=13); ax.set_ylim(-1.6, 3.9); ax.set_xlim(-1, n)
+    ax2 = ax.twinx(); style(ax2); ax2.grid(False); ax2.plot(np.arange(n), np.cumsum(r), color=HERO, lw=2.2); ax2.set_ylabel('R cumulati', color=TXT)
+    lbl(ax, 'Trade', 'R per trade')
+
+def draw_hexbin(fig):
+    ax = fig.add_axes([0.1, 0.12, 0.76, 0.82]); style(ax); n = 70000
+    t = rng.uniform(0, 24, n); vol = 0.4 + 1.2 * np.exp(-((t - 9) / 1.5) ** 2) + 1.4 * np.exp(-((t - 15) / 1.7) ** 2)
+    y = rng.normal(0, 1, n) * vol * 6
+    hb = ax.hexbin(t, y, gridsize=44, cmap=SQ_COOL, mincnt=1, bins='log', linewidths=0)
+    cb = fig.colorbar(hb, cax=fig.add_axes([0.89, 0.12, 0.025, 0.82])); cb.outline.set_color(SPINE); cb.ax.tick_params(colors=TICK, labelsize=8)
+    ax.set_xlim(0, 24); ax.set_ylim(-26, 26); ax.set_xticks(range(0, 25, 3)); lbl(ax, 'Ora del giorno', 'Variazione (pip)')
+
+def draw_boxplot(fig):
+    ax = main_ax(fig); per = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
+    for i in range(len(per)):
+        d = rng.normal(rng.uniform(-1, 2), rng.uniform(5, 8), 80); m = rng.normal(rng.uniform(0.8, 1.4), rng.uniform(1.5, 2.2), 80)
+        for data, off, c in ((d, -0.18, AMBER), (m, 0.18, LBLUE)):
+            b = ax.boxplot(data, positions=[i + off], widths=0.3, patch_artist=True,
+                           flierprops=dict(marker='o', markersize=2.5, markerfacecolor=c, markeredgecolor='none', alpha=0.5))
+            for p in b['boxes']: p.set_facecolor(_rgba(c, 0.35)); p.set_edgecolor(c)
+            for k in ('whiskers', 'caps'):
+                for l in b[k]: l.set_color(c)
+            for l in b['medians']: l.set_color(HERO); l.set_linewidth(2)
+    ax.set_xticks(range(len(per))); ax.set_xticklabels(per); ax.axhline(0, color=ZERO, lw=1)
+    ax.legend(handles=[Patch(facecolor=_rgba(AMBER, .35), edgecolor=AMBER, label='Discrezionale'), Patch(facecolor=_rgba(LBLUE, .35), edgecolor=LBLUE, label='Meccanico')],
+              loc='upper left', frameon=False, labelcolor=TXT)
+    lbl(ax, 'Trimestre', 'Rendimento mensile (%)')
+
+def draw_calendar(fig):
+    ax = fig.add_axes([0.03, 0.04, 0.94, 0.92]); ax.axis('off'); ax.set_aspect('equal')
+    months = ['Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre']
+    for k, mname in enumerate(months):
+        ox, oy = (k % 3) * 6.6, (1 - k // 3) * 7.4
+        ax.text(ox, oy + 5.9, mname, color=TXT2, fontsize=12)
+        for j, dname in enumerate('LMMGV'): ax.text(ox + j * 1.1 + 0.45, oy + 5.1, dname, color=TICK, fontsize=9, ha='center')
+        for w in range(5):
+            for d in range(5):
+                if rng.random() < 0.1: c = _rgba(NEUTRAL, 0.35)
+                else:
+                    v = rng.normal(0.25, 1.0); c = _rgba(GREEN if v > 0 else RED, 0.25 + 0.75 * min(1, abs(v) / 1.8))
+                ax.add_patch(plt.Rectangle((ox + d * 1.1, oy + (4 - w) * 1.0), 0.92, 0.84, color=c))
+    ax.text(0, -1.0, 'Giorni positivi 61%  ·  Miglior giorno +2.4R  ·  Peggiore −1.0R', color=TXT, fontsize=11)
+    ax.set_xlim(-0.4, 19.6); ax.set_ylim(-1.6, 14.2)
+
+def draw_ranges(fig):
+    ax = main_ax(fig); n = 60; p = 100 + np.cumsum(rng.normal(0.03, 0.5, n))
+    hi = p + np.abs(rng.normal(0.5, 0.25, n)); lo = p - np.abs(rng.normal(0.5, 0.25, n)); op = p + rng.normal(0, 0.25, n)
+    for m in range(0, n, 20):
+        s = slice(m, m + 20); ax.add_patch(plt.Rectangle((m - 0.5, lo[s].min() - 0.15), 19.6, hi[s].max() - lo[s].min() + 0.3, fill=False, ec=AMBER, ls='--', lw=1.4))
+        ax.text(m + 0.2, hi[s].max() + 0.35, 'HTR', color=AMBER, fontsize=11)
+    for w in range(0, n, 5):
+        s = slice(w, w + 5); ax.add_patch(plt.Rectangle((w - 0.4, lo[s].min()), 4.8, hi[s].max() - lo[s].min(), color=BLUE, alpha=0.11, lw=0))
+    for i in range(n):
+        c = GREEN if p[i] >= op[i] else RED
+        ax.vlines(i, lo[i], hi[i], color=c, lw=1.3); ax.hlines(op[i], i - 0.32, i, color=c, lw=1.3); ax.hlines(p[i], i, i + 0.32, color=c, lw=1.3)
+    ax.set_xlim(-1, n); lbl(ax, 'Giorni', 'Prezzo')
+
+def draw_polyfit(fig):
+    import warnings
+    ax = main_ax(fig); x = np.sort(rng.uniform(0, 1, 26)); y = np.sin(2.4 * np.pi * x) * 0.8 + rng.normal(0, 0.28, x.size)
+    xs = np.linspace(0, 1, 500)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore'); c15 = np.polyfit(x, y, 15)
+    c3 = np.polyfit(x, y, 3)
+    ax.plot(xs, np.polyval(c15, xs), color=RED, lw=2, label='Sovra-ottimizzato (15 parametri)')
+    ax.plot(xs, np.polyval(c3, xs), color=LBLUE, lw=2.8, label='Semplice (3 parametri)')
+    ax.scatter(x, y, s=50, color=HERO, zorder=5)
+    ax.set_ylim(-2.2, 2.4); ax.set_xlim(-0.02, 1.02); ax.legend(loc='upper right', frameon=False, labelcolor=TXT)
+    lbl(ax, 'Variabile', 'Risultato')
+
+def draw_weekhour(fig):
+    ax = fig.add_axes([0.11, 0.12, 0.76, 0.66]); style(ax)
+    h = np.arange(24); base = 0.25 + 0.9 * np.exp(-((h - 8.5) / 1.4) ** 2) + 1.1 * np.exp(-((h - 14.5) / 1.6) ** 2) + 0.3 * np.exp(-((h - 1) / 1.6) ** 2)
+    M = np.array([base * rng.uniform(0.8, 1.2) + rng.normal(0, 0.05, 24) for _ in range(5)])
+    heat = LinearSegmentedColormap.from_list('heat_' + THEME, ['#120d05', '#5a3a06', '#F5B000', '#fff1c2'] if THEME == 'dark' else ['#fbf3df', '#f7d27a', '#e09a00', '#6b4300'])
+    im = ax.imshow(M, cmap=heat, aspect='auto', extent=[0, 24, 4.5, -0.5])
+    ax.set_yticks(range(5)); ax.set_yticklabels(['Lun', 'Mar', 'Mer', 'Gio', 'Ven']); ax.set_xticks(range(0, 25, 3)); ax.grid(False)
+    cb = fig.colorbar(im, cax=fig.add_axes([0.89, 0.12, 0.025, 0.66])); cb.outline.set_color(SPINE); cb.ax.tick_params(colors=TICK, labelsize=8)
+    ax2 = fig.add_axes([0.11, 0.8, 0.76, 0.16]); ax2.axis('off'); ax2.set_xlim(0, 24); ax2.set_ylim(0, 1)
+    for k, (a, b, name, c) in enumerate(((0, 9, 'Asia', SAND), (7, 16, 'Londra', LBLUE), (13, 22, 'New York', BLUE))):
+        y = 0.2 + k * 0.3; ax2.plot([a, b], [y, y], color=c, lw=4, solid_capstyle='round'); ax2.text(a, y + 0.08, name, color=TXT2, fontsize=11)
+    lbl(ax, 'Ora (UTC)', None)
+
+def draw_sensitivity(fig):
+    ax = main_ax(fig); x = np.arange(5, 61, 5)
+    for name, c, peak, h in (('Asia', SAND, 20, 1.15), ('Londra', LBLUE, 30, 1.55), ('New York', BLUE, 40, 1.35)):
+        y = 0.9 + (h - 0.9) * np.exp(-((x - peak) / 16) ** 2) + rng.normal(0, 0.03, x.size)
+        ax.plot(x, y, color=c, lw=2.4, marker='o', ms=6, label=name)
+    ax.axvspan(22, 38, color=AMBER, alpha=0.08); ax.axvline(30, color=AMBER, ls='--', lw=1.4)
+    ax.legend(loc='upper right', frameon=False, labelcolor=TXT); lbl(ax, 'Durata del range (minuti)', 'Profit factor')
+
+def draw_hour_dual(fig):
+    ax = main_ax(fig, (0.09, 0.12, 0.8, 0.83)); h = np.arange(24)
+    n = 20 + 140 * np.exp(-((h - 9) / 1.6) ** 2) + 160 * np.exp(-((h - 15) / 1.8) ** 2) + rng.uniform(0, 15, 24)
+    ax.bar(h, n, color=[BARS(0.3 + 0.7 * v / n.max()) for v in n], width=0.75)
+    ax2 = ax.twinx(); style(ax2); ax2.grid(False)
+    wr = 45 + 12 * np.exp(-((h - 9.5) / 2) ** 2) + 8 * np.exp(-((h - 15) / 2) ** 2) + rng.normal(0, 1.5, 24)
+    ax2.plot(h, wr, color=AMBER, lw=2.4, marker='o', ms=5); ax2.set_ylabel('Win rate (%)', color=TXT); ax2.set_ylim(30, 72)
+    ax.set_xlim(-0.6, 23.6); lbl(ax, 'Ora di ingresso (UTC)', 'Numero di trade')
+
+def draw_volprofile(fig):
+    ax = main_ax(fig, (0.08, 0.1, 0.66, 0.85)); n = 70; p = 100 + np.cumsum(rng.normal(0, 0.35, n))
+    for i in range(n):
+        o, c = (p[i - 1] if i else p[0]), p[i]; hh, ll = max(o, c) + abs(rng.normal(0, .15)), min(o, c) - abs(rng.normal(0, .15))
+        col = GREEN if c >= o else RED; ax.plot([i, i], [ll, hh], color=col, lw=0.9); ax.add_patch(plt.Rectangle((i - .32, min(o, c)), .64, abs(c - o) + .02, color=col))
+    ax.plot(np.cumsum(p) / np.arange(1, n + 1), color=PALE, lw=1.6); ax.text(n - 9, (np.cumsum(p) / np.arange(1, n + 1))[-1] + 0.25, 'VWAP', color=PALE, fontsize=10)
+    edges = np.linspace(p.min() - 1, p.max() + 1, 38); counts, _ = np.histogram(np.r_[p, rng.normal(np.median(p), 1.0, 500)], bins=edges)
+    cen = (edges[:-1] + edges[1:]) / 2; poc = int(np.argmax(counts))
+    order = np.argsort(-counts); keep = order[np.cumsum(counts[order]) <= 0.7 * counts.sum()]
+    ax.axhspan(cen[keep].min(), cen[keep].max(), color=BLUE, alpha=0.07); ax.axhline(cen[poc], color=AMBER, ls=':', lw=1.3)
+    ax.set_xlim(-1, n); lbl(ax, 'Barre (M15)', 'Prezzo')
+    ax2 = fig.add_axes([0.76, 0.1, 0.21, 0.85]); style(ax2, ticks=False); ax2.grid(False)
+    ax2.barh(cen, counts, height=(edges[1] - edges[0]) * 0.85, color=[AMBER if i == poc else BARS(0.55) for i in range(len(cen))])
+    ax2.set_ylim(ax.get_ylim()); ax2.set_xlabel('Volume', color=TXT)
+
+# trading (lezioni che ripetevano il grafico di una locandina)
+def draw_parallel(fig):
+    ax = main_ax(fig, (0.05, 0.1, 0.9, 0.82)); names = ['Periodo', 'Soglia', 'Stop', 'Target', 'Profit factor', 'Drawdown']; k = len(names); n = 220
+    V = rng.uniform(0, 1, (n, k)); pf = 0.6 * (1 - np.abs(V[:, 0] - 0.6)) + 0.4 * (1 - np.abs(V[:, 2] - 0.3)) + rng.normal(0, 0.05, n)
+    V[:, 4] = (pf - pf.min()) / np.ptp(pf); V[:, 5] = np.clip(1 - V[:, 4] * 0.7 + rng.normal(0, 0.08, n), 0, 1)
+    order = np.argsort(V[:, 4])
+    for i in order: ax.plot(range(k), V[i], color=SQ_COOL(0.2 + 0.6 * V[i, 4]), lw=0.8, alpha=0.35)
+    for i in order[-12:]: ax.plot(range(k), V[i], color=AMBER, lw=1.9, alpha=0.9)
+    for j in range(k): ax.axvline(j, color=SPINE, lw=1.3)
+    ax.set_xticks(range(k)); ax.set_xticklabels(names, fontsize=11, color=TXT2); ax.set_yticks([]); ax.grid(False); ax.set_xlim(-0.15, k - 0.85)
+    for s in ('left', 'right', 'top'): ax.spines[s].set_visible(False)
+
+def draw_forest(fig):
+    ax = main_ax(fig, (0.22, 0.1, 0.74, 0.86)); k = 11
+    eff = rng.normal(2.2, 1.6, k); se = rng.uniform(0.6, 1.8, k); y = np.arange(k)[::-1] + 2.0
+    for e, s, yy in zip(eff, se, y):
+        ax.hlines(yy, e - 1.96 * s, e + 1.96 * s, color=LBLUE, lw=1.7); ax.scatter(e, yy, s=40 + 70 / s, marker='s', color=PALE, zorder=4)
+    w = 1 / se ** 2; pooled = np.average(eff, weights=w); pse = np.sqrt(1 / w.sum())
+    ax.fill([pooled - 1.96 * pse, pooled, pooled + 1.96 * pse, pooled], [0.8, 1.25, 0.8, 0.35], color=AMBER)
+    ax.axvline(0, color=ZERO, lw=1.2); ax.axvline(pooled, color=AMBER, ls='--', lw=1)
+    ax.set_yticks(list(y) + [0.8]); ax.set_yticklabels([f'Studio {2008 + i}' for i in range(k)] + ['Stima combinata'])
+    ax.set_ylim(0, k + 2.6); lbl(ax, 'Effetto stimato (rendimento annuo, %)', None)
+
+def draw_ecdf(fig):
+    ax = main_ax(fig)
+    for _ in range(70):
+        d = np.sort(rng.normal(0, 1, 300)); ax.plot(d, np.linspace(0, 1, d.size), color=NEUTRAL, lw=0.8, alpha=0.45)
+    s = np.sort(rng.normal(0.55, 1, 300)); ax.plot(s, np.linspace(0, 1, s.size), color=LBLUE, lw=2.8, label='La tua strategia')
+    ax.plot([], [], color=NEUTRAL, lw=2, label='Strategie casuali')
+    x0 = 0.25; ys = np.mean(s <= x0); yr = np.mean(rng.normal(0, 1, 4000) <= x0)
+    ax.annotate('', xy=(x0, ys), xytext=(x0, yr), arrowprops=dict(arrowstyle='<->', color=AMBER, lw=2))
+    ax.text(x0 + 0.12, (ys + yr) / 2, f'KS = {yr - ys:.2f}', color=AMBER, fontsize=13)
+    ax.legend(loc='upper left', frameon=False, labelcolor=TXT); ax.set_xlim(-3.2, 3.6); lbl(ax, 'Rendimento per trade (R)', 'Probabilità cumulata')
+
+def draw_tree(fig):
+    ax = fig.add_axes([0.02, 0.03, 0.96, 0.94]); ax.axis('off'); ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+    N = {'r': (0.5, 0.9, 'Trend D1 sopra la media 50', None), 'a': (0.27, 0.64, 'Sessione di Londra', None), 'b': (0.73, 0.64, 'Volatilità sopra la mediana', None),
+         'aa': (0.13, 0.37, 'Rottura del range', None), 'ab': (0.4, 0.37, 'PF 0.94\n418 trade', 0.94), 'ba': (0.6, 0.37, 'PF 1.08\n276 trade', 1.08),
+         'bb': (0.86, 0.37, 'Pullback al 38%', None), 'aaa': (0.06, 0.1, 'PF 1.46\n312 trade', 1.46), 'aab': (0.21, 0.1, 'PF 0.88\n190 trade', 0.88),
+         'bba': (0.79, 0.1, 'PF 1.31\n201 trade', 1.31), 'bbb': (0.94, 0.1, 'PF 0.97\n144 trade', 0.97)}
+    for k_, (x, y, _, _) in N.items():
+        if len(k_) > 1 or k_ != 'r':
+            par = 'r' if len(k_) == 1 else k_[:-1]; px, py = N[par][0], N[par][1]
+            ax.plot([px, x], [py - 0.045, y + 0.045], color=EDGE, lw=1.4)
+            ax.text((px + x) / 2 + (0.012 if x > px else -0.012), (py + y) / 2, 'sì' if k_[-1] == 'a' else 'no', color=TICK, fontsize=14, ha='left' if x > px else 'right')
+    for k_, (x, y, t, pf) in N.items():
+        if pf is None: fc, ec, lw = _rgba(BLUE, 0.2), LBLUE, 1.3
+        else:
+            c = GREEN if pf > 1.2 else (RED if pf < 1 else SAND); fc, ec, lw = _rgba(c, 0.22), c, 1.3
+            if pf == 1.46: ec, lw = AMBER, 2.6
+        ax.text(x, y, t.replace(' sopra', '\nsopra').replace('Sessione di', 'Sessione\ndi').replace('Rottura del', 'Rottura\ndel').replace('Pullback al', 'Pullback\nal'), ha='center', va='center', color=TXT2, fontsize=15,
+                bbox=dict(boxstyle='round,pad=0.55', fc=fc, ec=ec, lw=lw))
+
+def draw_odds(fig):
+    ax = main_ax(fig, (0.33, 0.12, 0.62, 0.83))
+    items = [('+2% al mese', 41), ('+5% al mese', 12), ('+10% al mese', 2.1), ('+20% al mese', 0.35), ('raddoppiare in 6 mesi', 0.08), ('raddoppiare in 1 mese', 0.004)]
+    y = np.arange(len(items))[::-1]; v = np.array([i[1] for i in items])
+    ax.barh(y, v, color=[BARS(0.85), BARS(0.6), SAND, RED, RED, RED], height=0.6); ax.set_xscale('log'); ax.set_xlim(0.002, 160)
+    for yy, vv in zip(y, v): ax.text(vv * 1.3, yy, f'{vv:g}%'.replace('.', ','), va='center', color=TXT2, fontsize=12)
+    ax.set_yticks(y); ax.set_yticklabels([i[0] for i in items], fontsize=12); lbl(ax, 'Probabilità (scala logaritmica, %)', None)
+
+# mente (live e lezioni del Mental Coach)
+def draw_brain_top(fig):
+    draw_brain(fig, az=-90, el=86, active=((0.7, 0.25, 0.4), (0.7, -0.25, 0.4)))
+
+def draw_brain_lines(fig, az=-32, el=20):
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis('off')
+    P, N, kind, g, sulc = _brain_shell(density=1.0)
+    u, v, z = _view(P, az, el)
+    cell = (u.max() - u.min()) / 300
+    iu = ((u - u.min()) / cell).astype(int); iv = ((v - v.min()) / cell).astype(int)
+    zb = np.full((iu.max() + 1, iv.max() + 1), -9.0); np.maximum.at(zb, (iu, iv), z)
+    vis = z >= zb[iu, iv] - 0.03
+    zl = np.linspace(-1.0, 0.72, 30); xl = np.linspace(-1.0, 1.0, 26)
+    onz = np.min(np.abs(P[:, 2:3] - zl[None, :]), axis=1) < 0.0045
+    onx = np.min(np.abs(P[:, 0:1] - xl[None, :]), axis=1) < 0.0035
+    m = vis & (onz | onx)
+    hgt = (P[m, 2] + 1.0) / 1.75
+    act = np.exp(-((P[m] - np.array([0.72, -0.3, 0.25])) ** 2).sum(1) / 0.05)
+    col = SQ_COOL(0.3 + 0.65 * hgt); hot = _mix(AMBER, '#fff3d0' if _glow() else '#c25a00', np.clip(act, 0, 1))
+    col = col * (1 - act[:, None]) + hot * act[:, None]
+    if _glow(): ax.scatter(u[m], v[m], s=7, c=col * [1, 1, 1, 0.05], lw=0)
+    ax.scatter(u[m], v[m], s=0.9 + 2 * act, c=col, lw=0)
+    _dust(ax, (u.min() - 0.3, u.max() + 0.3), (v.min() - 0.3, v.max() + 0.3), 600)
+    _set_frame(ax, fig, u, v, pad=0.06)
+
+def draw_fmri(fig):
+    K = 16; D = rng.normal(0, 1, (K, 3)); D /= np.linalg.norm(D, axis=1, keepdims=True); f = rng.uniform(15, 22, K); ph = rng.uniform(0, 2 * np.pi, K)
+    blobs = [((0.28, 0.42, 0.3), 0.2), ((-0.32, 0.12, 0.05), 0.16), ((0.08, -0.45, -0.25), 0.15)]
+    n = 170; yy, xx = np.mgrid[-1:1:n * 1j, -1:1:n * 1j]
+    for i, zk in enumerate(np.linspace(-0.55, 0.55, 9)):
+        ax = fig.add_axes([0.03 + (i % 3) * 0.32, 0.68 - (i // 3) * 0.32, 0.3, 0.3]); ax.axis('off')
+        s = np.sqrt(max(0.08, 1 - (zk / 0.8) ** 2)); r = (xx / (0.72 * s)) ** 2 + (yy / (0.9 * s)) ** 2; mask = r < 1
+        g = sum(np.sin((xx * D[k, 0] + yy * D[k, 1] + zk * D[k, 2]) * f[k] + ph[k]) for k in range(K)) / np.sqrt(K / 2)
+        inten = np.where(r > 0.86, 0.85, 0.22 + 0.5 * np.clip(np.abs(g) / 1.4, 0, 1)); inten[np.abs(xx) < 0.012] *= 0.4
+        rgba = SQ_COOL(0.08 + 0.8 * inten)
+        act = sum(np.exp(-((xx - b[0]) ** 2 + (yy - b[1]) ** 2 + (zk - b[2]) ** 2) / rad ** 2) for b, rad in blobs) * mask
+        a = np.clip(act * 1.7 - 0.3, 0, 1)
+        hot = _mix(AMBER, '#fff3d0' if _glow() else '#b34700', np.clip(act * 1.4 - 0.5, 0, 1))
+        rgba = rgba * (1 - a[..., None]) + hot * a[..., None]; rgba[..., 3] = mask.astype(float)
+        ax.imshow(rgba, origin='lower', extent=[-1, 1, -1, 1]); ax.set_xlim(-1, 1); ax.set_ylim(-1, 1)
+        ax.text(-0.98, -0.98, f'z = {int(zk * 60):+d} mm', color=TICK, fontsize=9)
+
+def draw_chord(fig):
+    ax, asp = _frame_ax(fig, 1.42); ax.set_aspect('equal')
+    names = ['PFC', 'OFC', 'ACC', 'INS', 'AMY', 'HIP', 'THA', 'STR', 'NAc', 'VTA', 'SN', 'HYP', 'CER', 'V1', 'PCC', 'TPJ', 'M1', 'S1']
+    n = len(names); seg = 2 * np.pi / n; key = {'PFC', 'NAc', 'VTA', 'STR'}
+    ang = np.array([np.pi / 2 - (i + 0.5) * seg for i in range(n)])
+    for i, nm in enumerate(names):
+        a0, a1 = np.degrees(ang[i] - seg / 2 + 0.03), np.degrees(ang[i] + seg / 2 - 0.03)
+        ax.add_patch(Wedge((0, 0), 1.08, a0, a1, width=0.08, color=AMBER if nm in key else SQ_COOL(0.35 + 0.6 * i / n)))
+        x, y = 1.2 * np.cos(ang[i]), 1.2 * np.sin(ang[i]); rot = np.degrees(ang[i])
+        if x < 0: rot += 180
+        ax.text(x, y, nm, color=AMBER if nm in key else TXT2, fontsize=16, ha='left' if x >= 0 else 'right', va='center', rotation=rot, rotation_mode='anchor')
+    pairs = [(rng.integers(n), rng.integers(n)) for _ in range(46)]
+    path = [('VTA', 'NAc'), ('VTA', 'PFC'), ('NAc', 'PFC'), ('STR', 'PFC'), ('VTA', 'STR'), ('AMY', 'PFC')]
+    t = np.linspace(0, 1, 60)[:, None]
+    def curve(i, j):
+        p0 = np.array([np.cos(ang[i]), np.sin(ang[i])]) * 1.03; p1 = np.array([np.cos(ang[j]), np.sin(ang[j])]) * 1.03
+        return (1 - t) ** 2 * p0 + 2 * (1 - t) * t * (p0 + p1) * 0.12 + t ** 2 * p1
+    for i, j in pairs:
+        if i != j: c = curve(i, j); ax.plot(c[:, 0], c[:, 1], color=LBLUE, lw=rng.uniform(0.6, 1.8), alpha=0.32)
+    for a_, b_ in path:
+        c = curve(names.index(a_), names.index(b_)); _glow_line(ax, c[:, 0], c[:, 1], AMBER, lw=2.4, glow=8)
+
+def draw_tracto(fig):
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis('off')
+    P, N, kind, g, sulc = _brain_shell(density=0.14); u, v, z = _view(P, 0, 4)
+    ax.scatter(u, v, s=0.6, color=LBLUE, alpha=0.05 if _glow() else 0.07, lw=0)
+    bundles = [
+        ([(0.62, 0.12), (0.3, 0.3), (0, 0.34), (-0.35, 0.3), (-0.62, 0.1)], 170, 0.035),
+        ([(0.72, 0.2), (0.35, 0.46), (0, 0.52), (-0.42, 0.44), (-0.76, 0.16)], 90, 0.03),
+        ([(0.5, 0.06), (0.1, 0.22), (-0.35, 0.14), (-0.47, -0.1), (-0.2, -0.32), (0.16, -0.4)], 120, 0.03),
+        ([(0.82, -0.05), (0.4, -0.12), (0, -0.15), (-0.5, -0.05), (-0.86, 0.02)], 110, 0.03),
+        ([(0.72, -0.08), (0.46, -0.2), (0.36, -0.36), (0.47, -0.47)], 60, 0.025),
+    ]
+    segs, cols = [], []
+    def add(ctrl, sd, amber_p=0.05):
+        L = _chaikin(np.array(ctrl) + rng.normal(0, sd, 2), 4); L = L + rng.normal(0, 0.004, L.shape)
+        d = np.diff(L, axis=0); hz = np.abs(d[:, 0]) / (np.linalg.norm(d, axis=1) + 1e-9)
+        cc = _mix(BLUE, LBLUE, hz) if rng.random() > amber_p else np.tile(matplotlib.colors.to_rgba(AMBER), (len(d), 1))
+        cc[:, 3] = 0.55; segs.extend(np.stack([L[:-1], L[1:]], 1)); cols.extend(cc)
+    for ctrl, k, sd in bundles:
+        for _ in range(k): add(ctrl, sd)
+    for _ in range(160):  # fascio corticospinale: dalla corteccia al tronco
+        s = (rng.uniform(-0.3, 0.4), 0.0); s = (s[0], 0.5 + 0.18 * np.sqrt(max(0, 1 - (s[0] / 0.75) ** 2)))
+        add([s, ((s[0] - 0.25) / 2, 0.0), (-0.28, -0.45), (-0.34, -0.9)], 0.01, 0.03)
+    if _glow(): ax.add_collection(LineCollection(segs, colors=[(c[0], c[1], c[2], 0.04) for c in cols], linewidths=3))
+    ax.add_collection(LineCollection(segs, colors=cols, linewidths=0.8))
+    _set_frame(ax, fig, u, v, pad=0.06)
+
+def draw_cleft(fig):
+    ax, asp = _frame_ax(fig, 1.0); ax.set_aspect('equal')
+    th = np.linspace(0, 2 * np.pi, 400); bx, by = 0.95 * np.cos(th), 0.5 + 0.48 * np.sin(th)
+    neck = np.abs(bx) < 0.28; top = by > 0.85
+    ax.fill(bx, by, color=_rgba(BLUE, 0.12)); ax.fill_between([-0.28, 0.28], 0.9, 1.1, color=_rgba(BLUE, 0.12), lw=0)
+    for x_ in (-0.28, 0.28): _glow_line(ax, [x_, x_], [0.88, 1.1], PALE, lw=2)
+    m = ~(neck & top); _glow_line(ax, np.where(m, bx, np.nan), np.where(m, by, np.nan), PALE, lw=2)
+    ves = []
+    while len(ves) < 24:
+        p = rng.uniform([-0.8, 0.2], [0.8, 0.85])
+        if (p[0] / 0.85) ** 2 + ((p[1] - 0.5) / 0.4) ** 2 < 1 and all(np.hypot(*(p - q)) > 0.13 for q in ves): ves.append(p)
+    for p in ves:
+        ax.add_patch(plt.Circle(p, 0.055, fill=False, color=LBLUE, lw=1.3))
+        d = p + rng.normal(0, 0.018, (6, 2)); ax.scatter(d[:, 0], d[:, 1], s=6, color=AMBER, lw=0)
+    fus = np.linspace(-0.55, 0.55, 4)
+    for fx in fus:
+        a = np.linspace(np.pi * 1.15, np.pi * 1.85, 30); ax.plot(fx + 0.06 * np.cos(a), 0.06 + 0.06 * np.sin(a) + 0.02, color=LBLUE, lw=1.3)
+    k = 900; src = rng.choice(fus, k) + rng.normal(0, 0.05, k); depth = rng.uniform(0, 1, k) ** 0.8
+    px = src + rng.normal(0, 0.12, k) * depth; py = 0.02 - 0.42 * depth
+    col = _mix(AMBER, PALE, depth); col[:, 3] = 0.85 - 0.4 * depth
+    ax.add_collection(LineCollection(np.stack([np.c_[px, py + 0.03], np.c_[px, py]], 1), colors=col, linewidths=1.0))
+    if _glow(): ax.scatter(px, py, s=14, c=col * [1, 1, 1, 0.12], lw=0)
+    ax.scatter(px, py, s=3, c=col, lw=0)
+    xm = np.linspace(-asp, asp, 300); ym = -0.48 + 0.025 * np.sin(4 * xm)
+    ax.fill_between(xm, ym, -1.0, color=_rgba(BLUE, 0.08), lw=0); _glow_line(ax, xm, ym, PALE, lw=2)
+    for rx in np.linspace(-0.9, 0.9, 13):
+        ry = -0.48 + 0.025 * np.sin(4 * rx); lit = np.min(np.abs(fus - rx)) < 0.12
+        ax.add_patch(plt.Rectangle((rx - 0.022, ry - 0.01), 0.044, 0.07, color=AMBER if lit else LBLUE))
+        if lit and _glow(): ax.scatter([rx], [ry + 0.03], s=500, color=AMBER, alpha=0.12, lw=0)
+    _dust(ax, (-asp, asp), (-1, 1), 400)
+
+def draw_action_potential(fig):
+    ax = main_ax(fig); t = np.linspace(0, 30, 3000); v = np.full_like(t, -70.0)
+    for t0 in (4.0, 13.5, 22.5):
+        dt = t - t0; v += 15 * np.exp(-((dt + 0.5) / 0.6) ** 2) + 110 * np.exp(-((dt - 0.4) / 0.32) ** 2) - 14 * np.exp(-((dt - 2.0) / 0.9) ** 2)
+    v += rng.normal(0, 0.35, t.size)
+    ax.fill_between(t, -70, v, where=v > -70, color=BLUE, alpha=0.16, lw=0); ax.plot(t, v, color=LBLUE, lw=2.2)
+    ax.axhline(-55, color=AMBER, ls='--', lw=1.3); ax.text(0.4, -52.5, 'Soglia', color=AMBER, fontsize=11); ax.axhline(-70, color=ZERO, lw=1)
+    t0 = 13.5
+    for txt, xy, xt in (('Depolarizzazione', (t0 + 0.25, 10), (t0 - 7.5, 28)), ('Ripolarizzazione', (t0 + 0.75, -10), (t0 + 3, 18)), ('Iperpolarizzazione', (t0 + 2.0, -83), (t0 + 3.5, -90))):
+        ax.annotate(txt, xy=xy, xytext=xt, color=TXT2, fontsize=11, arrowprops=dict(arrowstyle='->', color=TXT, lw=1))
+    ax.set_ylim(-96, 52); ax.set_xlim(0, 30); lbl(ax, 'Tempo (ms)', 'Potenziale di membrana (mV)')
+
+def draw_wave_rings(fig):
+    ax, asp = _frame_ax(fig, 1.12); ax.set_aspect('equal')
+    bands = [('δ delta · 3 Hz', 3, 0.32, BLUE), ('θ theta · 6 Hz', 6, 0.47, BLUE), ('α alpha · 10 Hz', 10, 0.62, AMBER), ('β beta · 20 Hz', 20, 0.77, LBLUE), ('γ gamma · 40 Hz', 40, 0.92, PALE)]
+    th = np.linspace(0, 2 * np.pi, 3000)
+    for name, f, R, c in bands:
+        amp = 0.04 * (1 + 0.5 * np.sin(th * 2 + rng.uniform(0, 6))); r = R + amp * np.sin(f * th + rng.uniform(0, 6))
+        _glow_line(ax, r * np.cos(th), r * np.sin(th), c, lw=1.6, glow=6)
+        ax.text(0, R + 0.075, name, color=c if c == AMBER else TXT2, fontsize=12, ha='center', va='center')
+    _burst(ax, (0, 0), n=500, scale=0.2)
+    _dust(ax, (-1.12 * asp, 1.12 * asp), (-1.12, 1.12), 500)
+
+def draw_comfort(fig):
+    ax, asp = _frame_ax(fig, 1.0); ax.set_aspect('equal'); cx, cy, R = -0.35, -0.02, 0.48
+    r = R * 0.96 * np.sqrt(rng.random(1800)); a = rng.uniform(0, 2 * np.pi, 1800)
+    ax.scatter(cx + r * np.cos(a), cy + r * np.sin(a), s=rng.uniform(1, 5, 1800), color=LBLUE, alpha=0.6, lw=0)
+    if _glow(): ax.add_patch(plt.Circle((cx, cy), R, fill=False, color=PALE, lw=10, alpha=0.05))
+    ax.add_patch(plt.Circle((cx, cy), R, fill=False, color=PALE, lw=1.6, ls='--'))
+    ax.text(cx, cy + R + 0.07, 'ZONA DI COMFORT', color=TXT2, fontsize=11, ha='center')
+    k = 190; ang = rng.normal(0, 0.85, k); r1 = R + rng.gamma(1.3, 0.32, k); L = 0.05 + 0.1 * (r1 - R)
+    A = np.c_[cx + (r1 - L) * np.cos(ang), cy + (r1 - L) * np.sin(ang)]; B = np.c_[cx + r1 * np.cos(ang), cy + r1 * np.sin(ang)]
+    far = np.clip((r1 - R) / 1.0, 0, 1); col = _mix(AMBER, PALE, far); col[:, 3] = 0.9 - 0.4 * far
+    ax.add_collection(LineCollection(np.stack([A, B], 1), colors=col, linewidths=1.2 + 0.8 * far))
+    ax.scatter(B[:, 0], B[:, 1], s=6 + 30 * far, c=col, lw=0)
+    big = np.argsort(-r1)[:5]
+    if _glow(): ax.scatter(B[big, 0], B[big, 1], s=700, color=AMBER, alpha=0.1, lw=0)
+    _dust(ax, (-asp, asp), (-1, 1), 500)
+
+def draw_habit(fig):
+    ax, asp = _frame_ax(fig, 1.0); s = 0.15; pts = []
+    for j in range(-8, 9):
+        for i in range(-12, 13):
+            x, y = i * s + (j % 2) * s / 2, j * s * 0.866
+            if abs(x) < asp * 0.98 and abs(y) < 0.98: pts.append((x, y))
+    pts = np.array(pts) + rng.normal(0, 0.012, (len(pts), 2))
+    d = np.linalg.norm(pts[:, None] - pts[None], axis=2); E = np.argwhere((d < s * 1.25) & (d > 0))
+    ax.add_collection(LineCollection([(pts[i], pts[j]) for i, j in E if i < j], colors=[_rgba(EDGE, 0.45)], linewidths=0.9))
+    ax.scatter(pts[:, 0], pts[:, 1], s=16, color=PALE, alpha=0.55, lw=0)
+    cur = int(np.argmin(np.abs(pts[:, 0] + asp * 0.9) + np.abs(pts[:, 1] + 0.25))); path = [cur]
+    while pts[cur, 0] < asp * 0.85 and len(path) < 60:
+        nb = [j for j in np.where((d[cur] < s * 1.25) & (d[cur] > 0))[0] if j not in path]
+        if not nb: break
+        cur = max(nb, key=lambda j: pts[j, 0] + rng.normal(0, 0.06) - 0.4 * abs(pts[j, 1] - 0.1 * np.sin(pts[j, 0] * 2))); path.append(cur)
+    L = _chaikin(pts[path], 3)
+    _glow_line(ax, L[:, 0], L[:, 1], LBLUE, lw=5.5, glow=18)
+    ax.scatter(pts[path, 0], pts[path, 1], s=60, color=PALE, lw=0, zorder=5)
+    for q in (0.2, 0.45, 0.7, 0.9):
+        k = int(q * (len(L) - 1)); tr = L[max(0, k - 18):k + 1]
+        ax.add_collection(LineCollection(np.stack([tr[:-1], tr[1:]], 1), colors=[_rgba(AMBER, a) for a in np.linspace(0.05, 0.95, len(tr) - 1)], linewidths=3))
+        if _glow(): ax.scatter(*L[k], s=600, color=AMBER, alpha=0.12, lw=0)
+        ax.scatter(*L[k], s=46, color=AMBER, lw=0, zorder=6)
+    for e in (path[0], path[-1]): ax.scatter(*pts[e], s=120, color=AMBER, lw=0, zorder=6)
+
+def draw_attractor(fig):
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis('off')
+    n = 42000; x, y, z = 0.1, 0.0, 0.0; dt = 0.005; out = np.empty((n, 3))
+    for i in range(n):
+        dx, dy, dz = 10 * (y - x), x * (28 - z) - y, x * y - 8 / 3 * z
+        x, y, z = x + dx * dt, y + dy * dt, z + dz * dt; out[i] = (x, y, z)
+    out = out[1500:]; u, v = out[:, 0], out[:, 2]
+    sp = np.linalg.norm(np.diff(out, axis=0), axis=1); spn = (sp - sp.min()) / np.ptp(sp)
+    seg = np.stack([np.c_[u[:-1], v[:-1]], np.c_[u[1:], v[1:]]], 1); col = SQ_COOL(0.3 + 0.7 * spn); col[:, 3] = 0.75
+    if _glow(): ax.add_collection(LineCollection(seg, colors=col * [1, 1, 1, 0.06], linewidths=3))
+    ax.add_collection(LineCollection(seg, colors=col, linewidths=0.6))
+    if _glow():
+        for sz, al in ((2200, 0.06), (600, 0.15)): ax.scatter(u[-1], v[-1], s=sz, color=AMBER, alpha=al, lw=0)
+    ax.scatter(u[-1], v[-1], s=60, color=AMBER, lw=0)
+    _dust(ax, (u.min() - 5, u.max() + 5), (v.min() - 5, v.max() + 5), 500)
+    _set_frame(ax, fig, u, v, pad=0.08)
+
+def draw_calcium(fig):
+    ax = fig.add_axes([0.1, 0.12, 0.76, 0.82]); style(ax); Nn, T = 60, 400; t = np.arange(T)
+    peaks = np.sort(rng.uniform(40, 360, Nn)); M = np.zeros((Nn, T))
+    for i in range(Nn):
+        for t0, amp in [(peaks[i], 1.0)] + [(rng.uniform(0, T), rng.uniform(0.2, 0.5)) for _ in range(2)]:
+            dtt = np.clip(t - t0, 0, None); M[i] += amp * np.where(t >= t0, np.exp(-dtt / 14) * (1 - np.exp(-dtt / 2)), 0)
+    M += rng.normal(0, 0.04, M.shape)
+    im = ax.imshow(M, aspect='auto', cmap=SQ_COOL, vmin=0, vmax=0.9, extent=[0, 40, Nn, 0]); ax.grid(False)
+    cb = fig.colorbar(im, cax=fig.add_axes([0.89, 0.12, 0.025, 0.82])); cb.outline.set_color(SPINE); cb.ax.tick_params(colors=TICK, labelsize=8); cb.set_label('ΔF/F', color=TXT)
+    lbl(ax, 'Tempo (s)', 'Neurone')
+
+def draw_dendrite(fig):
+    ax, asp = _frame_ax(fig, 1.0); segs, widths = [], []; soma = np.array([0.0, -0.3])
+    trunk = [soma]; a = np.pi / 2
+    for _ in range(26): a += rng.normal(0, 0.05); trunk.append(trunk[-1] + 0.03 * np.array([np.cos(a), np.sin(a)]))
+    trunk = np.array(trunk)
+    for i in range(len(trunk) - 1): segs.append([trunk[i], trunk[i + 1]]); widths.append(4.2 - 2.6 * i / len(trunk))
+    for i in range(4, len(trunk) - 3, 3):
+        for sgn in (-1, 1):
+            if rng.random() < 0.75: _tree(segs, widths, trunk[i], np.pi / 2 + sgn * rng.uniform(0.7, 1.2), 0.12, 1.6, 2)
+    for k in range(5): _tree(segs, widths, trunk[-1], np.pi / 2 + (k - 2) * 0.35 + rng.normal(0, 0.1), 0.13, 1.9, 4)
+    for k in range(6): _tree(segs, widths, soma, np.pi * 1.5 + (k - 2.5) * 0.48 + rng.normal(0, 0.1), 0.16, 2.2, 3)
+    w = np.array(widths)
+    if _glow(): ax.add_collection(LineCollection(segs, colors=[_rgba(PALE, 0.06)], linewidths=w * 4))
+    ax.add_collection(LineCollection(segs, colors=[_rgba(PALE, 0.85)], linewidths=w))
+    ends = np.array([s_[1] for s_ in segs]); pick = rng.choice(len(ends), 260)
+    sp = ends[pick] + rng.normal(0, 0.008, (260, 2)); ax.scatter(sp[:, 0], sp[:, 1], s=4, color=LBLUE, lw=0)
+    ax.add_patch(plt.Polygon([soma + (-0.07, -0.04), soma + (0.07, -0.04), soma + (0, 0.09)], color=AMBER))
+    if _glow():
+        for sz, al in ((3000, 0.05), (900, 0.12)): ax.scatter(*soma, s=sz, color=AMBER, alpha=al, lw=0)
+    ax_pts = [soma]; a = -np.pi / 2
+    for _ in range(18): a += rng.normal(0, 0.04); ax_pts.append(ax_pts[-1] + 0.04 * np.array([np.cos(a), np.sin(a)]))
+    ax_pts = np.array(ax_pts); ax.plot(ax_pts[:, 0], ax_pts[:, 1], color=PALE, lw=1.4)
+    for i in range(2, 17, 3): ax.plot(ax_pts[i:i + 2, 0], ax_pts[i:i + 2, 1], color=BLUE, lw=6, alpha=0.8, solid_capstyle='round')
+    _dust(ax, (-asp, asp), (-1, 1), 500)
+
+def draw_galaxy(fig):
+    ax, asp = _frame_ax(fig, 0.8); ax.set_aspect('equal'); n = 9000
+    th = rng.uniform(0, 3.4 * np.pi, n); arm = rng.integers(0, 2, n); r = 0.06 * np.exp(0.26 * th)
+    r = r / r.max() * 1.0; ang = th + arm * np.pi + rng.normal(0, 0.35, n) / (1 + th * 0.25)
+    r = r * (1 + rng.normal(0, 0.08, n)); x, y = r * np.cos(ang), r * np.sin(ang) * 0.6
+    c, s_ = np.cos(0.45), np.sin(0.45); X, Y = x * c - y * s_, x * s_ + y * c
+    rn = np.clip(r, 0, 1); col = _mix(AMBER, LBLUE, np.clip(rn / 0.25, 0, 1)); far = np.clip((rn - 0.4) / 0.6, 0, 1)
+    col = col * (1 - far[:, None]) + _mix(LBLUE, BLUE, far) * far[:, None]; col[:, 3] = 0.85 - 0.25 * far
+    if _glow(): ax.scatter(X, Y, s=14, c=col * [1, 1, 1, 0.05], lw=0)
+    ax.scatter(X, Y, s=rng.uniform(0.6, 3.2, n), c=col, lw=0)
+    sel = np.where((rn > 0.3) & (rn < 0.95))[0]; nodes = np.c_[X, Y][rng.choice(sel, 24, replace=False)]
+    for i in range(len(nodes)):
+        for j in range(i + 1, len(nodes)):
+            if np.hypot(*(nodes[i] - nodes[j])) < 0.38: ax.plot(*zip(nodes[i], nodes[j]), color=LBLUE, lw=0.8, alpha=0.5)
+    for p in nodes: _neuron(ax, p, size=0.3, dendrites=5, depth=2, col=PALE, glow_alpha=0.04)
+    if _glow():
+        for sz, al in ((9000, 0.04), (2500, 0.08), (600, 0.2)): ax.scatter(0, 0, s=sz, color=AMBER, alpha=al, lw=0)
+    _dust(ax, (-0.8 * asp, 0.8 * asp), (-0.8, 0.8), 600)
+
+def draw_hrv(fig):
+    ax = fig.add_axes([0.1, 0.42, 0.86, 0.53]); style(ax); ax.set_xticklabels([])
+    t = np.linspace(0, 120, 1200); chaotic = 74 + np.convolve(rng.normal(0, 2.2, t.size), np.ones(15) / 15, 'same') * 4
+    coh = 70 + 6 * np.sin(2 * np.pi * t / 10); w = 1 / (1 + np.exp(-(t - 60) / 4))
+    hr = chaotic * (1 - w) + coh * w + rng.normal(0, 0.3, t.size)
+    ax.axvspan(60, 120, color=AMBER, alpha=0.06); ax.plot(t, hr, color=LBLUE, lw=1.9); ax.set_xlim(0, 120)
+    top = hr.max() + 2; ax.set_ylim(hr.min() - 2, top + 3); ax.text(64, top, 'coerenza cardiaca', color=AMBER, fontsize=12); ax.text(3, top, 'stress', color=TXT2, fontsize=12)
+    lbl(ax, None, 'Battito (bpm)')
+    ax2 = fig.add_axes([0.1, 0.1, 0.86, 0.27]); style(ax2)
+    br = np.where(t < 60, np.sin(2 * np.pi * t / 3.6 + np.cumsum(rng.normal(0, 0.05, t.size))) * rng.uniform(0.4, 0.8), np.sin(2 * np.pi * t / 10))
+    ax2.fill_between(t, 0, br, color=BLUE, alpha=0.3, lw=0); ax2.plot(t, br, color=PALE, lw=1.2); ax2.set_xlim(0, 120)
+    lbl(ax2, 'Tempo (s)', 'Respiro')
+
+def draw_molecule(fig):
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis('off')
+    ring = [(1.4 * np.cos(np.radians(a)), 1.4 * np.sin(np.radians(a)), 0) for a in (180, 120, 60, 0, -60, -120)]
+    A = [('C', *p) for p in ring]
+    A += [('C', -2.9, 0, 0.2), ('C', -3.65, 1.3, 0.7), ('N', -5.15, 1.25, 0.35)]
+    A += [('O', 1.38, 2.39, 0), ('O', 2.76, 0, 0)]
+    B = [(0, 1, 2), (1, 2, 1), (2, 3, 2), (3, 4, 1), (4, 5, 2), (5, 0, 1), (0, 6, 1), (6, 7, 1), (7, 8, 1), (2, 9, 1), (3, 10, 1)]
+    H = [(1, 120), (4, -60), (5, -120)]
+    for idx, a in H:
+        x, y, zz = A[idx][1:]; A.append(('H', x + 1.0 * np.cos(np.radians(a)), y + 1.0 * np.sin(np.radians(a)), zz)); B.append((idx, len(A) - 1, 1))
+    for idx, off in ((6, (0.2, -0.9, 0.8)), (6, (0.2, -0.6, -0.9)), (7, (0.1, 0.8, 0.9)), (7, (-0.2, 0.7, -0.8)), (8, (-0.6, 0.8, 0.5)), (8, (-0.6, -0.7, -0.4)), (9, (0.9, 0.3, 0)), (10, (0.5, -0.85, 0))):
+        x, y, zz = A[idx][1:]; A.append(('H', x + off[0], y + off[1], zz + off[2])); B.append((idx, len(A) - 1, 1))
+    P = np.array([a[1:] for a in A]); P -= P.mean(0); u, v, z = _view(P, -20, 28); zn = (z - z.min()) / np.ptp(z)
+    colors = {'C': PALE, 'O': RED, 'N': BLUE, 'H': HERO if _glow() else '#5b6884'}; size = {'C': 2600, 'O': 2900, 'N': 2900, 'H': 800}
+    for i, j, kb in B:
+        d = np.array([u[j] - u[i], v[j] - v[i]]); nrm = np.array([-d[1], d[0]]) / (np.linalg.norm(d) + 1e-9) * 0.09
+        offs = [0] if kb == 1 else [-1, 1]
+        for o in offs: ax.plot([u[i] + o * nrm[0], u[j] + o * nrm[0]], [v[i] + o * nrm[1], v[j] + o * nrm[1]], color=LBLUE, lw=4.5, alpha=0.5 + 0.4 * (zn[i] + zn[j]) / 2, zorder=2)
+    for k in np.argsort(z):
+        el = A[k][0]; s_ = size[el] * (0.7 + 0.5 * zn[k])
+        cloud = np.c_[u[k], v[k]] + rng.normal(0, 0.36 if el != 'H' else 0.2, (220, 2))
+        ax.scatter(cloud[:, 0], cloud[:, 1], s=2.5, color=colors[el], alpha=0.35, lw=0, zorder=3)
+        if _glow(): ax.scatter(u[k], v[k], s=s_ * 3, color=colors[el], alpha=0.08, lw=0, zorder=3)
+        ax.scatter(u[k], v[k], s=s_, color=colors[el], alpha=0.95, lw=0, zorder=4)
+    ax.text(u.min(), v.min() - 1.1, 'C₈H₁₁NO₂  ·  dopamina', color=TXT2, fontsize=20)
+    _dust(ax, (u.min() - 2, u.max() + 2), (v.min() - 2, v.max() + 2), 500)
+    _set_frame(ax, fig, u, np.r_[v, v.min() - 1.4], pad=0.07)
+
 DRAW = {
     'montecarlo': draw_montecarlo, 'hist': draw_hist, 'heatmap': draw_heatmap, 'equity_dd': draw_equity_dd,
     'surface': draw_surface, 'scatter': draw_scatter, 'candles': draw_candles, 'table': draw_table,
@@ -829,14 +1418,24 @@ DRAW = {
     'breakout': draw_breakout, 'prop': draw_prop, 'cycle': draw_cycle,
     'brain': draw_brain, 'neuron_burst': draw_neuron_burst, 'synapse': draw_synapse,
     'eeg': draw_eeg, 'raster': draw_raster, 'spectrogram': draw_spectrogram, 'bandpower': draw_bandpower,
+    'underwater': draw_underwater, 'bar3d': draw_bar3d, 'radar': draw_radar, 'contour': draw_contour, 'rings': draw_rings,
+    'waterfall': draw_waterfall, 'violin': draw_violin, 'rmultiple': draw_rmultiple, 'hexbin': draw_hexbin, 'boxplot': draw_boxplot,
+    'calendar': draw_calendar, 'ranges': draw_ranges, 'polyfit': draw_polyfit, 'weekhour': draw_weekhour, 'sensitivity': draw_sensitivity,
+    'hour_dual': draw_hour_dual, 'volprofile': draw_volprofile, 'parallel': draw_parallel, 'forest': draw_forest, 'ecdf': draw_ecdf,
+    'tree': draw_tree, 'odds': draw_odds, 'brain_top': draw_brain_top, 'brain_lines': draw_brain_lines, 'fmri': draw_fmri,
+    'chord': draw_chord, 'tracto': draw_tracto, 'cleft': draw_cleft, 'action_potential': draw_action_potential, 'wave_rings': draw_wave_rings,
+    'comfort': draw_comfort, 'habit': draw_habit, 'attractor': draw_attractor, 'calcium': draw_calcium, 'dendrite': draw_dendrite,
+    'galaxy': draw_galaxy, 'hrv': draw_hrv, 'molecule': draw_molecule,
 }
-FRAMELESS = {'surface', 'cloud3d', 'graph', 'brain', 'neuron_burst', 'synapse'}
-MENTAL_SECONDARY = ['eeg', 'raster', 'spectrogram']
+FRAMELESS = {'surface', 'cloud3d', 'graph', 'brain', 'neuron_burst', 'synapse', 'bar3d', 'brain_top', 'brain_lines', 'chord', 'tracto',
+             'cleft', 'wave_rings', 'comfort', 'habit', 'attractor', 'dendrite', 'galaxy', 'molecule'}
+MENTAL_SECONDARY = ['eeg', 'raster', 'spectrogram', 'bandpower', 'calcium', 'hrv', 'action_potential']
+TRADING_SECONDARY = ['hist', 'equity_dd', 'heatmap', 'candles', 'montecarlo', 'percentiles', 'table', 'hexbin', 'rmultiple', 'violin', 'sensitivity', 'boxplot', 'hour_dual']
 SECONDARY = ['hist', 'equity_dd', 'heatmap', 'candles', 'montecarlo', 'percentiles', 'table']
 
-def render_cover(main, out, seed, secondaries=None, kw=None):
+def render_cover(main, out, seed, secondaries=None, kw=None, pool=None):
     reseed(seed); draw_main = (lambda f: DRAW[main](f, **kw)) if kw else DRAW[main]
-    sec = secondaries or list(rng.choice([s for s in SECONDARY if s != main], 3, replace=False))
+    sec = secondaries or list(rng.choice([s for s in (pool or SECONDARY) if s != main], 3, replace=False))
     W, H = 2250, 1500; c = new_canvas(W, H)
     panel(c, (-60, -60, 760, 560), dim(chart(800, 600, DRAW[sec[0]]), .5))
     panel(c, (-60, 600, 760, 1560), dim(chart(800, 940, DRAW[sec[1]]), .3))
