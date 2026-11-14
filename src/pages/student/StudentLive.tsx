@@ -111,7 +111,7 @@ export default function StudentLive() {
     <div className="cinema-page pb-8">
       <Billboard
         imageUrl={hero.coverUrl}
-        vimeoId={heroReplay?.replayVimeoId}
+        vimeoId={hero.coverUrl ? null : heroReplay?.replayVimeoId}
         accent={hero.accent}
         accentEnd={hero.accentEnd}
         icon={heroUpcoming ? CalendarDays : Radio}

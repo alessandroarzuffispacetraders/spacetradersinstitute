@@ -26,3 +26,20 @@ immagini vanno poi convertite in WebP e caricate nel bucket `video-covers`
 (cartella `curated/`), aggiornando `cover_url`, `cover_url_light`,
 `cover_keyword` delle lezioni e `poster_url`, `poster_url_light` delle serie.
 In alternativa si caricano a mano dall'admin (Contenuti → Copertina).
+
+## Live registrate
+
+`plan_lives.py` fa lo stesso per i replay delle live (dizionario `LIVES`, per
+prefisso dell'id): le live di trading usano il grafico dell'argomento
+(breakout, prop vs reale, cicli giornalieri, Monte Carlo, …); quelle del Mental
+Coach e quelle sulla mente usano cervello a particelle, neuroni che esplodono e
+reti di sinapsi, con EEG/spettrogramma di contorno.
+
+```
+python3 plan_lives.py lives.json out-lives dark
+python3 plan_lives.py lives.json out-lives-light light
+```
+
+`lives.json` = righe di `live_events` (`id, title, status, …`); solo i replay
+ricevono una copertina. Colonne da aggiornare: `cover_url`, `cover_url_light`,
+`cover_keyword`, `cover_status` (cartella del bucket `curated/lives/`).

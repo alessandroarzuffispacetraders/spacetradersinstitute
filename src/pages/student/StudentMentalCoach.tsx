@@ -7,6 +7,7 @@ import { useStudentSessions } from '../../lib/coaching'
 import { useMentalMaterials, useMentalChecklist, MentalMaterialType } from '../../lib/mental'
 import { useStudentCatalog, getCourseStats } from '../../lib/content'
 import { useLiveEvents, liveDateLabel, liveDurationLabel } from '../../lib/live'
+import ReplayCard from '../../components/media/ReplayCard'
 
 const SESSION_SUBLABELS: Record<number, string> = {
   1: 'Valutazione iniziale',
@@ -35,6 +36,8 @@ export default function StudentMentalCoach() {
   const { categories: mentalCats, loading: coursesLoading } = useStudentCatalog(userId, 'mental')
   const { events: allLives } = useLiveEvents()
   const mentalLives = allLives.filter(e => e.hostRole === 'mental_coach' && e.eventType !== 'reminder')
+  const mentalNext = mentalLives.filter(e => e.status !== 'replay')
+  const mentalReplays = mentalLives.filter(e => e.status === 'replay')
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -223,31 +226,41 @@ export default function StudentMentalCoach() {
           <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
             <Radio size={15} strokeWidth={2.2} style={{ color: '#7CBBD0' }} /> Live e replay
           </h3>
-          <div className="space-y-2">
-            {mentalLives.map(ev => {
-              const isLive = ev.status === 'live'
-              return (
-                <button
-                  key={ev.id}
-                  onClick={() => navigate(`/student/live/${ev.id}`)}
-                  className="w-full flex items-center gap-3 py-2.5 px-2 text-left rounded-xl transition-colors hover:bg-white/[0.03]"
-                >
-                  <span
-                    className={`w-2 h-2 rounded-full flex-shrink-0 ${isLive ? 'animate-pulse' : ''}`}
-                    style={{ background: isLive ? '#FF5A6E' : ev.status === 'upcoming' ? '#7CBBD0' : 'var(--ist-text-dim)' }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm truncate" style={{ color: 'var(--ist-text)' }}>{ev.title}</p>
-                    <p className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>
-                      {isLive ? 'Ora in diretta' : liveDateLabel(ev)}
-                      {liveDurationLabel(ev) && <> · {liveDurationLabel(ev)}</>}
-                    </p>
-                  </div>
-                  <ChevronRight size={16} strokeWidth={2} style={{ color: 'var(--ist-text-dim)', flexShrink: 0 }} />
-                </button>
-              )
-            })}
-          </div>
+          {mentalNext.length > 0 && (
+            <div className={`space-y-2 ${mentalReplays.length > 0 ? 'mb-5' : ''}`}>
+              {mentalNext.map(ev => {
+                const isLive = ev.status === 'live'
+                return (
+                  <button
+                    key={ev.id}
+                    onClick={() => navigate(`/student/live/${ev.id}`)}
+                    className="w-full flex items-center gap-3 py-2.5 px-2 text-left rounded-xl transition-colors hover:bg-white/[0.03]"
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full flex-shrink-0 ${isLive ? 'animate-pulse' : ''}`}
+                      style={{ background: isLive ? '#FF5A6E' : ev.status === 'upcoming' ? '#7CBBD0' : 'var(--ist-text-dim)' }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate" style={{ color: 'var(--ist-text)' }}>{ev.title}</p>
+                      <p className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>
+                        {isLive ? 'Ora in diretta' : liveDateLabel(ev)}
+                        {liveDurationLabel(ev) && <> · {liveDurationLabel(ev)}</>}
+                      </p>
+                    </div>
+                    <ChevronRight size={16} strokeWidth={2} style={{ color: 'var(--ist-text-dim)', flexShrink: 0 }} />
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          {/* Replay con le copertine (cervello, neuroni, sinapsi) come in Live & Replay */}
+          {mentalReplays.length > 0 && (
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-3 gap-y-5">
+              {mentalReplays.map(ev => (
+                <ReplayCard key={ev.id} event={ev} onClick={() => navigate(`/student/live/${ev.id}`)} />
+              ))}
+            </div>
+          )}
         </Card>
       )}
     </div>

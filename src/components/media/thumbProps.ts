@@ -31,9 +31,11 @@ export function lessonThumbProps(lesson: Lesson, category: Category, number: num
   }
 }
 
-export function liveThumbProps(event: LiveEvent): MediaThumbProps {
+export function liveThumbProps(event: LiveEvent, tone: 'dark' | 'light' = 'dark'): MediaThumbProps {
+  const light = tone === 'light' && !!event.coverUrlLight
   return {
-    imageUrl: event.coverUrl,
+    imageUrl: light ? event.coverUrlLight : event.coverUrl,
+    tone: light ? 'light' : 'dark',
     keyword: event.coverKeyword,
     kicker: event.status === 'replay' ? 'Replay' : 'Live',
     vimeoId: event.replayVimeoId,

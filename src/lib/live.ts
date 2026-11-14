@@ -34,6 +34,7 @@ export interface LiveEvent {
   coverUrl: string | null
   coverKeyword: string | null
   coverStatus: string | null     // null | 'pending' | 'ready' | 'error'
+  coverUrlLight: string | null   // versione chiara (tema chiaro dell'utente)
 }
 
 interface RawLive {
@@ -59,28 +60,34 @@ interface RawLive {
   cover_url?: string | null
   cover_keyword?: string | null
   cover_status?: string | null
+  cover_url_light?: string | null
 }
 
 const COLS =
   'id,title,description,host,host_role,status,event_type,is_external,audience,notify,starts_at,zoom_url,live_embed_url,replay_vimeo_id,duration_minutes,accent,accent_end,position,owner_id'
 const COLS_WITH_COVERS = `${COLS},cover_url,cover_keyword,cover_status`
 
-// Le colonne delle copertine AI arrivano con la migrazione phase_video_covers.sql:
-// finché non è applicata, la query che le chiede fallisce (42703) e ripieghiamo
-// sulle colonne di prima (ricordandolo per il resto della sessione).
+// Le colonne delle copertine AI arrivano con la migrazione phase_video_covers.sql,
+// la versione chiara con phase_cover_light.sql: se una manca, la query che la
+// chiede fallisce (42703) e ripieghiamo senza quel gruppo (ricordandolo per il
+// resto della sessione). Il controllo della chiara va fatto prima, perché anche
+// "cover_url_light" combacia con il controllo generico delle copertine.
 let liveCoversAvailable: boolean | null = null
+let liveLightAvailable: boolean | null = null
 type QueryResult = { data: unknown; error: { code?: string; message?: string } | null }
 
+const isMissingLightColumn = (err: QueryResult['error']) => !!err && /_url_light/i.test(err.message ?? '')
+
 async function selectLive(build: (cols: string) => PromiseLike<QueryResult>): Promise<QueryResult> {
-  if (liveCoversAvailable !== false) {
-    const res = await build(COLS_WITH_COVERS)
-    if (!isMissingCoverColumn(res.error)) {
-      if (!res.error) liveCoversAvailable = true
-      return res
-    }
-    liveCoversAvailable = false
+  for (;;) {
+    const covers = liveCoversAvailable !== false
+    const light = covers && liveLightAvailable !== false
+    const res = await build(covers ? (light ? `${COLS_WITH_COVERS},cover_url_light` : COLS_WITH_COVERS) : COLS)
+    if (light && isMissingLightColumn(res.error)) { liveLightAvailable = false; continue }
+    if (covers && isMissingCoverColumn(res.error)) { liveCoversAvailable = false; continue }
+    if (!res.error && covers) { liveCoversAvailable = true; if (light) liveLightAvailable = true }
+    return res
   }
-  return build(COLS)
 }
 
 function toLive(r: RawLive): LiveEvent {
@@ -107,6 +114,7 @@ function toLive(r: RawLive): LiveEvent {
     coverUrl: r.cover_url ?? null,
     coverKeyword: r.cover_keyword ?? null,
     coverStatus: r.cover_status ?? null,
+    coverUrlLight: r.cover_url_light ?? null,
   }
 }
 
@@ -143,7 +151,7 @@ function previewIso(offsetDays: number, h: number, m: number): string {
 }
 function previewEvents(): LiveEvent[] {
   const mk = (id: string, title: string, host: string, hostRole: LiveRole, status: LiveStatus, startsAt: string | null, accent: string, accentEnd: string, durationMinutes: number | null, description = ''): LiveEvent =>
-    ({ id, title, description, host, hostRole, status, eventType: 'live', isExternal: false, audience: 'all', notify: true, startsAt, zoomUrl: null, liveEmbedUrl: null, replayVimeoId: null, durationMinutes, accent, accentEnd, position: 0, ownerId: null, coverUrl: null, coverKeyword: null, coverStatus: null })
+    ({ id, title, description, host, hostRole, status, eventType: 'live', isExternal: false, audience: 'all', notify: true, startsAt, zoomUrl: null, liveEmbedUrl: null, replayVimeoId: null, durationMinutes, accent, accentEnd, position: 0, ownerId: null, coverUrl: null, coverKeyword: null, coverStatus: null, coverUrlLight: null })
   return [
     mk('pv-live', 'Sessione operativa in diretta', 'Coach Marco', 'coach', 'live', null, '#7CBBD0', '#286680', null, 'Analizziamo il mercato in tempo reale e rispondiamo alle domande in chat.'),
     mk('pv-up1', 'Live analisi di mercato', 'Coach Marco', 'coach', 'upcoming', previewIso(2, 18, 0), '#7CBBD0', '#286680', 60),

@@ -495,6 +495,328 @@ def draw_is_oos(fig):
     y1 = ax.get_ylim()[1]; ax.text(split * 0.35, y1 * 0.97, 'In-Sample', color=TXT2, fontsize=12); ax.text(split + 80, y1 * 0.97, 'Out-of-Sample', color=TXT2, fontsize=12)
     ax.set_xlim(0, n); lbl(ax, 'Trade', 'Equity (x)')
 
+# ── live: trading ────────────────────────────────────────────────────────────
+def draw_breakout(fig):
+    ax = main_ax(fig); n = 96
+    lo_, hi_ = 99.2, 101.0; p = [100.1]
+    for i in range(1, n):
+        if i < 62: p.append(np.clip(p[-1] + rng.normal(0, 0.32), lo_ + 0.15, hi_ - 0.15))
+        else: p.append(p[-1] + abs(rng.normal(0.22, 0.25)) * (1 if i < 88 else rng.choice([-1, 1])))
+    p = np.array(p)
+    ax.axhspan(lo_, hi_, xmin=0, xmax=62 / (n + 2), color=BLUE, alpha=0.10)
+    for y_, c_ in ((hi_, GREEN), (lo_, RED)): ax.hlines(y_, 0, 62, color=c_, ls='--', lw=1.3)
+    for i in range(n):
+        o, c = (p[i - 1] if i else p[0]), p[i]
+        h, l = max(o, c) + abs(rng.normal(0, .12)), min(o, c) - abs(rng.normal(0, .12))
+        col = GREEN if c >= o else RED
+        ax.plot([i, i], [l, h], color=col, lw=0.9)
+        ax.add_patch(plt.Rectangle((i - .32, min(o, c)), .64, abs(c - o) + .02, color=col))
+    k = 63; ax.scatter([k], [p[k]], s=200, color=AMBER, edgecolor='#ffe39a', lw=1.3, zorder=6)
+    tgt = hi_ + (hi_ - lo_) * 2.2; ax.axhline(tgt, color=AMBER, lw=1.1, ls=':', alpha=0.9)
+    ax.text(2, hi_ + 0.08, 'Massimo di ieri', color=TXT2, fontsize=10); ax.text(2, lo_ - 0.25, 'Minimo di ieri', color=TXT2, fontsize=10)
+    ax.text(66, tgt + 0.08, 'Target', color=AMBER, fontsize=10)
+    ax.set_xlim(-1, n + 1); ax.set_ylim(lo_ - 0.6, tgt + 0.5); lbl(ax, 'Barre (H1)', 'Prezzo')
+
+def draw_prop(fig):
+    ax = main_ax(fig); n = 420; x = np.arange(n)
+    def walk(vol, end):
+        w = np.cumsum(rng.normal(0, vol, n)); return 100 * np.exp(w - np.linspace(0, w[-1], n) + np.linspace(0, np.log(end), n))
+    prop = walk(0.0062, 1.112); real = walk(0.003, 1.045)
+    ax.axhspan(80, 90, color=RED, alpha=0.10); ax.axhline(90, color=RED, ls='--', lw=1.3)
+    ax.axhline(110, color=GREEN, ls='--', lw=1.3)
+    ax.plot(x, real, color=SAND, lw=1.8, label='Conto reale'); ax.plot(x, prop, color=LBLUE, lw=2.2, label='Conto prop')
+    ax.text(6, 110.5, 'Profit target  +10%', color=GREEN, fontsize=10); ax.text(6, 88.4, 'Max drawdown  −10%', color=RED, fontsize=10)
+    ax.legend(loc='upper left', bbox_to_anchor=(0, 0.93), frameon=False, labelcolor=TXT)
+    ax.set_xlim(0, n); ax.set_ylim(84, max(118, prop.max() + 2)); lbl(ax, 'Giorni di trading', 'Capitale (%)')
+
+def draw_cycle(fig):
+    ax = fig.add_axes([0.08, 0.06, 0.84, 0.88], projection='polar'); ax.set_facecolor('none')
+    h = np.arange(24); th = (h + 0.5) / 24 * 2 * np.pi
+    v = 0.35 + 0.9 * np.exp(-((h - 8.5) / 1.6) ** 2) + 1.1 * np.exp(-((h - 14.5) / 1.8) ** 2) + 0.25 * np.exp(-((h - 1) / 1.5) ** 2) + rng.uniform(0, 0.08, 24)
+    cols = [BARS(0.25 + 0.75 * (x_ - v.min()) / (v.max() - v.min())) for x_ in v]
+    ax.bar(th, v, width=2 * np.pi / 24 * 0.82, color=cols, alpha=0.95, bottom=0.25)
+    for hh in (8, 14): ax.bar([(hh + 0.5) / 24 * 2 * np.pi], [v[hh]], width=2 * np.pi / 24 * 0.82, color=AMBER, bottom=0.25, alpha=0.95)
+    ax.set_theta_zero_location('N'); ax.set_theta_direction(-1)
+    ax.set_xticks(np.arange(0, 24, 3) / 24 * 2 * np.pi); ax.set_xticklabels([f'{x_:02d}:00' for x_ in range(0, 24, 3)], color=TICK, fontsize=10)
+    ax.set_yticklabels([]); ax.grid(color=GRID, lw=0.7); ax.spines['polar'].set_color(SPINE)
+    ax.text(0, 0, 'volatilità\nmedia oraria', ha='center', va='center', color=TXT, fontsize=10)
+
+# ── live: mente (cervello, neuroni, particelle) ──────────────────────────────
+from matplotlib.collections import LineCollection
+
+def _rgba(c, a=1.0):
+    r, g, b, _ = matplotlib.colors.to_rgba(c); return (r, g, b, a)
+
+def _mix(c1, c2, t):
+    a, b = np.array(matplotlib.colors.to_rgba(c1)), np.array(matplotlib.colors.to_rgba(c2))
+    t = np.asarray(t)[..., None]; return a * (1 - t) + b * t
+
+def _glow():
+    return THEME == 'dark'
+
+_BRAIN_PARTS = [  # centro, semiassi (0-3 corteccia, 4-5 cervelletto)
+    ((0.0, 0.37, 0.06), (1.0, 0.47, 0.68)), ((0.0, -0.37, 0.06), (1.0, 0.47, 0.68)),
+    ((0.14, 0.47, -0.30), (0.54, 0.31, 0.29)), ((0.14, -0.47, -0.30), (0.54, 0.31, 0.29)),
+    ((-0.70, 0.24, -0.43), (0.34, 0.30, 0.22)), ((-0.70, -0.24, -0.43), (0.34, 0.30, 0.22)),
+]
+_STEM = (np.array([-0.24, 0, -0.42]), np.array([-0.36, 0, -0.98]), 0.105)
+
+def _part_r(P, k):
+    c, s = np.array(_BRAIN_PARTS[k][0]), np.array(_BRAIN_PARTS[k][1])
+    sz = np.where(P[:, 2] < c[2], s[2] * 0.78, s[2]) if k < 2 else s[2]
+    return np.sqrt(((P[:, 0] - c[0]) / s[0]) ** 2 + ((P[:, 1] - c[1]) / s[1]) ** 2 + ((P[:, 2] - c[2]) / sz) ** 2)
+
+def _stem_r(P):
+    a, b, rad = _STEM; ab = b - a; t = np.clip(((P - a) @ ab) / (ab @ ab), 0, 1)
+    return np.linalg.norm(P - (a + t[:, None] * ab), axis=1) / rad, t
+
+def _brain_shell(density=0.32):
+    """Punti sulla superficie di un cervello (emisferi con circonvoluzioni, lobi
+    temporali, cervelletto con lamelle, tronco): campionati direttamente sulle
+    superfici e tenuti solo dove nessun'altra parte li copre."""
+    counts = [900_000, 900_000, 260_000, 260_000, 200_000, 200_000]
+    Ps, Ns, Ks = [], [], []
+    for k, n in enumerate(counts):
+        n = int(n * density); c, s = np.array(_BRAIN_PARTS[k][0]), np.array(_BRAIN_PARTS[k][1])
+        d = rng.normal(0, 1, (n, 3)); d /= np.linalg.norm(d, axis=1, keepdims=True)
+        ss = np.tile(s, (n, 1))
+        if k < 2: ss[d[:, 2] < 0, 2] *= 0.78
+        P = c + d * ss; N = d / ss; N /= np.linalg.norm(N, axis=1, keepdims=True)
+        ok = np.ones(n, bool)
+        for j in range(len(_BRAIN_PARTS)):
+            if j != k: ok &= _part_r(P, j) >= 0.999
+        ok &= _stem_r(P)[0] >= 1
+        Ps.append(P[ok]); Ns.append(N[ok]); Ks.append(np.full(ok.sum(), 0 if k < 4 else 1))
+    n = int(120_000 * density); a, b, rad = _STEM; t = rng.uniform(0, 1, n); ang = rng.uniform(0, 2 * np.pi, n)
+    ax_ = (b - a) / np.linalg.norm(b - a); e1 = np.cross(ax_, [0, 1, 0]); e1 /= np.linalg.norm(e1); e2 = np.cross(ax_, e1)
+    rr = (np.cos(ang)[:, None] * e1 + np.sin(ang)[:, None] * e2)
+    P = a + t[:, None] * (b - a) + rr * rad; ok = np.ones(n, bool)
+    for j in range(len(_BRAIN_PARTS)): ok &= _part_r(P, j) >= 1
+    Ps.append(P[ok]); Ns.append(rr[ok]); Ks.append(np.full(ok.sum(), 2))
+    P, N, kind = np.concatenate(Ps), np.concatenate(Ns), np.concatenate(Ks)
+    # circonvoluzioni: insieme di livello zero di un campo casuale
+    K = 16; D = rng.normal(0, 1, (K, 3)); D /= np.linalg.norm(D, axis=1, keepdims=True)
+    f = rng.uniform(15, 21, K); ph = rng.uniform(0, 2 * np.pi, K)
+    g = (np.sin((P @ D.T) * f + ph)).sum(1) / np.sqrt(K / 2)
+    sulc = (kind == 0) & (np.abs(g) < 0.26)
+    return P, N, kind, g, sulc
+
+def _view(P, az, el):
+    az, el = np.radians(az), np.radians(el)
+    Rz = np.array([[np.cos(az), -np.sin(az), 0], [np.sin(az), np.cos(az), 0], [0, 0, 1]])
+    Rx = np.array([[1, 0, 0], [0, np.cos(el), -np.sin(el)], [0, np.sin(el), np.cos(el)]])
+    Q = P @ (Rx @ Rz).T
+    return Q[:, 0], Q[:, 2], -Q[:, 1]   # u, v, profondità (più alto = più vicino)
+
+def _set_frame(ax, fig, u, v, pad=0.08, cx=0.5, cy=0.5):
+    W, H = fig.get_size_inches(); asp = W / H
+    w = (u.max() - u.min()) * (1 + pad * 2); h = (v.max() - v.min()) * (1 + pad * 2)
+    if w / h < asp: w = h * asp
+    else: h = w / asp
+    mu, mv = (u.max() + u.min()) / 2, (v.max() + v.min()) / 2
+    ax.set_xlim(mu - w * cx, mu + w * (1 - cx)); ax.set_ylim(mv - h * cy, mv + h * (1 - cy))
+
+def draw_brain(fig, az=-18, el=10, active=((0.72, -0.25, 0.25),), burst=True, cx=0.5, cy=0.5):
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis('off')
+    P, N, kind, g, sulc = _brain_shell()
+    u, v, z = _view(P, az, el)
+    # z-buffer: si vede solo la superficie più vicina (opaca)
+    cell = (u.max() - u.min()) / 300
+    iu = ((u - u.min()) / cell).astype(int); iv = ((v - v.min()) / cell).astype(int)
+    zb = np.full((iu.max() + 1, iv.max() + 1), -9.0); np.maximum.at(zb, (iu, iv), z)
+    vis = (z >= zb[iu, iv] - 0.04) & ~sulc
+    P, N, kind, g, u, v, z = P[vis], N[vis], kind[vis], g[vis], u[vis], v[vis], z[vis]
+    _, _, nz = _view(N, az, el)
+    zn = (z - z.min()) / (z.max() - z.min())
+    rim = 1 - np.abs(nz)                                     # bordi illuminati (silhouette)
+    nu, nv, _ = _view(N, az, el); lam = np.clip(-0.45 * nu + 0.7 * nv + 0.55 * nz, 0, 1)  # luce dall'alto
+    crown = np.clip((np.abs(g) - 0.24) / 1.2, 0, 1)
+    light = np.clip(0.1 + 0.5 * lam + 0.55 * rim ** 2.5 + 0.3 * crown * (kind == 0) - 0.15 * (1 - crown) * (kind == 0), 0, 1)
+    light[kind == 1] *= 0.75 + 0.25 * np.sin(P[kind == 1, 2] * 70 + P[kind == 1, 0] * 20)  # lamelle
+    light[kind == 2] *= 0.75 * np.clip((P[kind == 2, 2] + 1.0) / 0.55, 0.05, 1)
+    act = np.zeros(len(P))
+    for c in active: act = np.maximum(act, np.exp(-((P - np.array(c)) ** 2).sum(1) / 0.06))
+    base = SQ_COOL(0.18 + 0.8 * light)
+    hot = _mix(AMBER, '#fff3d0' if _glow() else '#c25a00', np.clip(act * 1.4 - 0.4, 0, 1))
+    col = base * (1 - act[:, None] * 0.92) + hot * act[:, None] * 0.92
+    col[:, 3] = np.clip(0.25 + 0.75 * light + act, 0, 1) * (0.9 if _glow() else 1.0)
+    o = np.argsort(z); s = (0.5 + 1.6 * light + 2.5 * act)
+    if _glow(): ax.scatter(u[o], v[o], s=s[o] * 7, c=col[o] * np.array([1, 1, 1, 0.012]), lw=0)
+    ax.scatter(u[o], v[o], s=s[o], c=col[o], lw=0)
+    if burst:  # esplosione di particelle dalla zona attiva
+        for c in active:
+            m = 900; d = rng.normal(0, 1, (m, 3)); d /= np.linalg.norm(d, axis=1, keepdims=True)
+            out = np.array(c) / (np.linalg.norm(c) + 1e-6); d = d + out * 1.3; d /= np.linalg.norm(d, axis=1, keepdims=True)
+            r0 = rng.gamma(1.5, 0.15, m) + 0.05; ln = 0.02 + 0.1 * r0
+            A = np.array(c) + d * r0[:, None]; B = np.array(c) + d * (r0 + ln)[:, None]
+            ua, va, _ = _view(A, az, el); ub, vb, _ = _view(B, az, el)
+            fade = np.clip(1 - r0 / 1.1, 0, 1)
+            cc = _mix(AMBER, PALE, np.clip(r0 / 0.22, 0, 1)); cc[:, 3] = 0.1 + 0.7 * fade ** 1.8
+            ax.add_collection(LineCollection(np.stack([np.c_[ua, va], np.c_[ub, vb]], 1), colors=cc, linewidths=0.6 + 1.2 * fade))
+            uc, vc, _ = _view(np.array([c]), az, el)
+            if _glow():
+                for sz, al in ((5000, 0.035), (1500, 0.08), (350, 0.25)): ax.scatter(uc, vc, s=sz, color=AMBER, alpha=al, lw=0)
+    nodes = rng.uniform([-0.9, -0.6, -0.35], [0.9, 0.6, 0.6], (400, 3))
+    inside = (((nodes - [0, 0, 0.06]) / [0.92, 0.78, 0.6]) ** 2).sum(1) < 1; nodes = nodes[inside][:110]
+    un, vn, zn_ = _view(nodes, az, el); segs, ec = [], []
+    for i in range(len(nodes)):
+        for j in np.argsort(((nodes - nodes[i]) ** 2).sum(1))[1:4]:
+            near = max(np.exp(-((nodes[i] - np.array(c)) ** 2).sum() / 0.08) for c in active)
+            segs.append([(un[i], vn[i]), (un[j], vn[j])]); ec.append(_rgba(AMBER if near > 0.5 else LBLUE, 0.35 if near > 0.5 else 0.22))
+    ax.add_collection(LineCollection(segs, colors=ec, linewidths=0.7))
+    na = np.array([max(np.exp(-((p - np.array(c)) ** 2).sum() / 0.08) for c in active) for p in nodes])
+    ncol = _mix(PALE, AMBER, np.clip(na * 1.5, 0, 1))
+    if _glow(): ax.scatter(un, vn, s=160, c=ncol * [1, 1, 1, 0.08], lw=0)
+    ax.scatter(un, vn, s=10 + 18 * na, c=ncol, lw=0)
+    dust = rng.uniform([-1.4, -1.2, -1.3], [1.4, 1.2, 1.1], (900, 3)); ud, vd, zd = _view(dust, az, el)
+    ax.scatter(ud, vd, s=rng.uniform(0.3, 3, 900), color=LBLUE, alpha=0.25 if _glow() else 0.35, lw=0)
+    _set_frame(ax, fig, u, v, pad=0.06, cx=cx, cy=cy)
+
+def _tree(segs, widths, p, ang, length, width, depth, wiggle=0.35):
+    pts = [np.array(p, float)]; a = ang
+    for _ in range(6):
+        a += rng.normal(0, wiggle * 0.35); pts.append(pts[-1] + length / 6 * np.array([np.cos(a), np.sin(a)]))
+    for i in range(6): segs.append([pts[i], pts[i + 1]]); widths.append(width * (1 - i / 9))
+    if depth > 0:
+        for sgn in (-1, 1):
+            if rng.random() < 0.9:
+                _tree(segs, widths, pts[-1], a + sgn * rng.uniform(0.25, 0.7), length * rng.uniform(0.62, 0.8), width * 0.66, depth - 1, wiggle)
+    return pts[-1]
+
+def _neuron(ax, c, size=1.0, dendrites=7, depth=4, col=None, glow_alpha=0.07):
+    col = col or PALE; segs, widths = [], []
+    for k in range(dendrites):
+        _tree(segs, widths, c, 2 * np.pi * k / dendrites + rng.normal(0, 0.25), 0.22 * size * rng.uniform(0.8, 1.3), 2.6 * size, depth)
+    w = np.array(widths)
+    if _glow(): ax.add_collection(LineCollection(segs, colors=[_rgba(col, glow_alpha)], linewidths=w * 4))
+    ax.add_collection(LineCollection(segs, colors=[_rgba(col, 0.8)], linewidths=w))
+    ax.scatter([c[0]], [c[1]], s=260 * size ** 2, color=col, lw=0, zorder=4)
+
+def _burst(ax, c, n=5000, scale=1.0):
+    th = rng.uniform(0, 2 * np.pi, n); r = (rng.gamma(1.5, 0.22, n) + 0.03) * scale
+    ln = (0.02 + 0.16 * r / scale) * scale; d = np.c_[np.cos(th), np.sin(th)]
+    A = np.array(c) + d * r[:, None]; B = np.array(c) + d * (r + ln)[:, None]
+    fade = np.clip(1 - r / (1.5 * scale), 0, 1)
+    cc = _mix('#fff3d0' if _glow() else AMBER, AMBER, np.clip(r / (0.08 * scale), 0, 1))
+    far = np.clip((r / scale - 0.03) / 0.14, 0, 1); cc = cc * (1 - far[:, None]) + _mix(PALE, BLUE, np.clip(r / scale / 0.9, 0, 1)) * far[:, None]
+    cc[:, 3] = (0.1 + 0.75 * fade ** 2)
+    ax.add_collection(LineCollection(np.stack([A, B], 1), colors=cc, linewidths=0.5 + 1.3 * fade))
+    for rr in (0.55, 0.95): ax.add_patch(plt.Circle(c, rr * scale, fill=False, color=LBLUE, lw=0.8, alpha=0.22))
+    if _glow():
+        for sz, al in ((9000 * scale, 0.03), (2600 * scale, 0.07), (700 * scale, 0.2), (160, 0.6)): ax.scatter([c[0]], [c[1]], s=sz, color=AMBER, alpha=al, lw=0, zorder=5)
+    ax.scatter([c[0]], [c[1]], s=120, color='white' if _glow() else AMBER, lw=0, zorder=6)
+
+def draw_neuron_burst(fig, c=(0.1, 0.05), scale=1.0, sats=0):
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis('off')
+    W, H = fig.get_size_inches(); asp = W / H
+    ax.set_xlim(-1.05 * asp, 1.05 * asp); ax.set_ylim(-1.05, 1.05)
+    a0 = rng.uniform(0, 2 * np.pi)
+    for i in range(sats):  # neuroni vicini collegati, con impulsi in arrivo
+        ang = a0 + 2 * np.pi * i / sats + rng.normal(0, 0.25); dist = rng.uniform(0.7, 0.95)
+        p = np.array(c) + dist * np.array([np.cos(ang) * 1.15, np.sin(ang)])
+        p = np.clip(p, [-0.9 * asp, -0.85], [0.9 * asp, 0.85])
+        m = (np.array(c) + p) / 2 + rng.normal(0, 0.12, 2); t = np.linspace(0, 1, 60)[:, None]
+        curve = (1 - t) ** 2 * np.array(c) + 2 * (1 - t) * t * m + t ** 2 * p
+        ax.plot(curve[:, 0], curve[:, 1], color=LBLUE, lw=1.4, alpha=0.6)
+        k = int(rng.uniform(18, 45)); tr = curve[k:k + 14]
+        ax.add_collection(LineCollection(np.stack([tr[:-1], tr[1:]], 1), colors=[_rgba(AMBER, x_) for x_ in np.linspace(0.95, 0.05, len(tr) - 1)], linewidths=2.4))
+        if _glow(): ax.scatter(*curve[k], s=600, color=AMBER, alpha=0.12, lw=0)
+        ax.scatter(*curve[k], s=40, color=AMBER, lw=0, zorder=6)
+        _neuron(ax, p, size=0.5 + 0.2 * rng.random(), dendrites=6, depth=3, col=LBLUE if i % 2 else PALE, glow_alpha=0.05)
+    _neuron(ax, c, size=1.25 * scale, dendrites=8, depth=5 if scale >= 0.9 else 4)
+    # assone con guaina mielinica e impulsi
+    a = np.array(c, float); ang = rng.uniform(3.6, 4.1); pts = [a]
+    for _ in range(40): ang += rng.normal(0, 0.05); pts.append(pts[-1] + 0.045 * np.array([np.cos(ang), np.sin(ang)]))
+    pts = np.array(pts)
+    for i in range(3, 39, 4):
+        ax.plot(pts[i:i + 3, 0], pts[i:i + 3, 1], color=BLUE, lw=7, alpha=0.75, solid_capstyle='round')
+    ax.plot(pts[:, 0], pts[:, 1], color=PALE, lw=1.6, alpha=0.9)
+    for i in (12, 27):
+        if _glow(): ax.scatter(*pts[i], s=900, color=AMBER, alpha=0.12, lw=0)
+        ax.scatter(*pts[i], s=70, color=AMBER, lw=0, zorder=6)
+    _burst(ax, c, n=int(3200 * scale), scale=scale)
+    dust = rng.uniform([-1.1 * asp, -1.1], [1.1 * asp, 1.1], (700, 2))
+    ax.scatter(dust[:, 0], dust[:, 1], s=rng.uniform(0.3, 3, 700), color=LBLUE, alpha=0.3, lw=0)
+
+def draw_synapse(fig):
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis('off')
+    W, H = fig.get_size_inches(); asp = W / H; X, Y = 1.0 * asp, 1.0
+    ax.set_xlim(-X, X); ax.set_ylim(-Y, Y)
+    pts = []
+    while len(pts) < 13:
+        p = rng.uniform([-X * 0.9, -Y * 0.85], [X * 0.9, Y * 0.85])
+        if all(np.linalg.norm(p - q) > 0.42 for q in pts): pts.append(p)
+    pts = np.array(pts); fire = int(np.argmin(np.linalg.norm(pts - np.array([0.25, 0.1]), axis=1)))
+    E = []
+    for i in range(len(pts)):
+        for j in np.argsort(np.linalg.norm(pts - pts[i], axis=1))[1:4]:
+            if (j, i) not in E: E.append((i, int(j)))
+    for i, j in E:
+        a, b = pts[i], pts[j]; m = (a + b) / 2 + rng.normal(0, 0.12, 2)
+        t = np.linspace(0, 1, 60)[:, None]; curve = (1 - t) ** 2 * a + 2 * (1 - t) * t * m + t ** 2 * b
+        hot = fire in (i, j)
+        ax.plot(curve[:, 0], curve[:, 1], color=LBLUE if hot else EDGE, lw=1.6 if hot else 1.0, alpha=0.75 if hot else 0.45)
+        if hot or rng.random() < 0.45:  # impulso con scia
+            k = int(rng.uniform(15, 50)); tr = curve[max(0, k - 14):k + 1]
+            segs = np.stack([tr[:-1], tr[1:]], 1); al = np.linspace(0.05, 0.95, len(segs))
+            cc = np.array([_rgba(AMBER if hot else PALE, x_) for x_ in al])
+            ax.add_collection(LineCollection(segs, colors=cc, linewidths=2.4))
+            if _glow(): ax.scatter(*curve[k], s=600, color=AMBER if hot else PALE, alpha=0.12, lw=0)
+            ax.scatter(*curve[k], s=38, color=AMBER if hot else PALE, lw=0, zorder=6)
+    for k, p in enumerate(pts):
+        if k == fire: continue
+        _neuron(ax, p, size=0.55 + 0.25 * rng.random(), dendrites=6, depth=3, col=PALE if rng.random() < 0.6 else LBLUE, glow_alpha=0.05)
+    _neuron(ax, pts[fire], size=0.95, dendrites=7, depth=4, col=PALE)
+    _burst(ax, pts[fire], n=1400, scale=0.5)
+    dust = rng.uniform([-X, -Y], [X, Y], (900, 2))
+    ax.scatter(dust[:, 0], dust[:, 1], s=rng.uniform(0.3, 3, 900), color=LBLUE, alpha=0.28, lw=0)
+
+def draw_eeg(fig, ev=(5.6, 7.1)):
+    ax = main_ax(fig, (0.1, 0.1, 0.87, 0.86)); ax.grid(axis='y', lw=0)
+    ch = ['Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2']; fs = 128; t = np.arange(0, 10, 1 / fs)
+    for k, name in enumerate(ch):
+        pink = np.convolve(rng.normal(0, 1, t.size), np.ones(9) / 9, 'same')
+        alpha = (0.6 + 0.4 * np.sin(2 * np.pi * 0.12 * t + k)) * np.sin(2 * np.pi * (9.5 + 0.3 * k % 2) * t + rng.uniform(0, 6))
+        burst = np.where((t > ev[0]) & (t < ev[1]), 2.2 * np.sin(2 * np.pi * 21 * t) * np.sin(np.pi * (t - ev[0]) / (ev[1] - ev[0])) ** 2, 0)
+        y = 0.28 * (alpha + 0.8 * pink + burst) - k
+        m = (t > ev[0]) & (t < ev[1])
+        ax.plot(t, np.where(m, np.nan, y), color=[LBLUE, PALE][k % 2], lw=0.8, alpha=0.9)
+        ax.plot(t[m], y[m], color=AMBER, lw=1.0)
+    ax.axvspan(*ev, color=AMBER, alpha=0.07)
+    ax.set_yticks(-np.arange(len(ch))); ax.set_yticklabels(ch); ax.set_ylim(-len(ch) + 0.3, 0.8); ax.set_xlim(0, 10)
+    lbl(ax, 'Tempo (s)', None)
+
+def draw_raster(fig):
+    ax = fig.add_axes([0.11, 0.42, 0.85, 0.53]); style(ax); ax.set_xticklabels([])
+    trials = 34; spikes, rew = [], []
+    for k in range(trials):
+        base = rng.uniform(-1, 2, rng.poisson(16)); cue = rng.uniform(0.05, 0.3, rng.poisson(7)); r = rng.uniform(1.0, 1.25, rng.poisson(9))
+        spikes.append(np.r_[base, cue]); rew.append(r)
+    ax.eventplot(spikes, colors=LBLUE, lineoffsets=np.arange(trials), linelengths=0.75, linewidths=1.1)
+    ax.eventplot(rew, colors=AMBER, lineoffsets=np.arange(trials), linelengths=0.75, linewidths=1.3)
+    for x_, c in ((0, HERO), (1.0, AMBER)): ax.axvline(x_, color=c, ls='--', lw=1.2)
+    ax.set_xlim(-1, 2); ax.set_ylim(-1, trials); lbl(ax, None, 'Prova')
+    ax2 = fig.add_axes([0.11, 0.1, 0.85, 0.27]); style(ax2)
+    allsp = np.concatenate(spikes + rew); counts, edges = np.histogram(allsp, bins=60, range=(-1, 2)); c_ = (edges[:-1] + edges[1:]) / 2
+    ax2.bar(c_, counts, width=(edges[1] - edges[0]) * 0.85, color=[AMBER if 1.0 <= x_ <= 1.25 else BARS(0.6) for x_ in c_])
+    ax2.set_xlim(-1, 2); lbl(ax2, 'Tempo dallo stimolo (s)', 'Spike/s')
+
+def draw_spectrogram(fig):
+    ax = fig.add_axes([0.1, 0.12, 0.76, 0.82]); style(ax)
+    t = np.linspace(0, 60, 240); f = np.linspace(1, 40, 120); T, F = np.meshgrid(t, f)
+    Z = 1.8 / F ** 0.7 + 0.9 * np.exp(-((F - 10) / 1.6) ** 2) * (0.6 + 0.4 * np.sin(T / 6)) \
+        + 0.7 * np.exp(-((F - 21) / 3) ** 2) * np.exp(-((T - 38) / 6) ** 2) + rng.normal(0, 0.05, T.shape)
+    im = ax.imshow(Z, origin='lower', extent=[0, 60, 1, 40], aspect='auto', cmap=SQ_COOL, alpha=0.95)
+    for y_, n_ in ((2.5, 'δ'), (6, 'θ'), (10, 'α'), (20, 'β'), (34, 'γ')): ax.text(61.5, y_, n_, color=TXT2, fontsize=13, va='center')
+    cb = fig.colorbar(im, cax=fig.add_axes([0.9, 0.12, 0.025, 0.82])); cb.outline.set_color(SPINE); cb.ax.tick_params(colors=TICK, labelsize=8)
+    lbl(ax, 'Tempo (s)', 'Frequenza (Hz)')
+
+def draw_bandpower(fig):
+    ax = fig.add_axes([0.2, 0.08, 0.72, 0.86]); style(ax)
+    bands = ['δ', 'θ', 'α', 'β', 'γ']; v = rng.uniform(0.3, 1, 5); v[2] = 1.15
+    ax.bar(range(5), v, color=[AMBER if i == 2 else BARS(0.4 + 0.12 * i) for i in range(5)], width=0.7)
+    ax.set_xticks(range(5)); ax.set_xticklabels(bands, fontsize=12); lbl(ax, None, 'Potenza relativa')
+
 DRAW = {
     'montecarlo': draw_montecarlo, 'hist': draw_hist, 'heatmap': draw_heatmap, 'equity_dd': draw_equity_dd,
     'surface': draw_surface, 'scatter': draw_scatter, 'candles': draw_candles, 'table': draw_table,
@@ -504,18 +826,22 @@ DRAW = {
     'regression': draw_regression, 'tstat': draw_tstat, 'hypothesis': draw_hypothesis, 'cond_hist': draw_cond_hist,
     'random_vs_yours': draw_random_vs_yours, 'percentiles': draw_percentile_bands, 'table_heat': draw_table_heat,
     'pred_actual': draw_pred_actual, 'graph': draw_graph, 'is_oos': draw_is_oos,
+    'breakout': draw_breakout, 'prop': draw_prop, 'cycle': draw_cycle,
+    'brain': draw_brain, 'neuron_burst': draw_neuron_burst, 'synapse': draw_synapse,
+    'eeg': draw_eeg, 'raster': draw_raster, 'spectrogram': draw_spectrogram, 'bandpower': draw_bandpower,
 }
-FRAMELESS = {'surface', 'cloud3d', 'graph'}
+FRAMELESS = {'surface', 'cloud3d', 'graph', 'brain', 'neuron_burst', 'synapse'}
+MENTAL_SECONDARY = ['eeg', 'raster', 'spectrogram']
 SECONDARY = ['hist', 'equity_dd', 'heatmap', 'candles', 'montecarlo', 'percentiles', 'table']
 
-def render_cover(main, out, seed, secondaries=None):
-    reseed(seed)
+def render_cover(main, out, seed, secondaries=None, kw=None):
+    reseed(seed); draw_main = (lambda f: DRAW[main](f, **kw)) if kw else DRAW[main]
     sec = secondaries or list(rng.choice([s for s in SECONDARY if s != main], 3, replace=False))
     W, H = 2250, 1500; c = new_canvas(W, H)
     panel(c, (-60, -60, 760, 560), dim(chart(800, 600, DRAW[sec[0]]), .5))
     panel(c, (-60, 600, 760, 1560), dim(chart(800, 940, DRAW[sec[1]]), .3))
-    if main in FRAMELESS: c.alpha_composite(chart(1330, 1260, DRAW[main]), (800, 90))
-    else: panel(c, (820, 140, 2050, 1290), chart(1210, 1130, DRAW[main]))
+    if main in FRAMELESS: c.alpha_composite(chart(1330, 1260, draw_main), (800, 90))
+    else: panel(c, (820, 140, 2050, 1290), chart(1210, 1130, draw_main))
     panel(c, (2090, 200, 2400, 1150), dim(chart(290, 930, DRAW[sec[2]]), .5))
     img = photograph(c, (1536, 1024), sharp_center=(.64, .45), sharp_radius=(.4, .45), tilt=(.05, .025), dark_left_bottom=(.55, .5), vignette=.38, gain=1.15)
     img.save(out, quality=88)
