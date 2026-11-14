@@ -1,405 +1,305 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { CalendarDays, Info, Play, Radio, RotateCcw, Sparkles, ChevronRight } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { useUI } from '../../context/UIContext'
+import { useCinemaMode } from '../../context/ThemeContext'
 import { supabase } from '../../lib/supabase'
-import { Brain, CalendarDays, MessageCircle } from 'lucide-react'
 import { usePath } from '../../lib/path'
 import { useStudentBadges } from '../../lib/badges'
-import { useLiveEvents, liveDateLabel } from '../../lib/live'
+import { useLiveEvents, liveDateLabel, LiveEvent } from '../../lib/live'
 import { useStudentSessions } from '../../lib/coaching'
 import { useDmUsers, useUnreadCounts, dmChannelId } from '../../lib/chat'
+import { useStudentCatalog, getCategoryStats } from '../../lib/content'
+import { flattenLessons, continueWatching, pickResume, watchedFraction, remainingLabel, RESUME_CTA, RESUME_EYEBROW } from '../../lib/catalogView'
+import { useWelcomeVideo, welcomeVideoFor } from '../../lib/onboarding'
+import { isFreeUser, upsellSuppressed } from '../../lib/freeTier'
 import { UserRole } from '../../types'
-import LiveCalendar from '../../components/ui/LiveCalendar'
-import OnboardingCard from '../../components/onboarding/OnboardingCard'
-import WelcomeVideoHero from '../../components/onboarding/WelcomeVideoHero'
+import HeroCarousel, { HeroSlide } from '../../components/media/HeroCarousel'
+import { HeroButton, HeroTag } from '../../components/media/Billboard'
+import MediaRow from '../../components/media/MediaRow'
+import LessonCard from '../../components/media/LessonCard'
+import SeriesCard from '../../components/media/SeriesCard'
+import ReplayCard from '../../components/media/ReplayCard'
+import UpcomingCard, { hostLabel } from '../../components/media/UpcomingCard'
+import { phaseIcon } from '../../components/media/phase'
 import UserAvatar from '../../components/ui/UserAvatar'
 import UpgradeBanner from '../../components/ui/UpgradeBanner'
-import { isFreeUser } from '../../lib/freeTier'
-import { useUI } from '../../context/UIContext'
+import OnboardingCard from '../../components/onboarding/OnboardingCard'
+import PathStrip from '../../components/home/PathStrip'
+import TeamRow, { TeamPerson } from '../../components/home/TeamRow'
+import WeekStrip from '../../components/home/WeekStrip'
+import WelcomeVideoModal from '../../components/home/WelcomeVideoModal'
+import { Reveal, useCountUp, useNow, countdownLabel } from '../../components/home/motion'
 
-// ─── data ─────────────────────────────────────────────────────────────────────
-
-const PHASES = [
-  { label: 'Onboarding', key: 'onboarding' },
-  { label: 'Build',      key: 'build' },
-  { label: 'Test',       key: 'test' },
-  { label: 'Deploy',     key: 'deploy' },
-]
-
-const PHASE_LABEL: Record<string, string> = {
-  onboarding: 'Onboarding', build: 'Build', test: 'Test', deploy: 'Deploy',
+// Conto alla rovescia isolato: si aggiorna ogni secondo senza ridisegnare la Home.
+function Countdown({ iso }: { iso: string | null }) {
+  const now = useNow(1000)
+  const label = countdownLabel(iso, now)
+  return label ? <HeroTag>{label}</HeroTag> : null
 }
 
-const DM_GRAD: Record<string, string> = {
-  coach: 'linear-gradient(135deg,#5A9AB1,#286680)',
-  mental_coach: 'linear-gradient(135deg,#7c3aed,#a78bfa)',
-  admin: 'linear-gradient(135deg,#5A9AB1,#286680)',
-  student: 'linear-gradient(135deg,#374151,#6b7280)',
-}
-
-// ─── progress ring ─────────────────────────────────────────────────────────────
-
-function ProgressRing({ pct, size = 96 }: { pct: number; size?: number }) {
-  const r = (size - 12) / 2
-  const circ = 2 * Math.PI * r
+function SectionTitle({ children, action, onAction }: { children: ReactNode; action?: string; onAction?: () => void }) {
   return (
-    <svg width={size} height={size} className="-rotate-90 flex-shrink-0">
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--ist-w10)" strokeWidth="10"/>
-      <circle
-        cx={size/2} cy={size/2} r={r} fill="none"
-        stroke="url(#rg)" strokeWidth="10" strokeLinecap="round"
-        strokeDasharray={circ} strokeDashoffset={circ - (pct/100) * circ}
-        style={{ transition: 'stroke-dashoffset .7s ease', filter: 'drop-shadow(0 0 8px rgba(124,187,208,.55))' }}
-      />
-      <defs>
-        <linearGradient id="rg" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#7CBBD0"/>
-          <stop offset="100%" stopColor="#286680"/>
-        </linearGradient>
-      </defs>
-    </svg>
-  )
-}
-
-// ─── card shells ──────────────────────────────────────────────────────────────
-
-function Card({ children, className = '', onClick }: {
-  children: React.ReactNode; className?: string; onClick?: () => void
-}) {
-  return (
-    <div
-      onClick={onClick}
-      className={`rounded-3xl ${onClick ? 'cursor-pointer active:scale-[0.99] transition-transform duration-150' : ''} ${className}`}
-      style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)', boxShadow: 'var(--ist-card-shadow)' }}
-    >
-      {children}
+    <div className="flex items-end justify-between gap-3 cinema-px mb-3 lg:mb-4">
+      <h2 className="text-[22px] lg:text-[28px] font-extrabold tracking-tight leading-tight" style={{ color: 'var(--ist-text)' }}>{children}</h2>
+      {action && onAction && (
+        <button onClick={onAction} className="flex items-center gap-0.5 text-xs lg:text-sm font-semibold mb-0.5 lg:mb-1 transition-opacity hover:opacity-70" style={{ color: 'var(--ist-text-muted)' }}>
+          {action} <ChevronRight size={15} strokeWidth={2.2} />
+        </button>
+      )}
     </div>
   )
 }
 
-function PremiumCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div
-      className={`rounded-3xl ${className}`}
-      style={{ background: 'var(--ist-card-bg-premium)', border: '1px solid var(--ist-card-border-premium)', boxShadow: 'var(--ist-card-shadow-premium)' }}
-    >
-      {children}
-    </div>
-  )
-}
+const byStart = (a: LiveEvent, b: LiveEvent) => new Date(a.startsAt ?? 0).getTime() - new Date(b.startsAt ?? 0).getTime()
 
-// ─── main ─────────────────────────────────────────────────────────────────────
-
+// Home in stile streaming (pagina "cinema", sempre scura):
+//  1. banner rotante: live in diretta / prossima (con conto alla rovescia),
+//     lezione da riprendere, ultimo replay, video di benvenuto (prima settimana)
+//  2. il percorso in una riga, poi righe di contenuti come Videocorsi e Live
+//  3. il tuo team (coach, mental coach, messaggi) e la settimana
 export default function StudentDashboard() {
+  useCinemaMode()
   const { user } = useAuth()
   const { setProfileOpen } = useUI()
   const navigate = useNavigate()
   const userId = user?.id ?? ''
   const userRole = (user?.role ?? 'student') as UserRole
+  const free = isFreeUser(user)
 
   const { phase, phases } = usePath(userId)
   const { stats } = useStudentBadges(userId)
   const { events: allEvents } = useLiveEvents()
-  // Le live del mental coach vivono SOLO nell'Area Mental Coach; i promemoria
-  // compaiono comunque nel calendario (qualunque ruolo li abbia creati).
+  // Le live del mental coach vivono nell'Area Mental Coach; i promemoria
+  // compaiono comunque (qualunque ruolo li abbia creati).
   const events = allEvents.filter(e => e.hostRole !== 'mental_coach' || e.eventType === 'reminder')
   const { sessions: mySessions } = useStudentSessions(userId)
+  const { categories } = useStudentCatalog(userId, 'all')
+  const welcome = useWelcomeVideo()
 
   // Messaggi privati non letti
   const dmUsers = useDmUsers(userId, userRole)
   const dmIds = dmUsers.map(u => dmChannelId(userId, u.id))
   const { counts: dmCounts } = useUnreadCounts(userId, dmIds, null)
-  const unreadByUser = dmUsers
-    .map(u => ({ u, n: dmCounts[dmChannelId(userId, u.id)] ?? 0 }))
-    .filter(x => x.n > 0)
-    .sort((a, b) => b.n - a.n)
-  const totalUnread = unreadByUser.reduce((s, x) => s + x.n, 0)
+  const unreadOf = (id?: string | null) => (id ? dmCounts[dmChannelId(userId, id)] ?? 0 : 0)
 
-  // created_at + nomi coach/mental
-  const [meta, setMeta] = useState<{ createdAt: string | null; coachName: string | null; mentalName: string | null }>({ createdAt: null, coachName: null, mentalName: null })
+  // Data di registrazione + coach e mental coach (nome e avatar)
+  const [meta, setMeta] = useState<{ createdAt: string | null; coach: TeamPerson; mental: TeamPerson }>({ createdAt: null, coach: { name: null }, mental: { name: null } })
   useEffect(() => {
     if (!user) return
     let active = true
+    const person = (id?: string | null) => id
+      ? supabase.from('profiles_public').select('id, name, avatar_url, avatar_preset').eq('id', id).maybeSingle()
+      : Promise.resolve({ data: null })
     ;(async () => {
       const [own, co, me] = await Promise.all([
         supabase.from('profiles').select('created_at').eq('id', user.id).maybeSingle(),
-        user.assignedCoachId ? supabase.from('profiles_public').select('name').eq('id', user.assignedCoachId).maybeSingle() : Promise.resolve({ data: null as { name: string } | null }),
-        user.assignedMentalCoachId ? supabase.from('profiles_public').select('name').eq('id', user.assignedMentalCoachId).maybeSingle() : Promise.resolve({ data: null as { name: string } | null }),
+        person(user.assignedCoachId), person(user.assignedMentalCoachId),
       ])
       if (!active) return
-      setMeta({
-        createdAt: (own.data as { created_at?: string } | null)?.created_at ?? null,
-        coachName: (co.data as { name?: string } | null)?.name ?? null,
-        mentalName: (me.data as { name?: string } | null)?.name ?? null,
-      })
+      const toPerson = (d: unknown): TeamPerson => {
+        const r = d as { id?: string; name?: string; avatar_url?: string | null; avatar_preset?: string | null } | null
+        return { id: r?.id ?? null, name: r?.name ?? null, avatarUrl: r?.avatar_url ?? null, avatarPreset: r?.avatar_preset ?? null }
+      }
+      setMeta({ createdAt: (own.data as { created_at?: string } | null)?.created_at ?? null, coach: toPerson(co.data), mental: toPerson(me.data) })
     })()
     return () => { active = false }
   }, [user])
 
   const firstName = user?.name?.split(' ')[0] ?? 'Trader'
+  const programDay = meta.createdAt ? Math.max(1, Math.floor((Date.now() - new Date(meta.createdAt).getTime()) / 86_400_000) + 1) : 0
+  const dayCount = useCountUp(programDay, 900)
 
-  // Progresso reale dal percorso
-  const allSteps  = phases.flatMap(p => p.steps)
-  const doneSteps = allSteps.filter(s => s.done).length
-  const progress  = allSteps.length ? Math.round((doneSteps / allSteps.length) * 100) : 0
-  const phaseIdx  = Math.max(0, PHASES.findIndex(p => p.key === phase))
+  // Percorso
+  const allSteps = phases.flatMap(p => p.steps)
+  const progress = allSteps.length ? Math.round((allSteps.filter(s => s.done).length / allSteps.length) * 100) : 0
   const activePhase = phases.find(p => p.id === phase)
-  const activeDone  = activePhase ? activePhase.steps.filter(s => s.done).length : 0
+  const activeDone = activePhase ? activePhase.steps.filter(s => s.done).length : 0
   const activeTotal = activePhase ? activePhase.steps.length : 0
 
-  const programDay = meta.createdAt
-    ? Math.max(1, Math.floor((Date.now() - new Date(meta.createdAt).getTime()) / 86_400_000) + 1)
-    : null
-
-  // "Prossima live" ignora i promemoria (non sono live).
-  const nextLive = events.find(e => e.status === 'live' && e.eventType !== 'reminder')
-    ?? events.find(e => e.status === 'upcoming' && e.eventType !== 'reminder') ?? null
+  // Contenuti
+  const entries = useMemo(() => flattenLessons(categories), [categories])
+  const resume = useMemo(() => pickResume(entries), [entries])
+  const continuing = useMemo(() => continueWatching(entries), [entries])
+  const series = useMemo(() => categories.filter(c => c.section !== 'mental'), [categories])
+  const currentSeries = series.findIndex(c => getCategoryStats(c).pct < 100)
+  const lives = events.filter(e => e.eventType !== 'reminder')
+  const liveNow = lives.find(e => e.status === 'live') ?? null
+  const upcoming = lives.filter(e => e.status === 'upcoming' && (!e.startsAt || new Date(e.startsAt).getTime() > Date.now() - 3 * 3600_000)).sort(byStart)
+  const replays = lives.filter(e => e.status === 'replay').sort((a, b) => byStart(b, a))
+  const nextLive = upcoming[0] ?? null
   const completedSessions = mySessions.filter(s => s.status === 'completed').length
 
-  // Apre direttamente la chat privata (DM) col coach / mental coach assegnato;
-  // se non assegnato, ripiega sulla scheda chat privati.
-  const openCoachChat = () => navigate('/student/chat', {
-    state: user?.assignedCoachId ? { openDm: user.assignedCoachId } : { tab: 'direct' },
+  const welcomeUrl = user?.role === 'student' ? welcomeVideoFor(welcome, meta.createdAt, free, upsellSuppressed()) : null
+  const [welcomeOpen, setWelcomeOpen] = useState(false)
+
+  const openLesson = (id: string) => navigate(`/student/corsi/lezione/${id}`)
+  const openCategory = (id: string, courseId?: string) => navigate(`/student/corsi/${id}${courseId ? `?corso=${courseId}` : ''}`)
+  const openLive = (id: string) => navigate(`/student/live/${id}`)
+  const openDm = (id?: string | null) => navigate('/student/chat', { state: id ? { openDm: id } : { tab: 'direct' } })
+
+  // Slide del banner, in ordine di priorità
+  const slides: HeroSlide[] = []
+  if (welcomeUrl) slides.push({
+    key: 'welcome', vimeoId: welcomeUrl, accent: '#5A9AB1', icon: Sparkles,
+    eyebrow: <HeroTag tone="accent">Benvenuto</HeroTag>,
+    title: free ? `Scopri IST, ${firstName}` : `Benvenuto in IST, ${firstName}`,
+    description: free ? 'Guarda il video e scopri cosa ti aspetta nel percorso completo.' : 'Guarda il video di benvenuto per partire con il piede giusto.',
+    actions: <HeroButton icon={Play} onClick={() => setWelcomeOpen(true)}>Guarda il video</HeroButton>,
   })
-  const openMentalChat = () => navigate('/student/chat', {
-    state: user?.assignedMentalCoachId ? { openDm: user.assignedMentalCoachId } : { tab: 'direct' },
+  if (liveNow) slides.push({
+    key: `live-${liveNow.id}`, imageUrl: liveNow.coverUrl, vimeoId: liveNow.coverUrl ? null : liveNow.replayVimeoId, accent: liveNow.accent, accentEnd: liveNow.accentEnd, icon: Radio,
+    eyebrow: <HeroTag tone="live"><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />In diretta</HeroTag>,
+    title: liveNow.title, meta: <span>{hostLabel(liveNow)}</span>,
+    description: liveNow.description || 'Entra e partecipa in tempo reale.',
+    actions: <HeroButton icon={Play} onClick={() => openLive(liveNow.id)}>Entra ora</HeroButton>,
   })
+  else if (nextLive) slides.push({
+    key: `next-${nextLive.id}`, imageUrl: nextLive.coverUrl, accent: nextLive.accent, accentEnd: nextLive.accentEnd, icon: CalendarDays,
+    eyebrow: <><HeroTag tone="accent">Prossima live</HeroTag><Countdown iso={nextLive.startsAt} /></>,
+    title: nextLive.title,
+    meta: <><span>{hostLabel(nextLive)}</span>{liveDateLabel(nextLive) && <><span aria-hidden>·</span><span>{liveDateLabel(nextLive)}</span></>}</>,
+    description: nextLive.description || undefined,
+    actions: <>
+      <HeroButton icon={Info} onClick={() => openLive(nextLive.id)}>Dettagli</HeroButton>
+      <HeroButton variant="secondary" icon={CalendarDays} onClick={() => navigate('/student/calendario')}>Calendario</HeroButton>
+    </>,
+  })
+  if (resume) {
+    const { entry: h, mode } = resume
+    slides.push({
+      key: `resume-${h.lesson.id}`, imageUrl: h.lesson.coverUrl ?? h.category.posterUrl,
+      imagePosition: !h.lesson.coverUrl && h.category.posterUrl ? '50% 20%' : undefined,
+      accent: h.category.accent, icon: phaseIcon(h.category.phase),
+      eyebrow: <><HeroTag tone="accent">{RESUME_EYEBROW[mode]}</HeroTag><HeroTag>{h.category.title}</HeroTag></>,
+      title: h.lesson.title,
+      meta: <><span className="truncate max-w-[60vw] lg:max-w-none">{h.course.title}</span><span aria-hidden>·</span><span>Lezione {h.number}</span></>,
+      progress: watchedFraction(h.lesson), progressLabel: remainingLabel(h.lesson) ?? undefined,
+      actions: <>
+        <HeroButton icon={mode === 'rewatch' ? RotateCcw : Play} onClick={() => openLesson(h.lesson.id)}>{RESUME_CTA[mode]}</HeroButton>
+        <HeroButton variant="secondary" icon={Info} onClick={() => openCategory(h.category.id, h.course.id)}>Dettagli</HeroButton>
+      </>,
+    })
+  }
+  const lastReplay = replays.find(e => e.coverUrl) ?? replays[0]
+  if (lastReplay) slides.push({
+    key: `replay-${lastReplay.id}`, imageUrl: lastReplay.coverUrl, vimeoId: lastReplay.coverUrl ? null : lastReplay.replayVimeoId, accent: lastReplay.accent, accentEnd: lastReplay.accentEnd, icon: Radio,
+    eyebrow: <HeroTag tone="accent">Ultimo replay</HeroTag>,
+    title: lastReplay.title,
+    meta: <><span>{hostLabel(lastReplay)}</span>{liveDateLabel(lastReplay) && <><span aria-hidden>·</span><span>{liveDateLabel(lastReplay)}</span></>}</>,
+    description: lastReplay.description || undefined,
+    actions: <HeroButton icon={Play} onClick={() => openLive(lastReplay.id)}>Guarda il replay</HeroButton>,
+  })
+
+  const greeting = (
+    <div>
+      <p className="text-[11px] lg:text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.72)', textShadow: '0 1px 12px rgba(0,0,0,0.5)' }}>
+        {programDay ? <>Giorno <span className="tabular-nums">{dayCount}</span> del programma</> : 'Il tuo programma'}
+      </p>
+      <p className="text-xl lg:text-3xl font-extrabold leading-tight text-white" style={{ textShadow: '0 2px 18px rgba(0,0,0,0.5)' }}>Ciao, {firstName} 👋</p>
+    </div>
+  )
+  const avatar = (
+    <button onClick={() => setProfileOpen(true)} className="rounded-full transition-transform active:scale-95" title="Profilo" aria-label="Apri profilo" style={{ boxShadow: '0 0 0 2px rgba(255,255,255,0.25)' }}>
+      <UserAvatar user={{ name: user?.name ?? 'Trader', avatarPreset: user?.avatarPreset, avatarUrl: user?.avatarUrl }} size={44} />
+    </button>
+  )
+
+  // Su telefono, scorrendo oltre il banner compare una barra sfocata col saluto.
+  const [scrolled, setScrolled] = useState(false)
+  useEffect(() => {
+    const on = () => setScrolled(window.scrollY > 260)
+    on(); window.addEventListener('scroll', on, { passive: true })
+    return () => window.removeEventListener('scroll', on)
+  }, [])
+
+  const others = dmUsers
+    .filter(u => u.id !== user?.assignedCoachId && u.id !== user?.assignedMentalCoachId)
+    .map(u => ({ id: u.id, name: u.name, avatarUrl: u.avatarUrl, avatarPreset: u.avatarPreset, n: unreadOf(u.id) }))
+    .filter(x => x.n > 0).sort((a, b) => b.n - a.n)
 
   return (
-    <div className="min-h-screen">
-      {/* flex-col + order: su desktop il video benvenuto si incastra tra le card
-          (lg:order-2, prima della griglia secondaria lg:order-3); su mobile resta
-          in alto (ordine DOM naturale). */}
-      <div className="px-5 lg:px-10 pt-8 pb-32 lg:pb-12 flex flex-col gap-6">
+    <div className="cinema-page home-page pb-32 lg:pb-12">
+      <div className={`home-topbar lg:hidden ${scrolled ? 'is-on' : ''}`}>
+        <span className="text-base font-extrabold text-white truncate">Ciao, {firstName}</span>
+        <button onClick={() => setProfileOpen(true)} className="rounded-full flex-shrink-0" aria-label="Apri profilo">
+          <UserAvatar user={{ name: user?.name ?? 'Trader', avatarPreset: user?.avatarPreset, avatarUrl: user?.avatarUrl }} size={32} />
+        </button>
+      </div>
 
-        {/* ── Header saluto (sticky su mobile, frosted durante lo scroll) ── */}
-        <div className="home-greeting-bar -mx-5 lg:mx-0">
-          <div className="home-greeting-bar-bg">
-            <header className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm mb-1" style={{ color: 'var(--ist-text-muted)' }}>
-                  {programDay ? `Giorno ${programDay} del programma` : 'Il tuo programma'}
-                </p>
-                <h1 className="text-3xl lg:text-4xl font-extrabold leading-none" style={{ color: 'var(--ist-text)' }}>
-                  Ciao, {firstName} 👋
-                </h1>
-              </div>
-              <button
-                onClick={() => setProfileOpen(true)}
-                className="flex-shrink-0 rounded-full transition-transform active:scale-95"
-                title="Profilo"
-                aria-label="Apri profilo"
-              >
-                <UserAvatar user={{ name: user?.name ?? 'Trader', avatarPreset: user?.avatarPreset, avatarUrl: user?.avatarUrl }} size={48} />
-              </button>
-            </header>
-          </div>
-        </div>
+      {slides.length > 0 ? (
+        <HeroCarousel slides={slides} topLeft={greeting} topRight={avatar} />
+      ) : (
+        <div className="cinema-px pt-8 pb-4 flex items-center justify-between">{greeting}{avatar}</div>
+      )}
 
-        {/* Banner "versione gratuita" SOTTO il saluto: sopra si accavallava con
-            la barra sticky del saluto (margin-top negativo per la safe-area). */}
-        {isFreeUser(user) && <UpgradeBanner />}
-
-        {/* ── Onboarding: video di benvenuto (prima settimana) + primi passi ── */}
-        {user?.role === 'student' && (
-          <WelcomeVideoHero registeredAt={meta.createdAt} isFree={isFreeUser(user)} className="lg:order-2" />
-        )}
+      <div className="relative z-10 flex flex-col gap-7 lg:gap-9 mt-1 lg:-mt-2">
+        {free && <div className="cinema-px"><UpgradeBanner /></div>}
         <OnboardingCard />
 
-        {/* ── HERO: progresso percorso ── */}
-        <PremiumCard className="p-7 lg:p-8">
-          <div className="flex items-center gap-6 mb-6">
-            <div className="relative flex-shrink-0">
-              <ProgressRing pct={progress} size={104}/>
-              <span className="absolute inset-0 flex items-center justify-center text-2xl font-black" style={{ color: 'var(--ist-text)' }}>
-                {progress}%
-              </span>
-            </div>
-            <div>
-              <p className="text-xl lg:text-2xl font-extrabold leading-tight" style={{ color: 'var(--ist-text)' }}>
-                Percorso completato
-              </p>
-              <p className="text-sm mt-1" style={{ color: 'var(--ist-text-muted)' }}>
-                Fase <strong style={{ color: 'var(--ist-accent-text)' }}>{PHASE_LABEL[phase] ?? phase}</strong>
-                {activeTotal > 0 && <> · {activeDone}/{activeTotal} passi</>}
-              </p>
-              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                {stats.diaryStreak > 0 && (
-                  <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: 'rgba(70,211,154,0.14)', color: '#46D39A' }}>
-                    🔥 {stats.diaryStreak} {stats.diaryStreak === 1 ? 'giorno' : 'giorni'}
-                  </span>
-                )}
-                <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: 'rgba(90,154,177,0.14)', color: 'var(--ist-accent-text)' }}>
-                  🏆 {stats.earnedCount} badge
-                </span>
-              </div>
-            </div>
-          </div>
+        <Reveal className="cinema-px">
+          <PathStrip progress={progress} phase={phase} activeDone={activeDone} activeTotal={activeTotal} streak={stats.diaryStreak} badges={stats.earnedCount} />
+        </Reveal>
 
-          {/* Barra progresso */}
-          <div className="h-2 rounded-full overflow-hidden mb-6" style={{ background: 'var(--ist-w8)' }}>
-            <div className="h-full rounded-full" style={{ width: `${progress}%`, background: 'linear-gradient(90deg, #7CBBD0, #286680)', boxShadow: '0 0 14px rgba(124,187,208,.45)', transition: 'width .7s ease' }}/>
-          </div>
-
-          {/* Fasi */}
-          <div className="flex items-center gap-0">
-            {PHASES.map((p, i) => {
-              const done = i < phaseIdx
-              const active = i === phaseIdx
-              return (
-                <div key={p.key} className="flex items-center flex-1 min-w-0">
-                  <div className="flex flex-col items-center gap-1.5 flex-1 min-w-0">
-                    <div
-                      className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                      style={
-                        done   ? { background: 'rgba(70,211,154,0.18)', color: '#46D39A' }
-                        : active ? { background: 'rgba(90,154,177,0.25)', color: 'var(--ist-accent-text)', boxShadow: '0 0 12px rgba(90,154,177,.35)' }
-                        : { background: 'var(--ist-w8)', color: 'var(--ist-text-dim)' }
-                      }
-                    >
-                      {done ? '✓' : i + 1}
-                    </div>
-                    <span className="text-xs font-semibold truncate w-full text-center" style={{ color: done ? '#46D39A' : active ? 'var(--ist-accent-text)' : 'var(--ist-text-dim)' }}>
-                      {p.label}
-                    </span>
-                  </div>
-                  {i < PHASES.length - 1 && (
-                    <div className="h-px flex-1 mx-2 mb-4" style={{ background: done ? 'rgba(70,211,154,.35)' : 'var(--ist-w8)' }}/>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </PremiumCard>
-
-        {/* ── PRIORITÀ: messaggi · live · calendario ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-          {/* MESSAGGI PRIVATI */}
-          <Card className="p-6" onClick={() => navigate('/student/chat', { state: { tab: 'direct' } })}>
-            <div className="flex items-center gap-2 mb-4">
-              <MessageCircle size={15} strokeWidth={2} style={{ color: 'var(--ist-accent-text)' }} />
-              <p className="text-xs font-bold uppercase tracking-widest flex-1" style={{ color: 'var(--ist-text-muted)' }}>Messaggi privati</p>
-              {totalUnread > 0 && (
-                <span className="text-[10px] font-bold text-white px-1.5 rounded-full min-w-[18px] text-center leading-[18px]" style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)' }}>
-                  {totalUnread}
-                </span>
-              )}
-            </div>
-            {unreadByUser.length === 0 ? (
-              <p className="text-sm" style={{ color: 'var(--ist-text-muted)' }}>Nessun messaggio non letto.</p>
-            ) : (
-              <div className="space-y-2.5">
-                {unreadByUser.slice(0, 3).map(({ u, n }) => (
-                  <div key={u.id} className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background: DM_GRAD[u.role] ?? DM_GRAD.student }}>
-                      {u.name.charAt(0)}
-                    </div>
-                    <span className="text-sm flex-1 truncate" style={{ color: 'var(--ist-text)' }}>{u.name}</span>
-                    <span className="text-[10px] font-bold text-white px-1.5 rounded-full min-w-[18px] text-center leading-[18px]" style={{ background: '#FF6B7A' }}>{n}</span>
-                  </div>
+        <div className="-mb-7 lg:-mb-10">
+          {continuing.length > 0 && (
+            <Reveal>
+              <MediaRow title="Continua a guardare">
+                {continuing.map(e => (
+                  <LessonCard key={e.lesson.id} entry={e} onClick={() => openLesson(e.lesson.id)} subtitle={[remainingLabel(e.lesson), e.course.title].filter(Boolean).join(' · ')} />
                 ))}
-              </div>
-            )}
-          </Card>
+              </MediaRow>
+            </Reveal>
+          )}
 
-          {/* PROSSIMA LIVE */}
-          <Card className="p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="inline-flex w-2 h-2 rounded-full bg-red-500 animate-pulse"/>
-              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#f87171' }}>Live in arrivo</p>
-            </div>
-            {nextLive ? (
-              <>
-                <p className="text-lg font-extrabold leading-tight mb-1" style={{ color: 'var(--ist-text)' }}>{nextLive.title}</p>
-                <div className="flex items-center gap-2 mb-5" style={{ color: 'var(--ist-text-muted)' }}>
-                  <CalendarDays size={13} strokeWidth={2}/>
-                  <p className="text-sm">{liveDateLabel(nextLive)}</p>
-                </div>
-                <button
-                  onClick={() => navigate(`/student/live/${nextLive.id}`)}
-                  className="w-full py-3 rounded-2xl text-sm font-bold transition-all hover:-translate-y-0.5"
-                  style={{ background: 'linear-gradient(135deg, rgba(239,68,68,0.18), rgba(239,68,68,0.09))', border: '1px solid rgba(239,68,68,0.28)', color: '#f87171' }}
-                >
-                  Vedi dettagli →
-                </button>
-              </>
-            ) : (
-              <>
-                <p className="text-sm mb-5" style={{ color: 'var(--ist-text-muted)' }}>Nessuna live in programma al momento.</p>
-                <button
-                  onClick={() => navigate('/student/live')}
-                  className="w-full py-3 rounded-2xl text-sm font-bold transition-all hover:-translate-y-0.5"
-                  style={{ background: 'var(--ist-w7)', border: '1px solid var(--ist-border)', color: 'var(--ist-text-muted)' }}
-                >
-                  Vai alle Live →
-                </button>
-              </>
-            )}
-          </Card>
+          {(liveNow || upcoming.length > 0) && (
+            <Reveal>
+              <MediaRow title="Prossime live" actionLabel="Calendario" onAction={() => navigate('/student/calendario')}>
+                {liveNow && <ReplayCard event={liveNow} live onClick={() => openLive(liveNow.id)} />}
+                {upcoming.map(e => <UpcomingCard key={e.id} event={e} onClick={() => openLive(e.id)} />)}
+              </MediaRow>
+            </Reveal>
+          )}
 
-          {/* CALENDARIO */}
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--ist-text-muted)' }}>Calendario</p>
-              <button onClick={() => navigate('/student/calendario')} className="text-xs font-semibold" style={{ color: 'var(--ist-accent-text)' }}>Apri →</button>
-            </div>
-            <LiveCalendar events={events} compact onPickDay={(de) => { const l = de.find(e => e.eventType !== 'reminder'); navigate(l ? `/student/live/${l.id}` : '/student/calendario') }} />
-          </Card>
+          {series.length > 0 && (
+            <Reveal>
+              <MediaRow title="Le tue serie" actionLabel="Videocorsi" onAction={() => navigate('/student/corsi')} itemClassName="w-[64vw] sm:w-[40vw] md:w-[30vw] lg:w-auto" variant="carousel"
+                initialIndex={currentSeries > 0 ? currentSeries : undefined}>
+                {series.map((cat, i) => (
+                  <SeriesCard key={cat.id} category={cat} isCurrent={i === currentSeries} onOpen={() => openCategory(cat.id)} onPlay={openLesson} />
+                ))}
+              </MediaRow>
+            </Reveal>
+          )}
 
+          {replays.length > 0 && (
+            <Reveal>
+              <MediaRow title="Ultimi replay" actionLabel="Live & Replay" onAction={() => navigate('/student/live')}>
+                {replays.slice(0, 12).map(e => <ReplayCard key={e.id} event={e} onClick={() => openLive(e.id)} />)}
+              </MediaRow>
+            </Reveal>
+          )}
         </div>
 
-        {/* ── SECONDARIE: mental coach · coach ── (dopo il video su desktop) */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:order-3">
+        <Reveal>
+          <SectionTitle>Il tuo team</SectionTitle>
+          <TeamRow
+            coach={meta.coach} mental={meta.mental}
+            coachUnread={unreadOf(user?.assignedCoachId)} mentalUnread={unreadOf(user?.assignedMentalCoachId)}
+            others={others} completedSessions={completedSessions}
+            onCoach={() => openDm(user?.assignedCoachId)} onMental={() => openDm(user?.assignedMentalCoachId)}
+            onInbox={() => navigate('/student/chat', { state: { tab: 'direct' } })}
+          />
+        </Reveal>
 
-          {/* MENTAL COACH — apre la chat privata col mental coach */}
-          <Card className="p-6" onClick={openMentalChat}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(139,92,246,0.16)', border: '1px solid rgba(139,92,246,0.22)' }}>
-                <Brain size={17} strokeWidth={2} style={{ color: '#a78bfa' }}/>
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>Mental Coach</p>
-                <p className="text-sm font-bold" style={{ color: 'var(--ist-text)' }}>{meta.mentalName ?? 'Da assegnare'}</p>
-              </div>
-            </div>
-            <div className="rounded-2xl p-3 flex items-center gap-2" style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.14)' }}>
-              <MessageCircle size={14} strokeWidth={2} style={{ color: '#a78bfa', flexShrink: 0 }} />
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--ist-text-muted)' }}>
-                {completedSessions > 0
-                  ? `${completedSessions} ${completedSessions === 1 ? 'sessione completata' : 'sessioni completate'}. Scrivi al tuo mental coach.`
-                  : 'Scrivi al tuo mental coach in chat privata.'}
-              </p>
-            </div>
-          </Card>
-
-          {/* COACH */}
-          <Card className="p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: 'linear-gradient(135deg, #5A9AB1, #286680)', color: 'white' }}>
-                {meta.coachName?.charAt(0) ?? 'C'}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold truncate" style={{ color: 'var(--ist-accent-text)' }}>
-                  {meta.coachName ?? 'Coach da assegnare'} · Coach
-                </p>
-                <p className="text-[11px]" style={{ color: 'var(--ist-text-dim)' }}>Il tuo coach personale</p>
-              </div>
-            </div>
-            <p className="text-sm leading-relaxed mb-4" style={{ color: 'var(--ist-text-muted)' }}>
-              Domande sul percorso o sui tuoi trade? Scrivi al tuo coach in chat.
-            </p>
-            <button
-              onClick={openCoachChat}
-              className="w-full py-2.5 rounded-2xl text-sm font-semibold"
-              style={{ background: 'rgba(90,154,177,0.10)', border: '1px solid rgba(90,154,177,0.18)', color: 'var(--ist-accent-text)' }}
-            >
-              Apri la chat
-            </button>
-          </Card>
-
-        </div>
+        <Reveal>
+          <SectionTitle action="Calendario" onAction={() => navigate('/student/calendario')}>Questa settimana</SectionTitle>
+          <WeekStrip events={events} />
+        </Reveal>
       </div>
+
+      {welcomeOpen && welcomeUrl && <WelcomeVideoModal url={welcomeUrl} onClose={() => setWelcomeOpen(false)} />}
     </div>
   )
 }

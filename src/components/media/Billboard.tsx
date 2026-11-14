@@ -2,7 +2,7 @@ import { ReactNode } from 'react'
 import { Play, type LucideIcon } from 'lucide-react'
 import MediaThumb from './MediaThumb'
 
-interface BillboardProps {
+export interface BillboardProps {
   imageUrl?: string | null
   imagePosition?: string        // inquadratura dell'immagine (es. locandina verticale)
   vimeoId?: string | null
@@ -70,7 +70,7 @@ export default function Billboard({
       )}
 
       <div className="relative cinema-px -mt-14 sm:-mt-24 pb-14 lg:mt-0 lg:pb-[4.5rem] lg:pt-28 lg:min-h-[min(66vh,600px)] lg:flex lg:flex-col lg:justify-end">
-        <div className="max-w-xl">
+        <div className="hero-copy max-w-xl">
           {eyebrow && <div className="mb-2.5 flex items-center gap-2 flex-wrap">{eyebrow}</div>}
 
           <h1

@@ -256,35 +256,6 @@ html.is-android *::after {
   50%     { transform: translate(-11%, 13%) scale(0.86) rotate(100deg); border-radius: 42% 58% 46% 54% / 60% 40% 58% 42%; }
 }
 
-/* ===== Home mobile — header saluto sticky con sfumatura sotto ===== */
-/* Su mobile il saluto+foto resta in sovraimpressione mentre le card scorrono
-   e svaniscono sotto la sfumatura. Su desktop torna un header normale. */
-.home-greeting-bar {
-  position: sticky;
-  top: 0;                                               /* si aggancia al bordo superiore quando è in cima */
-  z-index: 30;
-  margin-top: calc(-1 * env(safe-area-inset-top, 0px)); /* annulla la safe-area a riposo */
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-}
-.home-greeting-bar-bg {
-  /* Sfondo TRASPARENTE: lascia trasparire il gradiente di pagina, così non c'è
-     nessuna banda piatta che stacca dal gradiente. Il blur dà l'effetto frosted
-     mentre le card scorrono sotto durante lo scroll. */
-  background: transparent;
-  /* top = safe-area + 4px: il saluto resta sotto il notch quando è agganciato in alto */
-  padding: calc(env(safe-area-inset-top, 0px) + 0.25rem) 1.25rem 0.75rem;
-}
-@media (min-width: 1024px) {
-  .home-greeting-bar {
-    position: static;
-    margin-top: 0;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  .home-greeting-bar-bg { padding: 0; }
-}
-
 /* Player Vimeo: l'iframe iniettato dall'SDK riempie sempre la cornice
    (robusto a prescindere dal timing di iniezione). */
 .ist-vimeo-frame iframe {
@@ -407,4 +378,79 @@ html.is-android *::after {
 .series-open-content { animation: seriesOpenContentIn 320ms ease 140ms both; }
 @media (min-width: 1024px) {
   .media-carousel:has(.series-card.is-open) .series-card:not(.is-open) { opacity: 0.45; filter: saturate(0.6); }
+}
+
+/* ===== Home stile streaming ===== */
+/* Banner rotante: slide impilate in dissolvenza, zoom lento sulla copertina
+   attiva, testo che risale, barre di avanzamento (la fine della barra attiva
+   fa passare alla slide dopo; in pausa si fermano barra e zoom). */
+.hero-slide { opacity: 0; transition: opacity 900ms ease; pointer-events: none; }
+.hero-slide.is-active { opacity: 1; pointer-events: auto; }
+.hero-slide .media-thumb-img { transform-origin: 66% 42%; }
+.hero-slide.is-active .media-thumb-img { animation: hero-kenburns 10s ease-out both; }
+@keyframes hero-kenburns { from { transform: scale(1); } to { transform: scale(1.09); } }
+/* Il testo della slide che esce sparisce subito; quello nuovo risale dopo. */
+.hero-slide .hero-copy { opacity: 0; transition: opacity 220ms ease; }
+.hero-slide.is-active .hero-copy { opacity: 1; transition: none; }
+.hero-slide.is-active .hero-copy > * { animation: hero-rise 700ms cubic-bezier(.2,.7,.2,1) 300ms both; }
+.hero-slide.is-active .hero-copy > *:nth-child(2) { animation-delay: 370ms; }
+.hero-slide.is-active .hero-copy > *:nth-child(3) { animation-delay: 440ms; }
+.hero-slide.is-active .hero-copy > *:nth-child(4) { animation-delay: 510ms; }
+.hero-slide.is-active .hero-copy > *:nth-child(5) { animation-delay: 580ms; }
+.hero-slide.is-active .hero-copy > *:nth-child(6) { animation-delay: 650ms; }
+@keyframes hero-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.hero-bar { transition: width 400ms ease; }
+.hero-bar-fill { width: 0; animation-name: hero-progress; animation-timing-function: linear; animation-fill-mode: forwards; }
+@keyframes hero-progress { from { width: 0; } to { width: 100%; } }
+.hero-carousel.is-paused .hero-bar-fill,
+.hero-carousel.is-paused .hero-slide.is-active .media-thumb-img { animation-play-state: paused; }
+
+/* Sezioni che entrano mentre si scorre */
+.reveal { opacity: 0; transform: translateY(22px); transition: opacity 800ms ease, transform 800ms cubic-bezier(.2,.7,.2,1); }
+.reveal.is-in { opacity: 1; transform: none; }
+
+/* Superfici della Home (pagina sempre scura) */
+.home-glass {
+  background: linear-gradient(160deg, rgba(255,255,255,0.075), rgba(255,255,255,0.025));
+  border: 1px solid rgba(255,255,255,0.09);
+  box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+  transition: border-color 200ms ease, transform 150ms ease;
+}
+.home-phase-active { animation: phase-pulse 2.4s ease-in-out infinite; }
+@keyframes phase-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(124,187,208,0.18), 0 0 14px rgba(124,187,208,0.45); }
+  50%      { box-shadow: 0 0 0 7px rgba(124,187,208,0.08), 0 0 26px rgba(124,187,208,0.8); }
+}
+.home-person {
+  background: radial-gradient(120% 90% at 0% 0%, var(--glow), transparent 60%), linear-gradient(160deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  border: 1px solid rgba(255,255,255,0.09);
+  transition: transform 250ms cubic-bezier(.2,.7,.2,1), border-color 200ms ease, box-shadow 250ms ease;
+}
+.home-day { transition: border-color 200ms ease; }
+@media (hover: hover) {
+  .home-glass:hover { border-color: rgba(124,187,208,0.35); }
+  .home-person:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.18); box-shadow: 0 18px 40px rgba(0,0,0,0.4); }
+  .home-day:hover { border-color: rgba(124,187,208,0.35) !important; }
+}
+
+/* Telefono: barra sfocata col saluto quando il banner è uscito dallo schermo */
+.home-topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;
+  background: rgba(5,7,13,0.72);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  transform: translateY(-100%); opacity: 0; pointer-events: none;
+  transition: transform 300ms ease, opacity 300ms ease;
+}
+.home-topbar.is-on { transform: none; opacity: 1; pointer-events: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .hero-slide.is-active .media-thumb-img,
+  .hero-slide.is-active .hero-copy > *,
+  .home-phase-active { animation: none; }
+  .hero-slide .hero-copy { transition: none; }
+  .hero-bar-fill { animation: none; width: 100%; }
 }
