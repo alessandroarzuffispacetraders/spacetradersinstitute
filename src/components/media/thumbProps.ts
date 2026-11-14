@@ -11,9 +11,13 @@ import { phaseIcon } from './phase'
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
-export function lessonThumbProps(lesson: Lesson, category: Category, number: number): MediaThumbProps {
+// tone 'light' (tema chiaro dell'utente): usa la versione chiara della copertina,
+// se esiste; altrimenti resta tutto come nella versione scura.
+export function lessonThumbProps(lesson: Lesson, category: Category, number: number, tone: 'dark' | 'light' = 'dark'): MediaThumbProps {
+  const light = tone === 'light' && !!lesson.coverUrlLight
   return {
-    imageUrl: lesson.coverUrl,
+    imageUrl: light ? lesson.coverUrlLight : lesson.coverUrl,
+    tone: light ? 'light' : 'dark',
     keyword: lesson.coverKeyword,
     kicker: `Lezione ${pad2(number)}`,
     vimeoId: lesson.vimeoId,

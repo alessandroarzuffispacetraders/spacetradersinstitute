@@ -5,6 +5,7 @@ import MediaThumb from './MediaThumb'
 import { phaseIcon } from './phase'
 import { getCategoryStats, type Category } from '../../lib/content'
 import { flattenLessons, pickResume, RESUME_CTA, type LessonEntry, type ResumeMode } from '../../lib/catalogView'
+import { useCoverTone } from '../../context/ThemeContext'
 
 // Una categoria del catalogo presentata come una "serie": i corsi sono i
 // capitoli e le lezioni le puntate (i nomi nell'app restano quelli di sempre).
@@ -13,6 +14,8 @@ import { flattenLessons, pickResume, RESUME_CTA, type LessonEntry, type ResumeMo
 //    diventa orizzontale (16:9, stessa altezza) con dettagli e pulsanti; le
 //    vicine scivolano di lato e si attenuano (niente sovrapposizioni)
 //  - telefono: il tocco apre una scheda dal basso con copertina e dettagli
+//  - tema chiaro dell'utente: la pagina resta scura, ma le IMMAGINI usano la
+//    versione chiara (se esiste) con testi blu notte su veli bianchi
 
 const HOVER_DELAY_MS = 380
 const OPEN_MS = 380
@@ -24,16 +27,25 @@ export interface SeriesInfo {
   duration: string | null
   status: string | null
   lessonCover: string | null   // illustrazione AI della prima puntata che ne ha una
+  lessonCoverLight: string | null  // la stessa, versione chiara (se esiste)
 }
+
+type Tone = 'dark' | 'light'
+const NAVY = '#0b1530'
 
 // Locandina AI della serie (null finché non è generata o senza migrazione).
 const posterOf = (c: Category): string | null => c.posterUrl ?? null
 
-interface Art { url: string | null; pos?: string }
+interface Art { url: string | null; pos?: string; light?: boolean }
 
 // Verticale: locandina AI → copertina dell'admin → illustrazione di una puntata
-// (l'arte delle copertine AI sta a destra) → copertina generata.
-function posterArt(cat: Category, info: SeriesInfo): Art {
+// (l'arte delle copertine AI sta a destra) → copertina generata. Col tono chiaro
+// si usano le versioni chiare della stessa catena, se esistono.
+function posterArt(cat: Category, info: SeriesInfo, tone: Tone = 'dark'): Art {
+  if (tone === 'light') {
+    if (cat.posterUrlLight) return { url: cat.posterUrlLight, light: true }
+    if (!cat.posterUrl && !cat.coverUrl && info.lessonCoverLight) return { url: info.lessonCoverLight, pos: '74% 50%', light: true }
+  }
   const poster = posterOf(cat)
   if (poster) return { url: poster }
   if (cat.coverUrl) return { url: cat.coverUrl, pos: '50% 50%' }
@@ -43,7 +55,11 @@ function posterArt(cat: Category, info: SeriesInfo): Art {
 
 // Orizzontale (anteprima/scheda): stessa locandina inquadrata sul soggetto, così
 // "la locandina si apre"; altrimenti copertina dell'admin o di una puntata.
-function landscapeArt(cat: Category, info: SeriesInfo): Art {
+function landscapeArt(cat: Category, info: SeriesInfo, tone: Tone = 'dark'): Art {
+  if (tone === 'light') {
+    if (cat.posterUrlLight) return { url: cat.posterUrlLight, pos: '50% 18%', light: true }
+    if (!cat.posterUrl && !cat.coverUrl && info.lessonCoverLight) return { url: info.lessonCoverLight, light: true }
+  }
   const poster = posterOf(cat)
   if (poster) return { url: poster, pos: '50% 18%' }
   if (cat.coverUrl) return { url: cat.coverUrl }
@@ -64,16 +80,18 @@ export function seriesInfo(cat: Category, isCurrent: boolean): SeriesInfo {
   const entries = flattenLessons([cat])
   const stats = getCategoryStats(cat)
   const done = stats.pct === 100
+  const withCover = entries.find(e => e.lesson.coverUrl)
   return {
     stats,
     resume: pickResume(entries),
     duration: durationLabel(entries.reduce((s, e) => s + Math.max(0, e.lesson.durationSeconds), 0)),
     status: done ? 'Completato' : isCurrent ? 'Sei qui' : stats.pct > 0 ? 'In corso' : null,
-    lessonCover: entries.find(e => e.lesson.coverUrl)?.lesson.coverUrl ?? null,
+    lessonCover: withCover?.lesson.coverUrl ?? null,
+    lessonCoverLight: withCover?.lesson.coverUrlLight ?? null,
   }
 }
 
-function StatusTag({ status, done, isCurrent }: { status: string; done: boolean; isCurrent: boolean }) {
+function StatusTag({ status, done, isCurrent, light = false }: { status: string; done: boolean; isCurrent: boolean; light?: boolean }) {
   return (
     <span
       className="text-[10px] font-bold uppercase tracking-[0.1em] px-2 py-1 rounded-md"
@@ -81,7 +99,7 @@ function StatusTag({ status, done, isCurrent }: { status: string; done: boolean;
         ? { background: '#46D39A', color: '#05170f' }
         : isCurrent
           ? { background: 'var(--ist-media-accent)', color: '#05070d' }
-          : { background: 'rgba(0,0,0,0.55)', color: '#fff' }
+          : light ? { background: 'rgba(10,20,40,0.08)', color: NAVY } : { background: 'rgba(0,0,0,0.55)', color: '#fff' }
       }
     >
       {status}
@@ -89,11 +107,13 @@ function StatusTag({ status, done, isCurrent }: { status: string; done: boolean;
   )
 }
 
-function PhaseTag({ children }: { children: ReactNode }) {
+function PhaseTag({ children, light = false }: { children: ReactNode; light?: boolean }) {
   return (
     <span
       className="inline-flex items-center text-[10px] font-bold uppercase tracking-[0.12em] px-2 py-1 rounded-md"
-      style={{ background: 'rgba(255,255,255,0.14)', color: '#fff', border: '1px solid rgba(255,255,255,0.18)' }}
+      style={light
+        ? { background: 'rgba(10,20,40,0.08)', color: NAVY, border: '1px solid rgba(10,20,40,0.12)' }
+        : { background: 'rgba(255,255,255,0.14)', color: '#fff', border: '1px solid rgba(255,255,255,0.18)' }}
     >
       {children}
     </span>
@@ -102,19 +122,22 @@ function PhaseTag({ children }: { children: ReactNode }) {
 
 // Copertina della serie con il titolo sovrapposto (usata in card, anteprima e scheda).
 function SeriesCover({
-  cat, info, isCurrent, big = false,
+  cat, info, isCurrent, big = false, tone = 'dark',
 }: {
   cat: Category
   info: SeriesInfo
   isCurrent: boolean
   big?: boolean
+  tone?: Tone
 }) {
   const done = info.stats.pct === 100
-  const art = landscapeArt(cat, info)
+  const art = landscapeArt(cat, info, tone)
+  const L = !!art.light
   return (
     <MediaThumb
       imageUrl={art.url}
       objectPosition={art.pos}
+      tone={L ? 'light' : 'dark'}
       accent={cat.accent}
       icon={phaseIcon(cat.phase)}
       progress={info.stats.pct > 0 && !done ? info.stats.pct / 100 : 0}
@@ -123,17 +146,19 @@ function SeriesCover({
       className={!big && isCurrent ? 'media-thumb-current' : ''}
       thumbWidth={big ? 1280 : 640}
       topLeft={<>
-        <PhaseTag>{cat.phase}</PhaseTag>
-        {info.status && <StatusTag status={info.status} done={done} isCurrent={isCurrent} />}
+        <PhaseTag light={L}>{cat.phase}</PhaseTag>
+        {info.status && <StatusTag status={info.status} done={done} isCurrent={isCurrent} light={L} />}
       </>}
     >
       <div
         className={`absolute inset-x-0 bottom-0 ${big ? 'px-5 pb-5 pt-16' : 'px-3.5 pb-3.5 pt-10 lg:px-4 lg:pb-4'}`}
-        style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.35) 60%, transparent 100%)' }}
+        style={{ background: L
+          ? 'linear-gradient(to top, rgba(248,250,253,0.92) 0%, rgba(248,250,253,0.4) 60%, transparent 100%)'
+          : 'linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.35) 60%, transparent 100%)' }}
       >
         <h3
-          className={`font-extrabold leading-[1.05] tracking-tight text-white line-clamp-2 ${big ? 'text-[26px]' : 'text-lg lg:text-xl'}`}
-          style={{ textShadow: '0 2px 18px rgba(0,0,0,0.45)' }}
+          className={`font-extrabold leading-[1.05] tracking-tight line-clamp-2 ${L ? '' : 'text-white'} ${big ? 'text-[26px]' : 'text-lg lg:text-xl'}`}
+          style={L ? { color: NAVY } : { textShadow: '0 2px 18px rgba(0,0,0,0.45)' }}
         >
           {cat.title}
         </h3>
@@ -143,13 +168,15 @@ function SeriesCover({
 }
 
 // Locandina verticale: arte a tutta altezza, titolo grande in basso.
-function SeriesPoster({ cat, info, isCurrent }: { cat: Category; info: SeriesInfo; isCurrent: boolean }) {
+function SeriesPoster({ cat, info, isCurrent, tone = 'dark' }: { cat: Category; info: SeriesInfo; isCurrent: boolean; tone?: Tone }) {
   const done = info.stats.pct === 100
-  const art = posterArt(cat, info)
+  const art = posterArt(cat, info, tone)
+  const L = !!art.light
   return (
     <MediaThumb
       imageUrl={art.url}
       objectPosition={art.pos}
+      tone={L ? 'light' : 'dark'}
       accent={cat.accent}
       icon={phaseIcon(cat.phase)}
       iconSize="78%"
@@ -159,21 +186,23 @@ function SeriesPoster({ cat, info, isCurrent }: { cat: Category; info: SeriesInf
       rounded=""
       thumbWidth={640}
       topLeft={<>
-        <PhaseTag>{cat.phase}</PhaseTag>
-        {info.status && <StatusTag status={info.status} done={done} isCurrent={isCurrent} />}
+        <PhaseTag light={L}>{cat.phase}</PhaseTag>
+        {info.status && <StatusTag status={info.status} done={done} isCurrent={isCurrent} light={L} />}
       </>}
     >
       <div
         className="absolute inset-x-0 bottom-0 px-4 pb-5 pt-24"
-        style={{ background: 'linear-gradient(to top, rgba(3,4,8,0.95) 0%, rgba(3,4,8,0.7) 38%, rgba(3,4,8,0) 100%)' }}
+        style={{ background: L
+          ? 'linear-gradient(to top, rgba(248,250,253,0.96) 0%, rgba(248,250,253,0.72) 38%, rgba(248,250,253,0) 100%)'
+          : 'linear-gradient(to top, rgba(3,4,8,0.95) 0%, rgba(3,4,8,0.7) 38%, rgba(3,4,8,0) 100%)' }}
       >
         <h3
-          className="text-[24px] lg:text-[26px] font-black leading-[1.02] tracking-tight text-white line-clamp-3"
-          style={{ textShadow: '0 2px 20px rgba(0,0,0,0.5)', textWrap: 'balance' }}
+          className={`text-[24px] lg:text-[26px] font-black leading-[1.02] tracking-tight line-clamp-3 ${L ? '' : 'text-white'}`}
+          style={L ? { color: NAVY, textWrap: 'balance' } : { textShadow: '0 2px 20px rgba(0,0,0,0.5)', textWrap: 'balance' }}
         >
           {cat.title}
         </h3>
-        <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'rgba(255,255,255,0.62)' }}>
+        <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: L ? 'rgba(11,21,48,0.6)' : 'rgba(255,255,255,0.62)' }}>
           {cat.courses.length} {cat.courses.length === 1 ? 'corso' : 'corsi'} · {info.stats.total} lezioni
         </p>
       </div>
@@ -183,16 +212,18 @@ function SeriesPoster({ cat, info, isCurrent }: { cat: Category; info: SeriesInf
 
 // Versione aperta (desktop): arte orizzontale, titolo, dettagli e pulsanti.
 function SeriesOpen({
-  cat, info, isCurrent, onPlay, onOpen,
+  cat, info, isCurrent, onPlay, onOpen, tone = 'dark',
 }: {
   cat: Category
   info: SeriesInfo
   isCurrent: boolean
   onPlay: (e: MouseEvent) => void
   onOpen: (e: MouseEvent) => void
+  tone?: Tone
 }) {
   const done = info.stats.pct === 100
-  const art = landscapeArt(cat, info)
+  const art = landscapeArt(cat, info, tone)
+  const L = !!art.light
   const mode = info.resume?.mode
   const PlayIcon = mode === 'rewatch' ? RotateCcw : Play
   return (
@@ -200,6 +231,7 @@ function SeriesOpen({
       <MediaThumb
         imageUrl={art.url}
         objectPosition={art.pos}
+        tone={L ? 'light' : 'dark'}
         accent={cat.accent}
         icon={phaseIcon(cat.phase)}
         aspect="h-full"
@@ -209,17 +241,19 @@ function SeriesOpen({
       />
       <div
         className="absolute inset-0 pointer-events-none"
-        style={{ background: 'linear-gradient(90deg, rgba(3,4,8,0.94) 0%, rgba(3,4,8,0.78) 36%, rgba(3,4,8,0.2) 70%, rgba(3,4,8,0) 100%), linear-gradient(to top, rgba(3,4,8,0.85) 0%, rgba(3,4,8,0) 45%)' }}
+        style={{ background: L
+          ? 'linear-gradient(90deg, rgba(248,250,253,0.95) 0%, rgba(248,250,253,0.8) 36%, rgba(248,250,253,0.15) 70%, transparent 100%), linear-gradient(to top, rgba(248,250,253,0.8) 0%, rgba(248,250,253,0) 45%)'
+          : 'linear-gradient(90deg, rgba(3,4,8,0.94) 0%, rgba(3,4,8,0.78) 36%, rgba(3,4,8,0.2) 70%, rgba(3,4,8,0) 100%), linear-gradient(to top, rgba(3,4,8,0.85) 0%, rgba(3,4,8,0) 45%)' }}
       />
-      <div className="series-open-content absolute inset-0 p-5 xl:p-6 flex flex-col justify-end text-white" style={{ maxWidth: '68%' }}>
+      <div className={`series-open-content absolute inset-0 p-5 xl:p-6 flex flex-col justify-end ${L ? '' : 'text-white'}`} style={L ? { maxWidth: '68%', color: NAVY } : { maxWidth: '68%' }}>
         <div className="flex items-center gap-1.5 mb-2.5">
-          <PhaseTag>{cat.phase}</PhaseTag>
-          {info.status && <StatusTag status={info.status} done={done} isCurrent={isCurrent} />}
+          <PhaseTag light={L}>{cat.phase}</PhaseTag>
+          {info.status && <StatusTag status={info.status} done={done} isCurrent={isCurrent} light={L} />}
         </div>
         <h3 className="text-[28px] xl:text-[32px] font-black leading-[1.02] tracking-tight line-clamp-2" style={{ textWrap: 'balance' }}>
           {cat.title}
         </h3>
-        <div className="mt-2 flex items-center gap-x-2 gap-y-1 flex-wrap text-[13px] font-medium" style={{ color: 'rgba(255,255,255,0.75)' }}>
+        <div className="mt-2 flex items-center gap-x-2 gap-y-1 flex-wrap text-[13px] font-medium" style={{ color: L ? 'rgba(11,21,48,0.72)' : 'rgba(255,255,255,0.75)' }}>
           <span>{cat.courses.length} {cat.courses.length === 1 ? 'corso' : 'corsi'}</span>
           <span aria-hidden>·</span>
           <span>{info.stats.total} lezioni</span>
@@ -227,14 +261,14 @@ function SeriesOpen({
         </div>
         {info.stats.total > 0 && (
           <div className="mt-2.5 flex items-center gap-2.5 max-w-[280px]">
-            <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.2)' }}>
-              <div className="h-full rounded-full" style={{ width: `${info.stats.pct}%`, background: 'var(--ist-media-accent)' }} />
+            <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: L ? 'rgba(10,20,40,0.15)' : 'rgba(255,255,255,0.2)' }}>
+              <div className="h-full rounded-full" style={{ width: `${info.stats.pct}%`, background: L ? '#1f5fd8' : 'var(--ist-media-accent)' }} />
             </div>
-            <span className="text-[11px] font-semibold tabular-nums" style={{ color: 'rgba(255,255,255,0.7)' }}>{info.stats.done}/{info.stats.total}</span>
+            <span className="text-[11px] font-semibold tabular-nums" style={{ color: L ? 'rgba(11,21,48,0.65)' : 'rgba(255,255,255,0.7)' }}>{info.stats.done}/{info.stats.total}</span>
           </div>
         )}
         {cat.description && (
-          <p className="mt-2.5 text-[13px] leading-relaxed line-clamp-2" style={{ color: 'rgba(255,255,255,0.75)' }}>
+          <p className="mt-2.5 text-[13px] leading-relaxed line-clamp-2" style={{ color: L ? 'rgba(11,21,48,0.72)' : 'rgba(255,255,255,0.75)' }}>
             {cat.description}
           </p>
         )}
@@ -243,7 +277,7 @@ function SeriesOpen({
             <button
               onClick={onPlay}
               className="inline-flex items-center gap-2 h-10 pl-4 pr-5 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
-              style={{ background: '#ffffff', color: '#05070d' }}
+              style={L ? { background: NAVY, color: '#ffffff' } : { background: '#ffffff', color: '#05070d' }}
             >
               <PlayIcon size={16} strokeWidth={2.5} fill={mode === 'rewatch' ? 'none' : 'currentColor'} />
               {mode ? RESUME_CTA[mode] : 'Guarda'}
@@ -252,8 +286,12 @@ function SeriesOpen({
           )}
           <button
             onClick={onOpen}
-            className="inline-flex items-center gap-1 h-10 pl-4 pr-3 rounded-xl text-sm font-semibold text-white transition-colors hover:bg-white/20"
-            style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)' }}
+            className={L
+              ? 'inline-flex items-center gap-1 h-10 pl-4 pr-3 rounded-xl text-sm font-semibold transition-opacity hover:opacity-85'
+              : 'inline-flex items-center gap-1 h-10 pl-4 pr-3 rounded-xl text-sm font-semibold text-white transition-colors hover:bg-white/20'}
+            style={L
+              ? { background: '#ffffff', color: NAVY, border: '1px solid rgba(10,20,40,0.15)' }
+              : { background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)' }}
           >
             Dettagli <ChevronRight size={16} strokeWidth={2.5} />
           </button>
@@ -329,6 +367,7 @@ interface SeriesCardProps {
 
 export default function SeriesCard({ category: cat, isCurrent, onOpen, onPlay }: SeriesCardProps) {
   const info = useMemo(() => seriesInfo(cat, isCurrent), [cat, isCurrent])
+  const tone = useCoverTone()
   const rootRef = useRef<HTMLDivElement>(null)
   const hoverTimer = useRef<number>()
   const lastPointer = useRef<string>('mouse')
@@ -371,13 +410,14 @@ export default function SeriesCard({ category: cat, isCurrent, onOpen, onPlay }:
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
       >
         <div className="absolute inset-0 transition-opacity duration-300" style={{ opacity: open ? 0 : 1 }}>
-          <SeriesPoster cat={cat} info={info} isCurrent={isCurrent} />
+          <SeriesPoster cat={cat} info={info} isCurrent={isCurrent} tone={tone} />
         </div>
         {open && (
           <SeriesOpen
             cat={cat}
             info={info}
             isCurrent={isCurrent}
+            tone={tone}
             onPlay={e => { e.stopPropagation(); play() }}
             onOpen={e => { e.stopPropagation(); onOpen() }}
           />
@@ -389,6 +429,7 @@ export default function SeriesCard({ category: cat, isCurrent, onOpen, onPlay }:
           cat={cat}
           info={info}
           isCurrent={isCurrent}
+          tone={tone}
           onClose={() => setSheet(false)}
           onOpen={() => { setSheet(false); onOpen() }}
           onPlay={() => { setSheet(false); play() }}
@@ -401,11 +442,12 @@ export default function SeriesCard({ category: cat, isCurrent, onOpen, onPlay }:
 // ─── Scheda dal basso (telefono) ──────────────────────────────────────────────
 
 function SeriesSheet({
-  cat, info, isCurrent, onClose, onOpen, onPlay,
+  cat, info, isCurrent, onClose, onOpen, onPlay, tone = 'dark',
 }: {
   cat: Category
   info: SeriesInfo
   isCurrent: boolean
+  tone?: Tone
   onClose: () => void
   onOpen: () => void
   onPlay: () => void
@@ -440,7 +482,7 @@ function SeriesSheet({
         }}
       >
         <div className="relative">
-          <SeriesCover cat={cat} info={info} isCurrent={isCurrent} big />
+          <SeriesCover cat={cat} info={info} isCurrent={isCurrent} big tone={tone} />
           <button
             onClick={close}
             aria-label="Chiudi"

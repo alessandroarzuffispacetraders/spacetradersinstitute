@@ -64,6 +64,10 @@ export interface MediaThumbProps {
   rounded?: string
   aspect?: string               // 'aspect-video' (card) oppure 'h-full' (sfondo banner)
   objectPosition?: string       // inquadratura dell'immagine (es. '72% 50%' per arte a destra)
+  // 'light': imageUrl è la versione CHIARA della copertina (tema chiaro):
+  // veli bianchi e testi blu notte. Vale solo mentre si vede proprio quella
+  // immagine; ripieghi e copertina generata restano scuri.
+  tone?: 'dark' | 'light'
   showPlay?: boolean
   className?: string
   children?: ReactNode
@@ -74,7 +78,7 @@ export interface MediaThumbProps {
 // così testi e badge restano bianchi anche col tema chiaro.
 export default function MediaThumb({
   imageUrl, vimeoId, fallbackUrl, accent, accentEnd, icon: Icon, iconSize = '46%', label, keyword, kicker, progress = 0,
-  done, duration, topLeft, thumbWidth = 640, rounded = 'rounded-xl', aspect = 'aspect-video', objectPosition, showPlay = true,
+  done, duration, topLeft, thumbWidth = 640, rounded = 'rounded-xl', aspect = 'aspect-video', objectPosition, tone = 'dark', showPlay = true,
   className = '', children,
 }: MediaThumbProps) {
   const vimeoThumb = useVimeoThumb(imageUrl ? null : vimeoId, thumbWidth)
@@ -90,6 +94,115 @@ export default function MediaThumb({
   const showLabel = !!label && !ownImage
   // Copertina AI caricata: l'app ci scrive sopra la parola chiave.
   const kw = imgReady && !!imageUrl && src === imageUrl && keyword?.trim() ? keywordLayout(keyword) : null
+  // Tono chiaro solo se l'immagine mostrata è proprio quella chiara richiesta.
+  const light = tone === 'light' && !!src && src === imageUrl
+
+  if (light) {
+    return (
+      <div
+        className={`media-thumb relative w-full ${aspect} overflow-hidden ${rounded} ${className}`}
+        style={{ backgroundColor: '#eef2f7', containerType: 'inline-size' }}
+      >
+        <img
+          key={src}
+          src={src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          onLoad={() => setLoadedSrc(src)}
+          onError={() => setFailed(prev => new Set(prev).add(src))}
+          className="media-thumb-img absolute inset-0 w-full h-full object-cover"
+          style={{ opacity: imgReady ? 1 : 0, objectPosition }}
+        />
+
+        {(showLabel || progress > 0 || duration) && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: 'linear-gradient(to top, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.25) 42%, transparent 64%)' }}
+          />
+        )}
+
+        {kw && (
+          <>
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{ background: 'linear-gradient(90deg, rgba(248,250,253,0.86) 0%, rgba(248,250,253,0.32) 48%, transparent 68%), linear-gradient(to top, rgba(248,250,253,0.86) 0%, rgba(248,250,253,0.2) 34%, transparent 56%)' }}
+            />
+            <div
+              className="absolute left-[6%] max-w-[78%] pointer-events-none"
+              style={{ bottom: progress > 0 ? '11%' : '8%' }}
+            >
+              {kicker && (
+                <span
+                  className="flex items-center font-bold uppercase leading-none"
+                  style={{ fontSize: 'max(8px, 3.1cqw)', letterSpacing: '0.18em', color: 'rgba(11,21,48,0.72)', gap: '1.6cqw', marginBottom: '1.8cqw' }}
+                >
+                  <span style={{ width: '4.2cqw', height: 'max(2px, 0.55cqw)', borderRadius: 2, background: '#1f5fd8', flexShrink: 0 }} />
+                  {kicker}
+                </span>
+              )}
+              <span
+                className="block font-extrabold uppercase"
+                style={{ fontSize: `${kw.size}cqw`, lineHeight: 0.94, letterSpacing: '-0.02em', color: '#0b1530', textShadow: '0 1px 14px rgba(255,255,255,0.55)' }}
+              >
+                {kw.lines.map((line, i) => <span key={i} className="block whitespace-nowrap">{line}</span>)}
+              </span>
+            </div>
+          </>
+        )}
+
+        {showLabel && (
+          <span
+            className="absolute left-[6%] bottom-[5%] font-black leading-none tracking-tight pointer-events-none"
+            style={{ fontSize: '22cqw', opacity: 0.9, color: '#0b1530' }}
+          >
+            {label}
+          </span>
+        )}
+
+        {children}
+
+        {topLeft && <div className="absolute top-2 left-2 flex items-center gap-1.5">{topLeft}</div>}
+
+        {done && (
+          <span
+            className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center"
+            style={{ background: '#46D39A', boxShadow: '0 2px 10px rgba(10,20,40,0.25)' }}
+            title="Completata"
+          >
+            <Check size={14} strokeWidth={3} color="#ffffff" />
+          </span>
+        )}
+
+        {duration && (
+          <span
+            className="absolute right-2 text-[10px] font-semibold px-1.5 py-0.5 rounded-md tabular-nums"
+            style={{ background: 'rgba(11,21,48,0.78)', color: '#ffffff', bottom: progress > 0 ? 12 : 8 }}
+          >
+            {duration}
+          </span>
+        )}
+
+        {showPlay && (
+          <div className="media-thumb-play absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span
+              className="w-11 h-11 rounded-full flex items-center justify-center"
+              style={{ background: 'rgba(11,21,48,0.88)', boxShadow: '0 6px 24px rgba(10,20,40,0.3)' }}
+            >
+              <Play size={18} strokeWidth={2.5} fill="#ffffff" color="#ffffff" style={{ marginLeft: 2 }} />
+            </span>
+          </div>
+        )}
+
+        {progress > 0 && (
+          <div className="absolute left-0 right-0 bottom-0 h-1" style={{ background: 'rgba(10,20,40,0.15)' }}>
+            <div className="h-full" style={{ width: `${progress * 100}%`, background: '#1f5fd8' }} />
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div

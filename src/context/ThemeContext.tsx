@@ -44,3 +44,10 @@ export function useCinemaMode() {
   const { enterCinema } = useTheme()
   useEffect(() => enterCinema(), [enterCinema])
 }
+
+// Tono delle IMMAGINI di copertina: segue il tema scelto dall'utente anche nelle
+// pagine "cinema" (che restano scure). Col tema chiaro le card usano la versione
+// chiara delle copertine, se esiste.
+export function useCoverTone(): Theme {
+  return useTheme().theme
+}

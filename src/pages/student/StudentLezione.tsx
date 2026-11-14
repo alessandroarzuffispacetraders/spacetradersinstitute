@@ -15,7 +15,7 @@ import UpgradeWall from '../../components/auth/UpgradeWall'
 import { isFreeUser } from '../../lib/freeTier'
 import { useUI } from '../../context/UIContext'
 import { useAuth } from '../../context/AuthContext'
-import { useCinemaMode } from '../../context/ThemeContext'
+import { useCinemaMode, useCoverTone } from '../../context/ThemeContext'
 
 // ─── file type helpers ────────────────────────────────────────────────────────
 
@@ -94,6 +94,7 @@ function NextUpOverlay({
 }) {
   const [left, setLeft] = useState(NEXT_COUNTDOWN_S)
   const [cancelled, setCancelled] = useState(false)
+  const tone = useCoverTone()
   // In un ref: il genitore ricrea onPlay a ogni render (es. movimento del mouse)
   // e non deve far ripartire il conto alla rovescia.
   const onPlayRef = useRef(onPlay)
@@ -113,7 +114,7 @@ function NextUpOverlay({
         style={{ background: 'rgba(10,12,18,0.94)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 20px 60px rgba(0,0,0,0.6)' }}
       >
         <div className="hidden sm:block">
-          <MediaThumb {...lessonThumbProps(lesson, category, number)} rounded="" showPlay={false} />
+          <MediaThumb {...lessonThumbProps(lesson, category, number, tone)} rounded="" showPlay={false} />
         </div>
         <div className="p-3 lg:p-4">
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: 'rgba(255,255,255,0.6)' }}>

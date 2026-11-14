@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, Paperclip, Play, RotateCcw, Loader2 } from 'lucide-react'
 import { useStudentCatalog, getCourseStats, getCategoryStats, Course } from '../../lib/content'
 import { useAuth } from '../../context/AuthContext'
-import { useCinemaMode } from '../../context/ThemeContext'
+import { useCinemaMode, useCoverTone } from '../../context/ThemeContext'
 import {
   flattenLessons, pickResume, remainingLabel, LessonEntry, RESUME_CTA,
 } from '../../lib/catalogView'
@@ -212,6 +212,7 @@ function EpisodeRow({
   onClick: () => void
 }) {
   const { lesson, category, number } = entry
+  const tone = useCoverTone()
   const remaining = remainingLabel(lesson)
   const status = lesson.done ? 'Completata' : remaining
 
@@ -234,7 +235,7 @@ function EpisodeRow({
 
         <div className="w-[42%] max-w-[176px] sm:w-44 lg:w-52 lg:max-w-none flex-shrink-0">
           <MediaThumb
-            {...lessonThumbProps(lesson, category, number)}
+            {...lessonThumbProps(lesson, category, number, tone)}
             duration={undefined}
             rounded="rounded-lg"
           />

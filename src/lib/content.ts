@@ -34,6 +34,8 @@ export interface Lesson {
   // Copertina generata dall'AI (SVG senza testo) + parola chiave scritta dall'app.
   // null finché non è generata o se la migrazione delle copertine non c'è ancora.
   coverUrl: string | null
+  // Versione chiara della stessa copertina (tema chiaro): null se non c'è.
+  coverUrlLight: string | null
   coverKeyword: string | null
   coverStatus: string | null    // null | 'pending' | 'ready' | 'error'
   // Soggetto scelto da Claude per il prompt di ChatGPT (solo vista admin).
@@ -64,6 +66,7 @@ export interface Category {
   // Locandina verticale 2:3 della "serie" generata dall'AI (SVG senza testo:
   // il titolo lo scrive l'app). null finché non c'è o senza la migrazione.
   posterUrl: string | null
+  posterUrlLight: string | null // versione chiara della locandina (tema chiaro)
   posterStatus: string | null   // null | 'pending' | 'ready' | 'error'
   posterPrompt: CoverSubject | null  // soggetto per il prompt di ChatGPT (solo admin)
   section: string           // 'trading' | 'mental'
@@ -126,6 +129,7 @@ interface RawLesson {
   position: number; attachments: RawAttachment[] | null
   cover_url?: string | null; cover_keyword?: string | null; cover_status?: string | null
   cover_prompt?: CoverSubject | null
+  cover_url_light?: string | null
 }
 interface RawCourse {
   id: string; category_id: string; title: string; description: string
@@ -136,16 +140,18 @@ interface RawCategory {
   phase: string; published: boolean; is_free: boolean; cover_url: string | null; position: number; section: string; courses: RawCourse[] | null
   poster_url?: string | null; poster_status?: string | null
   poster_prompt?: CoverSubject | null
+  poster_url_light?: string | null
 }
 
 // prompts: soggetti per ChatGPT (cover_prompt / poster_prompt), solo per l'admin.
-function selectFor(lessonCovers: boolean, posters: boolean, prompts = false): string {
+// light: versioni chiare di copertine e locandine (phase_cover_light.sql).
+function selectFor(lessonCovers: boolean, posters: boolean, prompts = false, light = false): string {
   return `
-  id, title, description, accent, phase, published, is_free, cover_url, position, section,${posters ? ' poster_url, poster_status,' : ''}${posters && prompts ? ' poster_prompt,' : ''}
+  id, title, description, accent, phase, published, is_free, cover_url, position, section,${posters ? ' poster_url, poster_status,' : ''}${posters && prompts ? ' poster_prompt,' : ''}${posters && light ? ' poster_url_light,' : ''}
   courses (
     id, category_id, title, description, phase, published, position,
     lessons (
-      id, course_id, title, description, duration_seconds, vimeo_id, published, position,${lessonCovers ? '\n      cover_url, cover_keyword, cover_status,' : ''}${lessonCovers && prompts ? ' cover_prompt,' : ''}
+      id, course_id, title, description, duration_seconds, vimeo_id, published, position,${lessonCovers ? '\n      cover_url, cover_keyword, cover_status,' : ''}${lessonCovers && prompts ? ' cover_prompt,' : ''}${lessonCovers && light ? ' cover_url_light,' : ''}
       attachments ( id, lesson_id, name, type, size_bytes, object_key, position )
     )
   )
@@ -162,24 +168,36 @@ let postersAvailable: boolean | null = null
 // Soggetti per ChatGPT (migrazione phase_cover_prompts.sql): terzo gruppo,
 // chiesto solo dalla vista admin.
 let promptsAvailable: boolean | null = null
+// Versioni chiare (migrazione phase_cover_light.sql): quarto gruppo, indipendente.
+let lightAvailable: boolean | null = null
+
+// "column … cover_url_light / poster_url_light does not exist": va riconosciuto
+// PRIMA degli altri gruppi, perché il nome contiene anche "cover_url"/"poster_url".
+function isMissingLightColumn(err: { code?: string; message?: string } | null | undefined): boolean {
+  return !!err && /_url_light/i.test(err.message ?? '')
+}
 
 async function fetchCategories(section: ContentSection | 'all', withPrompts = false) {
-  const run = (lessonCovers: boolean, posters: boolean, prompts: boolean) => {
-    let q = supabase.from('categories').select(selectFor(lessonCovers, posters, prompts))
+  const run = (lessonCovers: boolean, posters: boolean, prompts: boolean, light: boolean) => {
+    let q = supabase.from('categories').select(selectFor(lessonCovers, posters, prompts, light))
     if (section !== 'all') q = q.eq('section', section)
     return q
   }
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     const wantCovers = lessonCoversAvailable !== false
     const wantPosters = postersAvailable !== false
     const wantPrompts = withPrompts && promptsAvailable !== false
-    const res = await run(wantCovers, wantPosters, wantPrompts)
+    const wantLight = lightAvailable !== false
+    const res = await run(wantCovers, wantPosters, wantPrompts, wantLight)
     if (!res.error) {
       if (wantCovers) lessonCoversAvailable = true
       if (wantPosters) postersAvailable = true
       if (wantPrompts) promptsAvailable = true
+      if (wantLight) lightAvailable = true
       return res
     }
+    // Versioni chiare per prime (il nome contiene "cover_url"/"poster_url").
+    if (wantLight && isMissingLightColumn(res.error)) { lightAvailable = false; continue }
     // Prima i soggetti (cover_prompt contiene "cover_": va riconosciuto per primo).
     if (wantPrompts && isMissingPromptColumn(res.error)) { promptsAvailable = false; continue }
     const posterMissing = isMissingPosterColumn(res.error)
@@ -191,7 +209,7 @@ async function fetchCategories(section: ContentSection | 'all', withPrompts = fa
     else if (wantCovers) lessonCoversAvailable = false
     else return res
   }
-  return run(lessonCoversAvailable !== false, postersAvailable !== false, withPrompts && promptsAvailable !== false)
+  return run(lessonCoversAvailable !== false, postersAvailable !== false, withPrompts && promptsAvailable !== false, lightAvailable !== false)
 }
 
 function byPosition<T extends { position: number }>(a: T, b: T) {
@@ -217,6 +235,7 @@ function buildTree(
       isFree: cat.is_free ?? false,
       coverUrl: cat.cover_url ?? null,
       posterUrl: cat.poster_url ?? null,
+      posterUrlLight: cat.poster_url_light ?? null,
       posterStatus: cat.poster_status ?? null,
       posterPrompt: cat.poster_prompt ?? null,
       section: cat.section ?? 'trading',
@@ -247,6 +266,7 @@ function buildTree(
                 lastPositionSeconds: pr?.pos ?? 0,
                 lastWatchedAt: pr?.at ?? null,
                 coverUrl: les.cover_url ?? null,
+                coverUrlLight: les.cover_url_light ?? null,
                 coverKeyword: les.cover_keyword ?? null,
                 coverStatus: les.cover_status ?? null,
                 coverPrompt: les.cover_prompt ?? null,
