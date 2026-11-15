@@ -9,7 +9,7 @@ import {
   uploadCoverImage, copyText, isUploadedCover,
 } from '../../lib/covers'
 import { buildCoverPrompt, buildPosterPrompt } from '../../lib/coverPrompts'
-import { claimLiveCover } from '../../lib/live'
+import { claimLiveCover, claimLessonCover } from '../../lib/live'
 import { supabase } from '../../lib/supabase'
 
 // Copertina di una lezione o locandina verticale di una serie.
@@ -153,9 +153,9 @@ function VectorPanel({ subject, onChanged, onPreview }: {
   )
 }
 
-// ─── Live: copertina dalla scorta + parola chiave ─────────────────────────────
+// ─── Live e video: copertina dalla scorta + parola chiave ─────────────────────
 
-function LivePoolPanel({ subject, onChanged, onPreview }: {
+function PoolPanel({ subject, onChanged, onPreview }: {
   subject: CoverSubject
   onChanged: () => void
   onPreview: (p: { coverUrl: string | null; keyword: string | null }) => void
@@ -166,12 +166,14 @@ function LivePoolPanel({ subject, onChanged, onPreview }: {
 
   const claim = async () => {
     setBusy('claim'); setMsg(null)
-    const res = await claimLiveCover(subject.id, keyword || null, !!subject.coverUrl)
+    const res = subject.kind === 'live'
+      ? await claimLiveCover(subject.id, keyword || null, !!subject.coverUrl)
+      : await claimLessonCover(subject.id, keyword || null, !!subject.coverUrl)
     setBusy(null)
     if (res.status === 'ok' || res.status === 'other_theme') {
       setMsg({ ok: true, text: `Nuova copertina assegnata${res.left !== undefined ? ` · ne restano ${res.left} di questo tema` : ''}.` })
     } else if (res.status === 'empty') setMsg({ ok: false, text: 'La scorta di copertine è finita: fanne generare altre.' })
-    else if (res.status === 'unavailable') setMsg({ ok: false, text: "Manca l'aggiornamento del database (phase_live_share.sql)." })
+    else if (res.status === 'unavailable') setMsg({ ok: false, text: `Manca l'aggiornamento del database (${subject.kind === 'live' ? 'phase_live_share.sql' : 'phase_video_share.sql'}).` })
     else setMsg({ ok: false, text: 'Non è stato possibile assegnare la copertina.' })
     onChanged()
   }
@@ -179,7 +181,7 @@ function LivePoolPanel({ subject, onChanged, onPreview }: {
   const saveKeyword = async () => {
     setBusy('save'); setMsg(null)
     const kw = keyword.trim().toUpperCase() || null
-    const { error } = await supabase.from('live_events').update({ cover_keyword: kw }).eq('id', subject.id)
+    const { error } = await supabase.from(subject.kind === 'live' ? 'live_events' : 'lessons').update({ cover_keyword: kw }).eq('id', subject.id)
     setBusy(null)
     if (!error) { onPreview({ coverUrl: subject.coverUrl, keyword: kw }); setMsg({ ok: true, text: 'Parola chiave aggiornata.' }); onChanged() }
     else setMsg({ ok: false, text: 'Salvataggio non riuscito.' })
@@ -188,7 +190,7 @@ function LivePoolPanel({ subject, onChanged, onPreview }: {
   return (
     <div className="space-y-3">
       <p className="text-xs" style={{ color: 'var(--ist-text-muted)' }}>
-        Ogni live riceve una copertina pronta appena viene creata, presa da una scorta di immagini tutte diverse
+        {subject.kind === 'live' ? 'Ogni live riceve una copertina pronta appena viene creata' : 'Ogni nuovo video riceve una copertina pronta appena viene pubblicato'}, presa da una scorta di immagini tutte diverse
         (tema mente per il Mental Coach, trading per il resto).
       </p>
       <div>
@@ -460,6 +462,12 @@ export default function CoverEditorModal({ subject, onClose, onChanged }: {
 
           {/* Prompt per ChatGPT (lezioni e serie) / generazione vettoriale */}
           <div className="space-y-4 min-w-0">
+            {subject.kind === 'lesson' && (
+              <div className="rounded-2xl p-4" style={{ border: '1px solid var(--ist-border)' }}>
+                <p className="text-xs font-bold mb-2" style={{ color: 'var(--ist-text)' }}>Copertina dalla scorta</p>
+                <PoolPanel subject={subject} onChanged={onChanged} onPreview={setPreview} />
+              </div>
+            )}
             {!isLive && (
               <ChatGptPanel
                 subject={subject}
@@ -473,7 +481,7 @@ export default function CoverEditorModal({ subject, onClose, onChanged }: {
             )}
 
             {isLive ? (
-              <LivePoolPanel subject={subject} onChanged={onChanged} onPreview={setPreview} />
+              <PoolPanel subject={subject} onChanged={onChanged} onPreview={setPreview} />
             ) : (
               <div className="rounded-2xl" style={{ border: '1px solid var(--ist-border)' }}>
                 <button

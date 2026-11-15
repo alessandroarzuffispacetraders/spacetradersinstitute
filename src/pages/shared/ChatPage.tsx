@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } fr
 import {
   Hash, Megaphone, ChevronDown, ChevronRight,
   Send, ArrowLeft, Search, Pin, MessageCircle, UsersRound, Loader2, X,
-  Edit2, Trash2, SmilePlus, ImagePlus, Plus, Mic, Paperclip, FileText,
+  Edit2, Trash2, SmilePlus, ImagePlus, Plus, Mic, Paperclip, FileText, Clapperboard,
   VolumeX, Volume2, Reply, Clock, AlertCircle, Bell, BellOff,
 } from 'lucide-react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
@@ -34,6 +34,8 @@ import {
 } from '../../lib/moderation'
 import UserAvatar from '../../components/ui/UserAvatar'
 import LiveInviteCard from '../../components/live/LiveInviteCard'
+import VideoShareCard from '../../components/chat/VideoShareCard'
+import VideoPicker, { type PickedVideo } from '../../components/chat/VideoPicker'
 import ImageAttachPicker from '../../components/ui/ImageAttachPicker'
 import { ImageViewerProvider, useImageViewer, TapToOpen } from '../../components/ui/ImageViewer'
 
@@ -83,6 +85,7 @@ function msgPreview(m: DbMessage): string {
   if (m.audio_url) return '🎤 Messaggio vocale'
   if (m.image_url) return '📷 Foto'
   if (m.file_url) return `📎 ${m.file_name ?? 'File'}`
+  if (m.lesson_id) return '🎬 Video'
   return 'Messaggio'
 }
 
@@ -699,6 +702,9 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
   const [newMsgCount, setNewMsgCount] = useState(0)
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [fileAttachment, setFileAttachment] = useState<File | null>(null)
+  // Video del percorso allegato (solo admin e coach)
+  const [videoPick, setVideoPick] = useState<PickedVideo | null>(null)
+  const [videoPickerOpen, setVideoPickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -877,8 +883,9 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
 
   const sendMessage = async () => {
     const text = input.trim()
-    if ((!text && !imageFile && !fileAttachment) || !canPost || mutedHere || uploading) return
+    if ((!text && !imageFile && !fileAttachment && !videoPick) || !canPost || mutedHere || uploading) return
     const media: MessageMedia = {}
+    if (videoPick) { media.lessonId = videoPick.id; media.lessonTitle = videoPick.title }
     setUploading(true)
     try {
       if (imageFile) {
@@ -899,6 +906,7 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
     setInputTall(false)
     setImageFile(null)
     setFileAttachment(null)
+    setVideoPick(null)
     setReplyTo(null)
     stopTyping()
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
@@ -1049,7 +1057,8 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
   // Audio + file: solo nelle chat private (DM). I file solo allo staff.
   const isStaff = userRole === 'coach' || userRole === 'mental_coach' || userRole === 'admin'
   const canAttachFile = isDirect && isStaff
-  const showSend = !!input.trim() || !!imageFile || !!fileAttachment
+  const canShareVideo = userRole === 'admin' || userRole === 'coach'
+  const showSend = !!input.trim() || !!imageFile || !!fileAttachment || !!videoPick
   const showMic = isDirect && audioSupported && !showSend
 
   return (
@@ -1372,6 +1381,11 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
                                   </div>
                                 )}
                                 {linkify(msg.text)}
+                                {msg.fullMsg.lesson_id && (
+                                  <div className="mt-2" style={{ minWidth: 220 }}>
+                                    <VideoShareCard lessonId={msg.fullMsg.lesson_id} compact />
+                                  </div>
+                                )}
                                 {msg.fullMsg.kind === 'live_invite' && msg.fullMsg.live_event_id && (
                                   <div className="mt-2" style={{ minWidth: 220 }}>
                                     <LiveInviteCard liveId={msg.fullMsg.live_event_id} compact />
@@ -1555,6 +1569,29 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
             </div>
           )}
 
+          {videoPickerOpen && (
+            <VideoPicker
+              userId={userId}
+              onPick={v => { setVideoPick(v); setVideoPickerOpen(false); textareaRef.current?.focus() }}
+              onClose={() => setVideoPickerOpen(false)}
+            />
+          )}
+          {/* Video del percorso allegato */}
+          {videoPick && (
+            <div className="relative self-start flex items-center gap-2 rounded-xl pl-3 pr-2 py-2 max-w-full" style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w10)' }}>
+              <Clapperboard size={15} strokeWidth={2} className="flex-shrink-0" style={{ color: 'var(--ist-accent-text)' }} />
+              <span className="text-xs truncate max-w-[240px]" style={{ color: 'var(--ist-text)' }}>{videoPick.title}</span>
+              <button
+                onClick={() => setVideoPick(null)}
+                className="ml-1 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+                title="Rimuovi video"
+              >
+                <X size={11} strokeWidth={2.5} />
+              </button>
+            </div>
+          )}
+
           {recorder.recording && recLocked ? (
             /* Registrazione BLOCCATA (hands-free): annulla · timer · invia */
             <div className="flex items-center gap-3">
@@ -1597,6 +1634,16 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
               >
                 <ImagePlus size={17} strokeWidth={2} />
               </button>
+              {canShareVideo && (
+                <button
+                  onClick={() => setVideoPickerOpen(true)}
+                  className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:brightness-110"
+                  style={{ background: 'var(--ist-w8)', color: videoPick ? 'var(--ist-accent-text)' : 'var(--ist-text-muted)' }}
+                  title="Allega un video del percorso"
+                >
+                  <Clapperboard size={17} strokeWidth={2} />
+                </button>
+              )}
               {canAttachFile && (
                 <button
                   onClick={() => fileInputRef.current?.click()}

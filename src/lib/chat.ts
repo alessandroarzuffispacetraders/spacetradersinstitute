@@ -23,6 +23,7 @@ export interface DbMessage {
   kind?: string | null            // 'welcome' = messaggio automatico di benvenuto
   target_user_id?: string | null  // destinatario del messaggio di sistema (es. benvenuto)
   live_event_id?: string | null   // 'live_invite': scheda della live condivisa dall'admin
+  lesson_id?: string | null       // 'video_share': video del percorso allegato da admin/coach
   // Risposta a un altro messaggio (quote): id + snapshot autore/anteprima.
   reply_to?: string | null
   reply_to_author?: string | null
@@ -40,6 +41,9 @@ export interface MessageMedia {
   fileUrl?: string | null
   fileName?: string | null
   fileSize?: number | null
+  // Video del percorso allegato (solo admin/coach): scheda che apre la lezione.
+  lessonId?: string | null
+  lessonTitle?: string
   // Vocale NON ancora caricato: il blob resta in memoria così l'upload+invio è
   // ritentabile senza ri-registrare (fix "vocali persi con rete scarsa").
   audioBlob?: Blob
@@ -408,6 +412,7 @@ export function useChatMessages(channelId: string | null, userId: string) {
         file_name: m.fileName ?? null,
         file_size: m.fileSize ?? null,
       }
+      if (m.lessonId) { row.lesson_id = m.lessonId; row.kind = 'video_share' }
       // Le colonne reply_* solo se è una risposta: un messaggio normale si invia
       // anche senza la migration reply applicata.
       if (p.reply) {
@@ -447,7 +452,7 @@ export function useChatMessages(channelId: string | null, userId: string) {
           : prev.map(x => x.id === tempId ? done : x))
       }
       const preview = p.content
-        || (m.audioUrl ? '🎤 Messaggio vocale' : m.fileUrl ? `📎 ${m.fileName ?? 'File'}` : m.imageUrl ? '📷 Foto' : '')
+        || (m.audioUrl ? '🎤 Messaggio vocale' : m.fileUrl ? `📎 ${m.fileName ?? 'File'}` : m.imageUrl ? '📷 Foto' : m.lessonId ? `🎬 ${m.lessonTitle ?? 'Video'}` : '')
       triggerPushNotifications({ channel_id: p.channelId, user_id: userId, author_name: p.authorName, content: preview })
     } finally {
       sendingRef.current.delete(tempId)
@@ -458,7 +463,7 @@ export function useChatMessages(channelId: string | null, userId: string) {
     const trimmed = content.trim()
     const m = media ?? {}
     const hasAudio = !!(m.audioUrl || m.audioBlob)
-    if (!channelId || !userId || (!trimmed && !m.imageUrl && !hasAudio && !m.fileUrl)) return
+    if (!channelId || !userId || (!trimmed && !m.imageUrl && !hasAudio && !m.fileUrl && !m.lessonId)) return
     const tempId = `temp_${Date.now()}_${Math.round(performance.now())}`
     const rowId = crypto.randomUUID()
     // Vocale non ancora caricato: URL locale (blob:) per riascoltarlo SUBITO,
@@ -478,6 +483,8 @@ export function useChatMessages(channelId: string | null, userId: string) {
       file_url: m.fileUrl ?? null,
       file_name: m.fileName ?? null,
       file_size: m.fileSize ?? null,
+      lesson_id: m.lessonId ?? null,
+      kind: m.lessonId ? 'video_share' : null,
       reply_to: reply?.id ?? null,
       reply_to_author: reply?.author ?? null,
       reply_to_preview: reply?.preview ?? null,
@@ -797,6 +804,7 @@ export interface DmThreadInfo { preview: string; at: string; fromMe: boolean }
 type DmMsgRow = {
   channel_id: string; content: string | null; user_id: string; created_at: string
   image_url: string | null; audio_url: string | null; file_url: string | null; deleted_at: string | null
+  kind?: string | null
 }
 
 function dmPreviewOf(m: DmMsgRow): string {
@@ -804,7 +812,9 @@ function dmPreviewOf(m: DmMsgRow): string {
   if (m.audio_url) return '🎤 Vocale'
   if (m.image_url) return '📷 Foto'
   if (m.file_url) return '📎 File'
-  return (m.content ?? '').replace(/\s+/g, ' ').trim() || 'Allegato'
+  const text = (m.content ?? '').replace(/\s+/g, ' ').trim()
+  if (!text && m.kind === 'video_share') return '🎬 Video'
+  return text || 'Allegato'
 }
 
 export function useDmLastMessages(userId: string): Record<string, DmThreadInfo> {
@@ -816,7 +826,7 @@ export function useDmLastMessages(userId: string): Record<string, DmThreadInfo> 
 
     supabase
       .from('messages')
-      .select('channel_id, content, user_id, created_at, image_url, audio_url, file_url, deleted_at')
+      .select('channel_id, content, user_id, created_at, image_url, audio_url, file_url, deleted_at, kind')
       .like('channel_id', 'dm_%')
       .like('channel_id', `%${userId}%`)     // solo i MIEI DM (id nel channel_id)
       .order('created_at', { ascending: false })

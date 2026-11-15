@@ -274,6 +274,16 @@ export async function claimLiveCover(liveId: string, keyword?: string | null, fo
   return { status: d.status ?? 'ok', left: d.left }
 }
 
+// Stessa scorta per i video appena pubblicati (phase_video_share.sql): solo
+// admin. 'unavailable' se la migrazione non c'è ancora (il video resta con la
+// copertina generata dal colore, come prima).
+export async function claimLessonCover(lessonId: string, keyword?: string | null, force = false): Promise<ClaimResult> {
+  const { data, error } = await supabase.rpc('claim_lesson_cover', { p_lesson_id: lessonId, p_keyword: keyword ?? null, p_force: force })
+  if (error) return { status: /claim_lesson_cover|PGRST202|42883/.test(`${error.code} ${error.message}`) ? 'unavailable' : 'error' }
+  const d = (data ?? {}) as { status?: ClaimResult['status']; left?: number }
+  return { status: d.status ?? 'ok', left: d.left }
+}
+
 // Copertine ancora libere nella scorta, per tema (solo staff; null se la
 // migrazione non c'è ancora).
 export async function coverPoolStatus(): Promise<{ trading: number; mind: number } | null> {

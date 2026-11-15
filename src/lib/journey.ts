@@ -234,8 +234,17 @@ export function useJourney(userId: string, opts: { hasPhoto: boolean; hasMentalC
       supabase.from('path_steps').select('step_key').eq('user_id', userId),
     ])
     setTasks(((defs.data ?? []) as TaskDef[]))
-    setDoneKeys(new Set([...((done.data ?? []) as { step_key: string }[]).map(r => r.step_key), ...readLocal(userId)]))
+    const saved = new Set(((done.data ?? []) as { step_key: string }[]).map(r => r.step_key))
+    const local = readLocal(userId)
+    setDoneKeys(new Set([...saved, ...local]))
     setLoading(false)
+    // Spunte rimaste solo su questo dispositivo (da prima che il database lo
+    // permettesse): le salviamo ora, così le vede anche il coach.
+    const pending = local.filter(k => !saved.has(k))
+    if (!done.error && pending.length) {
+      const { error } = await supabase.from('path_steps').upsert(pending.map(step_key => ({ user_id: userId, step_key })), { onConflict: 'user_id,step_key' })
+      if (!error) writeLocal(userId, [])
+    } else if (!done.error && local.length) writeLocal(userId, [])
   }, [userId, preview])
   useEffect(() => { void load() }, [load])
 

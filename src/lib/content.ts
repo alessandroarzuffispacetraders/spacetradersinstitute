@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 import { useIsPreview } from './previewMode'
 import { isMissingCoverColumn, isMissingPosterColumn, isMissingPromptColumn } from './covers'
 import type { CoverSubject } from './coverPrompts'
+import { claimLessonCover, keywordFromTitle } from './live'
 
 // Sezione del catalogo: 'trading' (videocorsi principali) o 'mental' (Area Mental
 // Coach). Riusa la stessa struttura categorie→corsi→lezioni; è solo un filtro.
@@ -41,6 +42,7 @@ export interface Lesson {
   // Soggetto scelto da Claude per il prompt di ChatGPT (solo vista admin).
   coverPrompt: CoverSubject | null
   attachments: Attachment[]
+  published?: boolean           // false = bozza (solo vista admin)
 }
 
 export interface Course {
@@ -79,7 +81,7 @@ const PHASE_LABEL: Record<string, string> = {
   onboarding: 'Onboarding', build: 'Build', test: 'Test', deploy: 'Deploy',
 }
 
-function phaseLabel(p: string): string {
+export function phaseLabel(p: string): string {
   return PHASE_LABEL[p] ?? p
 }
 
@@ -270,6 +272,7 @@ function buildTree(
                 coverKeyword: les.cover_keyword ?? null,
                 coverStatus: les.cover_status ?? null,
                 coverPrompt: les.cover_prompt ?? null,
+                published: les.published ?? true,
                 attachments: (les.attachments ?? [])
                   .slice()
                   .sort(byPosition)
@@ -465,9 +468,10 @@ export function useContentAdmin(section: ContentSection = 'trading') {
       vimeo_id: input.vimeoId?.trim() || null,
       position: count, published: true,
     }).select('id').single()
+    // Copertina pronta dalla scorta (mai usata, del tema giusto) appena il
+    // video nasce; se la scorta è finita resta quella generata dal colore.
+    if (!error && data?.id) await claimLessonCover(data.id, keywordFromTitle(input.title))
     if (!error) await load(true)
-    // Niente più copertina vettoriale automatica: si crea con ChatGPT dall'admin.
-    void data
     return !error
   }, [categories, load])
 
