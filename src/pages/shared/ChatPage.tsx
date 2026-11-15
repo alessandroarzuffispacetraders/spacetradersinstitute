@@ -35,6 +35,7 @@ import {
 import UserAvatar from '../../components/ui/UserAvatar'
 import LiveInviteCard from '../../components/live/LiveInviteCard'
 import ImageAttachPicker from '../../components/ui/ImageAttachPicker'
+import { ImageViewerProvider, useImageViewer, TapToOpen } from '../../components/ui/ImageViewer'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -750,6 +751,9 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
   const { typingUsers, notifyTyping, stopTyping } = useTypingIndicator(channel.id, userId, userName)
   // Avatar reali (foto/preset) degli autori, risolti per user_id.
   const authorAvatars = useAuthorAvatars(useMemo(() => messages.map(m => m.user_id), [messages]))
+  // Immagini della conversazione, in ordine: nel visore si scorre tra tutte.
+  const openImages = useImageViewer()
+  const chatImages = useMemo(() => messages.map(m => m.image_url).filter((u): u is string => !!u), [messages])
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -1332,10 +1336,8 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
                                   </div>
                                 )}
                                 {msg.fullMsg.image_url && (
-                                  <a
-                                    href={msg.fullMsg.image_url}
-                                    target="_blank"
-                                    rel="noreferrer"
+                                  <TapToOpen
+                                    onOpen={() => openImages(chatImages, chatImages.indexOf(msg.fullMsg.image_url!))}
                                     className="block"
                                     style={{ marginBottom: msg.text ? 6 : 0 }}
                                   >
@@ -1343,10 +1345,11 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
                                       src={msg.fullMsg.image_url}
                                       alt="immagine"
                                       loading="lazy"
+                                      draggable={false}
                                       className="rounded-xl"
                                       style={{ maxWidth: '100%', maxHeight: 300, display: 'block' }}
                                     />
-                                  </a>
+                                  </TapToOpen>
                                 )}
                                 {msg.fullMsg.audio_url && (
                                   <div style={{ marginBottom: msg.text ? 6 : 0 }}>
@@ -1707,6 +1710,7 @@ function BachecaPostCard({
   onTogglePin: () => void
 }) {
   const [confirmDel, setConfirmDel] = useState(false)
+  const openImages = useImageViewer()
   return (
     <div className={`chat-post rounded-3xl p-5 flex flex-col gap-3 ${post.pinned ? 'is-pinned' : ''}`}>
       {post.pinned && (
@@ -1765,12 +1769,12 @@ function BachecaPostCard({
       {post.imageUrls.length > 0 && (
         <div className={`grid gap-1.5 ${post.imageUrls.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {post.imageUrls.map((url, i) => (
-            <a key={url} href={url} target="_blank" rel="noreferrer"
+            <TapToOpen key={url} onOpen={() => openImages(post.imageUrls, i)}
               className={`block overflow-hidden rounded-2xl ${post.imageUrls.length === 3 && i === 0 ? 'col-span-2' : ''}`}
               style={{ background: 'var(--ist-w6)' }}>
               <img src={url} alt="" loading="lazy" className="w-full h-full object-cover transition-transform hover:scale-[1.02]"
-                style={{ aspectRatio: post.imageUrls.length === 1 ? undefined : (post.imageUrls.length === 3 && i === 0 ? '16 / 9' : '1 / 1'), maxHeight: post.imageUrls.length === 1 ? 460 : undefined }} />
-            </a>
+                style={{ aspectRatio: post.imageUrls.length === 1 ? undefined : (post.imageUrls.length === 3 && i === 0 ? '16 / 9' : '1 / 1'), maxHeight: post.imageUrls.length === 1 ? 460 : undefined }} draggable={false} />
+            </TapToOpen>
           ))}
         </div>
       )}
@@ -2244,6 +2248,7 @@ export default function ChatPage() {
   const keyboardInset = nativeKeyboardInset(nativeKbHeight)
 
   return (
+    <ImageViewerProvider>
     <div className="chat-shell flex overflow-hidden fixed inset-0 z-10" style={{ background: '#05070d', paddingTop: 'env(safe-area-inset-top, 0px)', ...(vp?.kbOpen && !nativeKb ? { top: vp.top, height: vp.height, bottom: 'auto' } : null) }}>
       {/* Sidebar */}
       <div
@@ -2332,5 +2337,6 @@ export default function ChatPage() {
         />
       )}
     </div>
+    </ImageViewerProvider>
   )
 }
