@@ -76,8 +76,8 @@ function OverflowSheet({
       />
       {/* Sheet */}
       <div
-        className="nav-glass nav-scope lg:hidden fixed z-50 left-3 right-3 rounded-[22px] overflow-hidden"
-        style={{ bottom: 'calc(max(14px, env(safe-area-inset-bottom, 0px) + 4px) + 70px)', animation: 'slideUpSheet 0.22s cubic-bezier(0.22,1,0.36,1)' }}
+        className="nav-glass nav-scope lg:hidden fixed z-50 left-3 right-3 rounded-[2rem] overflow-hidden"
+        style={{ bottom: 'calc(max(14px, env(safe-area-inset-bottom, 0px) + 4px) + 72px)', animation: 'slideUpSheet 0.22s cubic-bezier(0.22,1,0.36,1)' }}
       >
         {/* Profilo */}
         <div className="flex items-center gap-3 pl-4 pr-2 pt-3.5 pb-3">
@@ -246,7 +246,7 @@ export default function BottomNav() {
         className={`nav-scope lg:hidden fixed z-50 transition-transform duration-300 ease-in-out ${hideBottomNav ? 'translate-y-[200%]' : 'translate-y-0'}`}
         style={{ left: 12, right: 12, bottom: 'max(14px, calc(env(safe-area-inset-bottom, 0px) + 4px))' }}
       >
-        <div className="nav-glass relative flex items-stretch h-[60px] px-1 rounded-[22px]">
+        <div className="nav-glass relative flex items-stretch h-[62px] px-2 rounded-full">
           {primary.map((item, i) => (
             <NavLink
               key={item.path}
