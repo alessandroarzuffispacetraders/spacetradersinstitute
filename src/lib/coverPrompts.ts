@@ -53,13 +53,13 @@ const VINCOLI = `VINCOLI
 
 const RIFERIMENTO = `Se ti allego un'immagine di riferimento, usala come riferimento principale per composizione, inquadratura e linguaggio visivo, sostituendo il soggetto e i grafici di contorno con quelli indicati qui.`
 
-// Locandina della serie: verticale 2:3 (es. 1024×1536). Nell'app il titolo è
+// Locandina della sezione di corsi: verticale 2:3 (es. 1024×1536). Nell'app il titolo è
 // scritto in basso; nell'anteprima orizzontale si vede la fascia alta.
 export function buildPosterPrompt(serie: { titolo: string; descrizione?: string }, s: CoverSubject): string {
   return `Crea un'immagine fotorealistica, premium e cinematografica in formato VERTICALE 2:3 (1024×1536): un'interfaccia professionale di ricerca quantitativa per il trading, fotografata da vicino su un vero display ad alta risoluzione, come la locandina di un film thriller finanziario.
 ${RIFERIMENTO}
 
-TEMA DELLA SERIE: «${serie.titolo}»${serie.descrizione ? ` — ${serie.descrizione}` : ''}
+TEMA DELLA SEZIONE DI CORSI: «${serie.titolo}»${serie.descrizione ? ` — ${serie.descrizione}` : ''}
 
 SOGGETTO PRINCIPALE
 ${s.soggetto}
@@ -69,7 +69,7 @@ ${s.contorno}
 
 COMPOSIZIONE
 - Il soggetto principale domina la scena (70–80% dell'attenzione) e sta nella parte ALTA e CENTRALE dell'immagine, tra il 10% e il 60% dell'altezza, perfettamente a fuoco.
-- L'ultimo terzo in basso (circa il 35% inferiore) deve restare SCURO, sfocato e povero di dettagli: lì l'app scriverà in bianco il titolo della serie. Nessun elemento importante o luminoso in quella zona.
+- L'ultimo terzo in basso (circa il 35% inferiore) deve restare SCURO, sfocato e povero di dettagli: lì l'app scriverà in bianco il titolo della sezione. Nessun elemento importante o luminoso in quella zona.
 - Il soggetto deve restare riconoscibile anche ritagliando l'immagine in orizzontale (16:9) attorno al terzo superiore.
 - Intorno, alcuni grafici secondari parzialmente visibili lungo i bordi alti e laterali, tagliati in modo naturale, leggermente sfocati e subordinati al soggetto.
 - L'interfaccia continua oltre tutti e quattro i bordi: nessuna cornice del monitor visibile.
@@ -94,7 +94,7 @@ export function buildCoverPrompt(
   return `Crea un'immagine fotorealistica, premium e cinematografica in formato ORIZZONTALE 3:2 (1536×1024): un'interfaccia professionale di ricerca quantitativa per il trading, fotografata da vicino su un vero display ad alta risoluzione.
 ${RIFERIMENTO}
 
-TEMA DELLA LEZIONE: «${lezione.titolo}» (lezione ${lezione.numero}${lezione.corso ? ` del capitolo «${lezione.corso}»` : ''}, serie «${lezione.serie}»)
+TEMA DELLA LEZIONE: «${lezione.titolo}» (lezione ${lezione.numero}${lezione.corso ? ` del capitolo «${lezione.corso}»` : ''}, sezione «${lezione.serie}»)
 
 SOGGETTO PRINCIPALE
 ${s.soggetto}

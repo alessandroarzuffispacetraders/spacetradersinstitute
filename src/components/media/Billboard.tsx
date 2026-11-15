@@ -16,9 +16,13 @@ export interface BillboardProps {
   title: string
   meta?: ReactNode
   description?: string
+  extra?: ReactNode             // contenuto aggiuntivo sotto la descrizione (es. altri avvisi)
   progress?: number             // 0..1
   progressLabel?: string
   actions?: ReactNode
+  // 'overlay': anche su telefono l'immagine riempie tutto e il testo sta in basso
+  // sopra di essa (banner rotante della Home: slide tutte alte uguali).
+  layout?: 'stack' | 'overlay'
 }
 
 // Banner grande in testa alla pagina (stile "billboard"): immagine a tutta
@@ -26,17 +30,18 @@ export interface BillboardProps {
 // tema chiaro), come una sala cinema; i testi stanno sopra la parte velata.
 export default function Billboard({
   imageUrl, imagePosition, vimeoId, fallbackUrl, accent, accentEnd, icon,
-  topLeft, topRight, eyebrow, title, meta, description, progress = 0, progressLabel, actions,
+  topLeft, topRight, eyebrow, title, meta, description, extra, progress = 0, progressLabel, actions, layout = 'stack',
 }: BillboardProps) {
+  const overlay = layout === 'overlay'
   return (
-    <section data-inverted="true" className="media-hero relative isolate overflow-hidden">
+    <section data-inverted="true" className={`media-hero relative isolate overflow-hidden ${overlay ? 'flex flex-col w-full' : ''}`}>
       <div className="media-hero-bg absolute inset-0 -z-10" />
 
       {/* Immagine: sopra al testo su mobile, a tutto sfondo su desktop */}
-      <div className="relative w-full aspect-video lg:absolute lg:inset-0 lg:aspect-auto">
+      <div className={overlay ? 'absolute inset-0' : 'relative w-full aspect-video lg:absolute lg:inset-0 lg:aspect-auto'}>
         <MediaThumb
           imageUrl={imageUrl}
-          objectPosition={imagePosition}
+          objectPosition={imagePosition ?? (overlay ? '64% 38%' : undefined)}
           vimeoId={vimeoId}
           fallbackUrl={fallbackUrl}
           accent={accent}
@@ -60,6 +65,9 @@ export default function Billboard({
           className="absolute inset-x-0 top-0 h-24"
           style={{ background: 'linear-gradient(to bottom, rgba(5,7,13,0.6) 0%, rgba(5,7,13,0) 100%)' }}
         />
+        {overlay && (
+          <div className="absolute inset-0 lg:hidden" style={{ background: 'linear-gradient(to top, rgba(5,7,13,0.97) 0%, rgba(5,7,13,0.72) 42%, rgba(5,7,13,0.12) 72%, rgba(5,7,13,0) 100%)' }} />
+        )}
       </div>
 
       {(topLeft || topRight) && (
@@ -69,7 +77,9 @@ export default function Billboard({
         </div>
       )}
 
-      <div className="relative cinema-px -mt-14 sm:-mt-24 pb-14 lg:mt-0 lg:pb-[4.5rem] lg:pt-28 lg:min-h-[min(66vh,600px)] lg:flex lg:flex-col lg:justify-end">
+      <div className={overlay
+        ? 'relative cinema-px mt-auto pt-[58vw] sm:pt-[40vw] pb-14 lg:pb-[4.5rem] lg:pt-28 lg:min-h-[min(66vh,600px)] flex flex-col justify-end'
+        : 'relative cinema-px -mt-14 sm:-mt-24 pb-14 lg:mt-0 lg:pb-[4.5rem] lg:pt-28 lg:min-h-[min(66vh,600px)] lg:flex lg:flex-col lg:justify-end'}>
         <div className="hero-copy max-w-xl">
           {eyebrow && <div className="mb-2.5 flex items-center gap-2 flex-wrap">{eyebrow}</div>}
 
@@ -91,6 +101,8 @@ export default function Billboard({
               {description}
             </p>
           )}
+
+          {extra && <div className="mt-4">{extra}</div>}
 
           {progress > 0 && (
             <div className="mt-4 flex items-center gap-3 max-w-sm">

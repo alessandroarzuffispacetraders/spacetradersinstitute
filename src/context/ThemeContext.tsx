@@ -20,10 +20,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const root = document.documentElement
     root.classList.toggle('light', effective === 'light')
     root.classList.toggle('dark', effective === 'dark')
+    // Pagine "cinema": anche lo sfondo dell'app è nero (niente bande sfumate in fondo).
+    root.classList.toggle('cinema-mode', cinema > 0)
     localStorage.setItem('ist-theme', theme)
     // App nativa: mantieni la status bar leggibile sul tema attivo (no-op sul web).
     applyStatusBarTheme(effective)
-  }, [theme, effective])
+  }, [theme, effective, cinema])
 
   const enterCinema = useCallback(() => {
     setCinema(c => c + 1)

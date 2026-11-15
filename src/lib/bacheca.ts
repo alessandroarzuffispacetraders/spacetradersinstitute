@@ -137,3 +137,16 @@ export function useBachecaPosts(channelId: string | null, userId: string) {
 
   return { posts, loading, createPost, deletePost, togglePin }
 }
+
+// Ultimi post degli avvisi (tutte le bacheche che l'utente può leggere: la RLS
+// filtra per ruolo), dal più recente. Per la slide "Avvisi" della Home.
+export function useLatestAnnouncements(limit = 3) {
+  const [posts, setPosts] = useState<BachecaPost[]>([])
+  useEffect(() => {
+    let active = true
+    supabase.from('bacheca_posts').select('*').order('created_at', { ascending: false }).limit(limit)
+      .then(({ data }) => { if (active) setPosts(((data ?? []) as RawPost[]).map(mapPost)) })
+    return () => { active = false }
+  }, [limit])
+  return posts
+}

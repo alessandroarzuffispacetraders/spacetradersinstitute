@@ -380,6 +380,11 @@ html.is-android *::after {
   .media-carousel:has(.series-card.is-open) .series-card:not(.is-open) { opacity: 0.45; filter: saturate(0.6); }
 }
 
+/* Pagine "cinema" (sempre scure): anche lo sfondo dell'app è nero, così lo
+   spazio in fondo per la barra di navigazione, la safe area e il rimbalzo dello
+   scroll non mostrano una banda blu/verde. */
+html.cinema-mode, html.cinema-mode body, html.cinema-mode .app-shell { background: #05070d; }
+
 /* ===== Home stile streaming ===== */
 /* Banner rotante: slide impilate in dissolvenza, zoom lento sulla copertina
    attiva, testo che risale, barre di avanzamento (la fine della barra attiva
@@ -454,3 +459,11 @@ html.is-android *::after {
   .hero-slide .hero-copy { transition: none; }
   .hero-bar-fill { animation: none; width: 100%; }
 }
+.home-inbox {
+  background: rgba(255,255,255,0.035);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-left: 3px solid rgba(255,255,255,0.14);
+  transition: border-color 200ms ease, background 200ms ease;
+}
+.home-inbox.has-news { border-left-color: #F6C85F; background: linear-gradient(90deg, rgba(246,200,95,0.09), rgba(255,255,255,0.03) 45%); }
+@media (hover: hover) { .home-inbox:hover { background: rgba(255,255,255,0.06); } }

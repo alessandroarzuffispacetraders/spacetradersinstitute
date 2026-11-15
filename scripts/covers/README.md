@@ -58,3 +58,8 @@ cartella `curated/pool/` del bucket). Quando si crea una live l'app chiama
 Mental Coach, trading per il resto, scegliendo quella con più tag presenti nel
 titolo. Ogni voce ha un grafico protagonista che non compare altrove: per
 rifornire la scorta servono grafici nuovi (aggiungerli a `POOL`).
+
+## Sfondo degli avvisi
+
+`draw_broadcast` (onde di trasmissione) è lo sfondo della slide "Avvisi" della
+Home quando il post non ha immagini: file statico `public/covers/avvisi.webp`.

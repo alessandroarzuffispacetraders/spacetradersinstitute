@@ -718,12 +718,12 @@ function MissingCoversBar({ onProgressReload, nested = false }: { onProgressRelo
     const { items, error, notice } = await listMissingCovers()
     if (error) { setState({ phase: 'message', text: error, error: true }); return }
     if (items.length === 0) {
-      setState({ phase: 'message', text: notice ?? 'Tutte le serie, le lezioni e i replay hanno già la loro grafica.', error: !!notice })
+      setState({ phase: 'message', text: notice ?? 'Tutte le sezioni, le lezioni e i replay hanno già la loro grafica.', error: !!notice })
       return
     }
     const posters = items.filter(i => i.kind === 'category').length
     const covers = items.length - posters
-    const what = [posters ? `${posters} locandine delle serie` : '', covers ? `${covers} copertine (lezioni e replay)` : ''].filter(Boolean).join(' e ')
+    const what = [posters ? `${posters} locandine delle sezioni` : '', covers ? `${covers} copertine (lezioni e replay)` : ''].filter(Boolean).join(' e ')
     if (!confirm(`Generare ${what}? Ci vorrà qualche minuto: tieni aperta questa pagina finché non finisce.`)) {
       setState({ phase: 'idle' }); return
     }
@@ -761,8 +761,8 @@ function MissingCoversBar({ onProgressReload, nested = false }: { onProgressRelo
         ) : (
           <p className="text-[11px]" style={{ color: state.phase === 'message' && state.error ? '#FF6B7A' : 'var(--ist-text-muted)' }}>
             {state.phase === 'message' ? state.text
-              : state.phase === 'finished' ? `Fatto: ${state.total - state.failed} grafiche create${state.failed ? `, ${state.failed} non riuscite (riprova dalla singola serie o lezione)` : ''}.${state.notice ? ` ${state.notice}` : ''}`
-              : 'Disegna in automatico, in vettoriale, le grafiche che mancano: prima le locandine delle serie, poi le copertine di lezioni e replay.'}
+              : state.phase === 'finished' ? `Fatto: ${state.total - state.failed} grafiche create${state.failed ? `, ${state.failed} non riuscite (riprova dalla singola sezione o lezione)` : ''}.${state.notice ? ` ${state.notice}` : ''}`
+              : 'Disegna in automatico, in vettoriale, le grafiche che mancano: prima le locandine delle sezioni, poi le copertine di lezioni e replay.'}
           </p>
         )}
       </div>
@@ -873,7 +873,7 @@ function ChatGptCoversPanel({ categories, onReload, openCover, openPoster, onRel
   const items = useMemo<ChatGptItem[]>(() => {
     const posters: ChatGptItem[] = categories
       .filter(c => !isUploadedCover(c.posterUrl))
-      .map(c => ({ kind: 'category', id: c.id, title: c.title, meta: `Locandina della serie · ${c.phase}`, subject: categoryPosterSubject(c) }))
+      .map(c => ({ kind: 'category', id: c.id, title: c.title, meta: `Locandina della sezione · ${c.phase}`, subject: categoryPosterSubject(c) }))
     const lessons: ChatGptItem[] = categories.flatMap(c => c.courses.flatMap(cr => cr.lessons.map((l, i) => ({ l, c, cr, n: i + 1 }))))
       .filter(x => !isUploadedCover(x.l.coverUrl))
       .map(x => ({
@@ -923,7 +923,7 @@ function ChatGptCoversPanel({ categories, onReload, openCover, openPoster, onRel
           ) : (
             <p className="text-[11px]" style={{ color: 'var(--ist-text-muted)' }}>
               {items.length === 0
-                ? 'Tutte le serie e le lezioni di questa sezione hanno la loro immagine.'
+                ? 'Tutte le sezioni e le lezioni di quest\'area hanno la loro immagine.'
                 : `${items.length} da fare in questa sezione (${posters} locandine, ${items.length - posters} copertine) · ${ready} prompt pronti.`}
               {batch.phase === 'finished' ? ` Fatto: ${batch.total - batch.failed} prompt preparati${batch.failed ? `, ${batch.failed} non riusciti (riprova dalla riga)` : ''}.` : ''}
             </p>

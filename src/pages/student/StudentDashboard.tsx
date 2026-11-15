@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarDays, Info, Play, Radio, RotateCcw, Sparkles, ChevronRight } from 'lucide-react'
+import { CalendarDays, Info, Play, Radio, RotateCcw, Sparkles, ChevronRight, Megaphone } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
 import { useCinemaMode } from '../../context/ThemeContext'
@@ -10,7 +10,8 @@ import { useStudentBadges } from '../../lib/badges'
 import { useLiveEvents, liveDateLabel, LiveEvent } from '../../lib/live'
 import { useStudentSessions } from '../../lib/coaching'
 import { useDmUsers, useUnreadCounts, dmChannelId } from '../../lib/chat'
-import { useStudentCatalog, getCategoryStats } from '../../lib/content'
+import { useStudentCatalog } from '../../lib/content'
+import { useLatestAnnouncements, BachecaPost } from '../../lib/bacheca'
 import { flattenLessons, continueWatching, pickResume, watchedFraction, remainingLabel, RESUME_CTA, RESUME_EYEBROW } from '../../lib/catalogView'
 import { useWelcomeVideo, welcomeVideoFor } from '../../lib/onboarding'
 import { isFreeUser, upsellSuppressed } from '../../lib/freeTier'
@@ -19,7 +20,6 @@ import HeroCarousel, { HeroSlide } from '../../components/media/HeroCarousel'
 import { HeroButton, HeroTag } from '../../components/media/Billboard'
 import MediaRow from '../../components/media/MediaRow'
 import LessonCard from '../../components/media/LessonCard'
-import SeriesCard from '../../components/media/SeriesCard'
 import ReplayCard from '../../components/media/ReplayCard'
 import UpcomingCard, { hostLabel } from '../../components/media/UpcomingCard'
 import { phaseIcon } from '../../components/media/phase'
@@ -27,8 +27,7 @@ import UserAvatar from '../../components/ui/UserAvatar'
 import UpgradeBanner from '../../components/ui/UpgradeBanner'
 import OnboardingCard from '../../components/onboarding/OnboardingCard'
 import PathStrip from '../../components/home/PathStrip'
-import TeamRow, { TeamPerson } from '../../components/home/TeamRow'
-import WeekStrip from '../../components/home/WeekStrip'
+import TeamRow, { TeamPerson, MessagesStrip } from '../../components/home/TeamRow'
 import WelcomeVideoModal from '../../components/home/WelcomeVideoModal'
 import { Reveal, useCountUp, useNow, countdownLabel } from '../../components/home/motion'
 
@@ -52,13 +51,39 @@ function SectionTitle({ children, action, onAction }: { children: ReactNode; act
   )
 }
 
+// "oggi", "ieri", "3 giorni fa", altrimenti la data.
+function relDate(iso: string): string {
+  const d = new Date(iso); const t = new Date()
+  const days = Math.round((new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86_400_000)
+  if (days <= 0) return 'oggi'
+  if (days === 1) return 'ieri'
+  if (days < 7) return `${days} giorni fa`
+  return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })
+}
+// Titolo della slide: quello del post, altrimenti l'inizio del testo (breve,
+// tagliato su una parola); `rest` è ciò che resta da mostrare sotto.
+function postHeadline(p: BachecaPost): { title: string; rest: string } {
+  if (p.title) return { title: p.title, rest: p.content }
+  const text = p.content.trim(); const first = text.split('\n')[0].trim()
+  const sentence = first.match(/^.{12,70}?[.!?:](\s|$)/)?.[0]?.trim()
+  if (sentence) {
+    const after = text.slice(text.indexOf(sentence) + sentence.length).trim()
+    return { title: sentence.replace(/:$/, ''), rest: after.charAt(0).toUpperCase() + after.slice(1) }
+  }
+  if (first.length <= 64) return { title: first, rest: text.slice(first.length).trim() }
+  const cut = first.slice(0, 64); const at = cut.lastIndexOf(' ')
+  return { title: (at > 30 ? cut.slice(0, at) : cut) + '…', rest: text }
+}
+const postTitle = (p: BachecaPost) => postHeadline(p).title
+
 const byStart = (a: LiveEvent, b: LiveEvent) => new Date(a.startsAt ?? 0).getTime() - new Date(b.startsAt ?? 0).getTime()
 
 // Home in stile streaming (pagina "cinema", sempre scura):
 //  1. banner rotante: live in diretta / prossima (con conto alla rovescia),
 //     lezione da riprendere, ultimo replay, video di benvenuto (prima settimana)
-//  2. il percorso in una riga, poi righe di contenuti come Videocorsi e Live
-//  3. il tuo team (coach, mental coach, messaggi) e la settimana
+//     e gli ultimi avvisi
+//  2. il percorso, i messaggi privati e il team (coach + mental coach)
+//  3. live e replay, continua a guardare
 export default function StudentDashboard() {
   useCinemaMode()
   const { user } = useAuth()
@@ -77,6 +102,7 @@ export default function StudentDashboard() {
   const { sessions: mySessions } = useStudentSessions(userId)
   const { categories } = useStudentCatalog(userId, 'all')
   const welcome = useWelcomeVideo()
+  const notices = useLatestAnnouncements(3)
 
   // Messaggi privati non letti
   const dmUsers = useDmUsers(userId, userRole)
@@ -122,8 +148,6 @@ export default function StudentDashboard() {
   const entries = useMemo(() => flattenLessons(categories), [categories])
   const resume = useMemo(() => pickResume(entries), [entries])
   const continuing = useMemo(() => continueWatching(entries), [entries])
-  const series = useMemo(() => categories.filter(c => c.section !== 'mental'), [categories])
-  const currentSeries = series.findIndex(c => getCategoryStats(c).pct < 100)
   const lives = events.filter(e => e.eventType !== 'reminder')
   const liveNow = lives.find(e => e.status === 'live') ?? null
   const upcoming = lives.filter(e => e.status === 'upcoming' && (!e.startsAt || new Date(e.startsAt).getTime() > Date.now() - 3 * 3600_000)).sort(byStart)
@@ -138,6 +162,7 @@ export default function StudentDashboard() {
   const openCategory = (id: string, courseId?: string) => navigate(`/student/corsi/${id}${courseId ? `?corso=${courseId}` : ''}`)
   const openLive = (id: string) => navigate(`/student/live/${id}`)
   const openDm = (id?: string | null) => navigate('/student/chat', { state: id ? { openDm: id } : { tab: 'direct' } })
+  const openNotices = (channelId: string) => navigate(`/student/chat?c=${channelId}`)
 
   // Slide del banner, in ordine di priorità
   const slides: HeroSlide[] = []
@@ -166,6 +191,34 @@ export default function StudentDashboard() {
       <HeroButton variant="secondary" icon={CalendarDays} onClick={() => navigate('/student/calendario')}>Calendario</HeroButton>
     </>,
   })
+  const notice = notices[0]
+  if (notice) {
+    const image = notice.imageUrls[0]
+      ?? (notice.liveEventId ? allEvents.find(e => e.id === notice.liveEventId)?.coverUrl : null)
+      ?? '/covers/avvisi.webp'
+    const { title: headline, rest } = postHeadline(notice)
+    const fresh = Date.now() - new Date(notice.createdAt).getTime() < 3 * 86_400_000
+    slides.push({
+      key: `avviso-${notice.id}`, imageUrl: image, imagePosition: notice.imageUrls[0] ? '50% 40%' : undefined, accent: '#7CBBD0', icon: Megaphone,
+      eyebrow: <><HeroTag tone="accent">Avvisi</HeroTag>{fresh && <HeroTag>Nuovo</HeroTag>}{notice.pinned && <HeroTag>In evidenza</HeroTag>}</>,
+      title: headline,
+      meta: <><span>{notice.author}</span><span aria-hidden>·</span><span>{relDate(notice.createdAt)}</span></>,
+      description: rest || undefined,
+      extra: notices.length > 1 ? (
+        <div className="space-y-1">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: 'rgba(255,255,255,0.5)' }}>Anche negli avvisi</p>
+          {notices.slice(1).map(p => (
+            <button key={p.id} onClick={() => openNotices(p.channelId)} className="flex items-center gap-2 text-left text-[13px] font-medium max-w-full transition-colors hover:text-white" style={{ color: 'rgba(255,255,255,0.8)' }}>
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'var(--ist-media-accent)' }} />
+              <span className="truncate">{postTitle(p)}</span>
+              <span className="text-[11px] flex-shrink-0" style={{ color: 'rgba(255,255,255,0.45)' }}>{relDate(p.createdAt)}</span>
+            </button>
+          ))}
+        </div>
+      ) : undefined,
+      actions: <HeroButton icon={Megaphone} onClick={() => openNotices(notice.channelId)}>Leggi gli avvisi</HeroButton>,
+    })
+  }
   if (resume) {
     const { entry: h, mode } = resume
     slides.push({
@@ -242,7 +295,32 @@ export default function StudentDashboard() {
           <PathStrip progress={progress} phase={phase} activeDone={activeDone} activeTotal={activeTotal} streak={stats.diaryStreak} badges={stats.earnedCount} />
         </Reveal>
 
+        <div className="flex flex-col gap-5 lg:gap-6">
+          <Reveal>
+            <MessagesStrip others={others} onOpen={() => navigate('/student/chat', { state: { tab: 'direct' } })} />
+          </Reveal>
+          <Reveal>
+            <SectionTitle>Il tuo team</SectionTitle>
+            <TeamRow
+              coach={meta.coach} mental={meta.mental}
+              coachUnread={unreadOf(user?.assignedCoachId)} mentalUnread={unreadOf(user?.assignedMentalCoachId)}
+              completedSessions={completedSessions}
+              onCoach={() => openDm(user?.assignedCoachId)} onMental={() => openDm(user?.assignedMentalCoachId)}
+            />
+          </Reveal>
+        </div>
+
         <div className="-mb-7 lg:-mb-10">
+          {(liveNow || upcoming.length > 0 || replays.length > 0) && (
+            <Reveal>
+              <MediaRow title="Live e replay" actionLabel="Vedi tutte" onAction={() => navigate('/student/live')}>
+                {liveNow && <ReplayCard event={liveNow} live onClick={() => openLive(liveNow.id)} />}
+                {upcoming.map(e => <UpcomingCard key={e.id} event={e} onClick={() => openLive(e.id)} />)}
+                {replays.slice(0, 10).map(e => <ReplayCard key={e.id} event={e} onClick={() => openLive(e.id)} />)}
+              </MediaRow>
+            </Reveal>
+          )}
+
           {continuing.length > 0 && (
             <Reveal>
               <MediaRow title="Continua a guardare">
@@ -252,51 +330,7 @@ export default function StudentDashboard() {
               </MediaRow>
             </Reveal>
           )}
-
-          {(liveNow || upcoming.length > 0) && (
-            <Reveal>
-              <MediaRow title="Prossime live" actionLabel="Calendario" onAction={() => navigate('/student/calendario')}>
-                {liveNow && <ReplayCard event={liveNow} live onClick={() => openLive(liveNow.id)} />}
-                {upcoming.map(e => <UpcomingCard key={e.id} event={e} onClick={() => openLive(e.id)} />)}
-              </MediaRow>
-            </Reveal>
-          )}
-
-          {series.length > 0 && (
-            <Reveal>
-              <MediaRow title="Le tue serie" actionLabel="Videocorsi" onAction={() => navigate('/student/corsi')} itemClassName="w-[64vw] sm:w-[40vw] md:w-[30vw] lg:w-auto" variant="carousel"
-                initialIndex={currentSeries > 0 ? currentSeries : undefined}>
-                {series.map((cat, i) => (
-                  <SeriesCard key={cat.id} category={cat} isCurrent={i === currentSeries} onOpen={() => openCategory(cat.id)} onPlay={openLesson} />
-                ))}
-              </MediaRow>
-            </Reveal>
-          )}
-
-          {replays.length > 0 && (
-            <Reveal>
-              <MediaRow title="Ultimi replay" actionLabel="Live & Replay" onAction={() => navigate('/student/live')}>
-                {replays.slice(0, 12).map(e => <ReplayCard key={e.id} event={e} onClick={() => openLive(e.id)} />)}
-              </MediaRow>
-            </Reveal>
-          )}
         </div>
-
-        <Reveal>
-          <SectionTitle>Il tuo team</SectionTitle>
-          <TeamRow
-            coach={meta.coach} mental={meta.mental}
-            coachUnread={unreadOf(user?.assignedCoachId)} mentalUnread={unreadOf(user?.assignedMentalCoachId)}
-            others={others} completedSessions={completedSessions}
-            onCoach={() => openDm(user?.assignedCoachId)} onMental={() => openDm(user?.assignedMentalCoachId)}
-            onInbox={() => navigate('/student/chat', { state: { tab: 'direct' } })}
-          />
-        </Reveal>
-
-        <Reveal>
-          <SectionTitle action="Calendario" onAction={() => navigate('/student/calendario')}>Questa settimana</SectionTitle>
-          <WeekStrip events={events} />
-        </Reveal>
       </div>
 
       {welcomeOpen && welcomeUrl && <WelcomeVideoModal url={welcomeUrl} onClose={() => setWelcomeOpen(false)} />}

@@ -40,8 +40,8 @@ export default function HeroCarousel({ slides, topLeft, topRight, interval = 7 }
         {slides.map((s, i) => {
           const { key, ...props } = s
           return (
-            <div key={key} className={`hero-slide ${i === active ? 'is-active' : ''}`} style={{ gridArea: '1 / 1' }} aria-hidden={i !== active}>
-              <Billboard {...props} />
+            <div key={key} className={`hero-slide flex ${i === active ? 'is-active' : ''}`} style={{ gridArea: '1 / 1' }} aria-hidden={i !== active}>
+              <Billboard {...props} layout="overlay" />
             </div>
           )
         })}

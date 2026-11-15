@@ -364,12 +364,12 @@ export default function StudentLezione() {
         </div>
       </div>
 
-      {/* ── Episodi del corso ── */}
+      {/* ── Lezioni del corso ── */}
       {course.lessons.length > 1 && (
         <div className="mt-10">
           <MediaRow
             eyebrow={course.title}
-            title="Episodi"
+            title="Lezioni del corso"
             actionLabel="Vedi corso"
             onAction={() => navigate(courseUrl)}
             initialIndex={lessonIdx}

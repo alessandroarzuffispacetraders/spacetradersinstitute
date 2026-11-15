@@ -1666,6 +1666,26 @@ def draw_focus_gauge(fig):
         y = 2.4 - i; ax2.text(0, y + 0.18, nm, color=TXT2, fontsize=12); ax2.add_patch(plt.Rectangle((0, y - 0.18), 1, 0.2, color=_rgba(LBLUE, 0.15)))
         ax2.add_patch(plt.Rectangle((0, y - 0.18), v, 0.2, color=LBLUE)); ax2.text(1.0, y + 0.18, f'{int(v * 100)}%', color=AMBER, fontsize=12, ha='right')
 
+# ── interfaccia: sfondo della slide "Avvisi" in Home (senza immagini nel post) ──
+def draw_broadcast(fig):
+    ax, asp = _frame_ax(fig, 1.0); ax.set_aspect('equal'); c = np.array([-0.15, -0.05])
+    th = np.linspace(-np.pi * 0.42, np.pi * 0.42, 400)
+    for k in range(9):
+        r = 0.16 + k * 0.11; a = 0.95 - k * 0.09
+        _glow_line(ax, c[0] + r * np.cos(th), c[1] + r * np.sin(th), LBLUE if k % 3 else PALE, lw=1.8 - k * 0.1, glow=8)
+        ax.lines[-1].set_alpha(a)
+    for k in range(4):  # onde verso sinistra, più deboli
+        r = 0.16 + k * 0.11; t2 = th + np.pi
+        ax.plot(c[0] + r * np.cos(t2), c[1] + r * np.sin(t2), color=BLUE, lw=1.0, alpha=0.35 - k * 0.07)
+    n = 900; ang = rng.normal(0, 0.45, n); rr = rng.gamma(2.2, 0.22, n) + 0.12
+    P = c + np.c_[np.cos(ang), np.sin(ang)] * rr[:, None]
+    far = np.clip(rr / 1.4, 0, 1); col = _mix(AMBER, LBLUE, far); col[:, 3] = 0.85 - 0.5 * far
+    ax.scatter(P[:, 0], P[:, 1], s=2 + 10 * (1 - far), c=col, lw=0)
+    if _glow():
+        for sz, al in ((5000, 0.05), (1500, 0.1), (400, 0.3)): ax.scatter(*c, s=sz, color=AMBER, alpha=al, lw=0)
+    ax.scatter(*c, s=120, color=AMBER, lw=0, zorder=6)
+    _dust(ax, (-asp, asp), (-1, 1), 600)
+
 DRAW = {
     'montecarlo': draw_montecarlo, 'hist': draw_hist, 'heatmap': draw_heatmap, 'equity_dd': draw_equity_dd,
     'surface': draw_surface, 'scatter': draw_scatter, 'candles': draw_candles, 'table': draw_table,
@@ -1691,10 +1711,11 @@ DRAW = {
     'funnel': draw_funnel, 'bollinger': draw_bollinger, 'depth': draw_depth, 'treemap': draw_treemap,
     'brain_orb': draw_brain_orb, 'hypnogram': draw_hypnogram, 'yerkes': draw_yerkes, 'emotion_wheel': draw_emotion_wheel,
     'box_breath': draw_box_breath, 'iris': draw_iris, 'flow_channel': draw_flow_channel, 'focus_gauge': draw_focus_gauge,
+    'broadcast': draw_broadcast,
 }
 FRAMELESS = {'surface', 'cloud3d', 'graph', 'brain', 'neuron_burst', 'synapse', 'bar3d', 'brain_top', 'brain_lines', 'chord', 'tracto',
              'cleft', 'wave_rings', 'comfort', 'habit', 'attractor', 'dendrite', 'galaxy', 'molecule', 'plateau_wire',
-             'brain_orb', 'box_breath', 'iris'}
+             'brain_orb', 'box_breath', 'iris', 'broadcast'}
 MENTAL_SECONDARY = ['eeg', 'raster', 'spectrogram', 'bandpower', 'calcium', 'hrv', 'action_potential']
 TRADING_SECONDARY = ['hist', 'equity_dd', 'heatmap', 'candles', 'montecarlo', 'percentiles', 'table', 'hexbin', 'rmultiple', 'violin', 'sensitivity', 'boxplot', 'hour_dual']
 SECONDARY = ['hist', 'equity_dd', 'heatmap', 'candles', 'montecarlo', 'percentiles', 'table']

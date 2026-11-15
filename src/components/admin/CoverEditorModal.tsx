@@ -411,7 +411,7 @@ export default function CoverEditorModal({ subject, onClose, onChanged }: {
         <div className="flex items-center justify-between gap-3 px-6 py-4" style={{ borderBottom: '1px solid var(--ist-border)' }}>
           <div className="min-w-0">
             <h3 className="text-sm font-bold" style={{ color: 'var(--ist-text)' }}>
-              {isPoster ? 'Locandina della serie' : isLive ? 'Copertina della live' : 'Copertina della lezione'}
+              {isPoster ? 'Locandina della sezione' : isLive ? 'Copertina della live' : 'Copertina della lezione'}
             </h3>
             <p className="text-xs truncate" style={{ color: 'var(--ist-text-muted)' }}>{subject.title}</p>
           </div>

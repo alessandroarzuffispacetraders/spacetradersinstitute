@@ -44,7 +44,7 @@ export function isMissingPosterColumn(err: { code?: string; message?: string } |
 }
 
 export const POSTER_MIGRATION_MISSING_MSG =
-  'Le locandine AI delle serie non sono ancora attive: va applicata la migrazione phase_series_posters.sql e ripubblicata la funzione generate-cover.'
+  'Le locandine AI delle sezioni non sono ancora attive: va applicata la migrazione phase_series_posters.sql e ripubblicata la funzione generate-cover.'
 
 const missingMsg = (kind: CoverKind) => kind === 'category' ? POSTER_MIGRATION_MISSING_MSG : MIGRATION_MISSING_MSG
 
