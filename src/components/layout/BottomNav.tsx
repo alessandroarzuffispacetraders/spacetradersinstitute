@@ -76,78 +76,71 @@ function OverflowSheet({
       />
       {/* Sheet */}
       <div
-        className="nav-glass nav-scope lg:hidden fixed z-50 left-3 right-3 rounded-[28px] overflow-hidden"
-        style={{ bottom: 'calc(max(14px, env(safe-area-inset-bottom, 0px) + 4px) + 78px)', animation: 'slideUpSheet 0.24s cubic-bezier(0.22,1,0.36,1)' }}
+        className="nav-glass nav-scope lg:hidden fixed z-50 left-3 right-3 rounded-[22px] overflow-hidden"
+        style={{ bottom: 'calc(max(14px, env(safe-area-inset-bottom, 0px) + 4px) + 70px)', animation: 'slideUpSheet 0.22s cubic-bezier(0.22,1,0.36,1)' }}
       >
-        {/* Profilo in testa */}
-        <div className="flex items-center gap-3 px-4 pt-4 pb-3">
+        {/* Profilo */}
+        <div className="flex items-center gap-3 pl-4 pr-2 pt-3.5 pb-3">
           {user && (
             <button onClick={() => { setProfileOpen(true); onClose() }} className="flex-1 min-w-0 flex items-center gap-3 text-left active:opacity-70">
-              <span className="rounded-full p-[2px] flex-shrink-0" style={{ background: 'linear-gradient(135deg, #7CBBD0, rgba(124,187,208,0.1))' }}>
-                <span className="block rounded-full overflow-hidden" style={{ background: 'var(--ist-nav-bg)' }}><UserAvatar user={user} size={44} /></span>
-              </span>
+              <UserAvatar user={user} size={36} />
               <span className="min-w-0 flex-1">
-                <span className="block text-[15px] font-bold truncate" style={{ color: 'var(--ist-text)' }}>{user.name}</span>
-                <span className="flex items-center gap-0.5 text-xs" style={{ color: 'var(--ist-accent-text)' }}>Il tuo profilo <ChevronRight size={13} strokeWidth={2.4} /></span>
+                <span className="block text-sm font-semibold truncate" style={{ color: 'var(--ist-text)' }}>{user.name}</span>
+                <span className="flex items-center gap-0.5 text-[11px]" style={{ color: 'var(--ist-nav-text)' }}>Profilo <ChevronRight size={12} strokeWidth={2.2} /></span>
               </span>
             </button>
           )}
-          <button
-            onClick={onClose}
-            className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors"
-            style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
-            aria-label="Chiudi"
-          >
-            <X size={16} strokeWidth={2.4} />
+          <button onClick={onClose} className="w-9 h-9 flex items-center justify-center flex-shrink-0" style={{ color: 'var(--ist-nav-text)' }} aria-label="Chiudi">
+            <X size={18} strokeWidth={2} />
           </button>
         </div>
 
-        {/* Mode switch — only for management roles */}
+        {/* Usa / Gestisci — solo ruoli di gestione */}
         {canManage && (
-          <div className="px-4 pb-1">
-            <div className="flex gap-1 p-1 rounded-2xl" style={{ background: 'var(--ist-w6)' }}>
-              <SheetModeButton active={navMode === 'use'} icon={<Compass size={15} strokeWidth={2} />} label="Usa" onClick={() => onSwitchMode('use')} />
-              <SheetModeButton active={navMode === 'manage'} icon={<SlidersHorizontal size={15} strokeWidth={2} />} label="Gestisci" onClick={() => onSwitchMode('manage')} />
+          <div className="px-4 pb-2">
+            <div className="flex p-0.5 rounded-xl" style={{ background: 'var(--ist-w6)' }}>
+              <SheetModeButton active={navMode === 'use'} icon={<Compass size={14} strokeWidth={2} />} label="Usa" onClick={() => onSwitchMode('use')} />
+              <SheetModeButton active={navMode === 'manage'} icon={<SlidersHorizontal size={14} strokeWidth={2} />} label="Gestisci" onClick={() => onSwitchMode('manage')} />
             </div>
           </div>
         )}
 
+        <div className="nav-divider mx-4" />
+
         {/* Sezioni */}
-        <div className="px-4 pt-2 pb-3 grid grid-cols-3 gap-2">
-          {items.map((item) => (
-            <button
-              key={item.path}
-              data-tour={item.path}
-              onClick={() => { navigate(item.path); onClose() }}
-              className={`nav-tile flex flex-col items-center gap-2 pt-3.5 pb-3 px-1.5 rounded-2xl transition-transform active:scale-[0.95] ${pathname === item.path || pathname.startsWith(item.path + '/') ? 'is-active' : ''}`}
-            >
-              <span className="nav-tile-icon relative w-11 h-11 rounded-2xl flex items-center justify-center">
-                <NavIcon name={item.icon} size={19} locked={isPathLockedForFree(item.path, user)} />
-                {hasNews(item.path) && <NewsDot />}
-              </span>
-              <span className="text-[11px] font-semibold text-center leading-tight" style={{ color: 'var(--ist-text)' }}>
-                {item.shortLabel ?? item.label}
-              </span>
-            </button>
-          ))}
+        <div className="px-2 py-2 grid grid-cols-4">
+          {items.map((item) => {
+            const active = pathname === item.path || pathname.startsWith(item.path + '/')
+            return (
+              <button
+                key={item.path}
+                data-tour={item.path}
+                onClick={() => { navigate(item.path); onClose() }}
+                className="nav-tile flex flex-col items-center gap-1.5 py-3 px-1 rounded-2xl active:scale-[0.94]"
+                style={{ color: active ? 'var(--ist-nav-active-icon)' : 'var(--ist-text)' }}
+              >
+                <span className="relative inline-flex">
+                  <NavIcon name={item.icon} size={20} locked={isPathLockedForFree(item.path, user)} />
+                  {hasNews(item.path) && <NewsDot />}
+                </span>
+                <span className={`text-[10.5px] text-center leading-tight ${active ? 'font-semibold' : 'font-medium'}`} style={{ color: active ? 'var(--ist-nav-active-text)' : 'var(--ist-nav-text)' }}>
+                  {item.shortLabel ?? item.label}
+                </span>
+              </button>
+            )
+          })}
         </div>
 
+        <div className="nav-divider mx-4" />
+
         {/* Tema ed esci */}
-        <div className="flex gap-2 px-4 pb-4">
-          <button
-            onClick={toggleTheme}
-            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-semibold transition-transform active:scale-[0.97]"
-            style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)', color: 'var(--ist-text)' }}
-          >
-            {theme === 'dark' ? <Sun size={15} strokeWidth={2.2} /> : <Moon size={15} strokeWidth={2.2} />}
+        <div className="flex items-center justify-between px-2 py-1.5">
+          <button onClick={toggleTheme} className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-medium active:opacity-60" style={{ color: 'var(--ist-nav-text)' }}>
+            {theme === 'dark' ? <Sun size={15} strokeWidth={2} /> : <Moon size={15} strokeWidth={2} />}
             {theme === 'dark' ? 'Tema chiaro' : 'Tema scuro'}
           </button>
-          <button
-            onClick={() => { logout(); onClose() }}
-            className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-xs font-semibold transition-transform active:scale-[0.97]"
-            style={{ background: 'rgba(255,107,122,0.08)', border: '1px solid rgba(255,107,122,0.18)', color: '#FF7A88' }}
-          >
-            <LogOut size={14} strokeWidth={2.2} />
+          <button onClick={() => { logout(); onClose() }} className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-medium active:opacity-60" style={{ color: '#E07A85' }}>
+            <LogOut size={14} strokeWidth={2} />
             Esci
           </button>
         </div>
@@ -168,9 +161,9 @@ function SheetModeButton({ active, icon, label, onClick }: { active: boolean; ic
   return (
     <button
       onClick={onClick}
-      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all"
+      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-[10px] text-xs font-medium transition-colors"
       style={active
-        ? { background: 'var(--ist-nav-pill)', boxShadow: 'var(--ist-nav-pill-shadow)', color: 'var(--ist-nav-active-text)' }
+        ? { background: 'var(--ist-nav-pill)', color: 'var(--ist-nav-active-text)' }
         : { color: 'var(--ist-nav-text)' }
       }
     >
@@ -224,7 +217,6 @@ export default function BottomNav() {
   const hasOverflow = overflow.length > 0 || canManage
   const overflowHasNews = overflow.some(i => hasNews(i.path))
 
-  const slots = primary.length + (hasOverflow ? 1 : 0)
   const path = location.pathname
   const matchIdx = primary.findIndex(i => (i.path === homePath ? path === i.path : path === i.path || path.startsWith(i.path + '/')))
   const inOverflow = overflow.some(i => path === i.path || path.startsWith(i.path + '/'))
@@ -254,23 +246,17 @@ export default function BottomNav() {
         className={`nav-scope lg:hidden fixed z-50 transition-transform duration-300 ease-in-out ${hideBottomNav ? 'translate-y-[200%]' : 'translate-y-0'}`}
         style={{ left: 12, right: 12, bottom: 'max(14px, calc(env(safe-area-inset-bottom, 0px) + 4px))' }}
       >
-        <div className="nav-glass relative flex items-stretch h-[66px] p-1.5 rounded-[26px]">
-          {/* Pillola che scorre sotto la voce attiva */}
-          <span
-            className="nav-pill absolute top-1.5 bottom-1.5 left-1.5 rounded-[20px]"
-            style={{ width: `calc((100% - 12px) / ${slots})`, transform: `translateX(${Math.max(0, activeIdx) * 100}%)`, opacity: activeIdx >= 0 ? 1 : 0 }}
-            aria-hidden
-          />
+        <div className="nav-glass relative flex items-stretch h-[60px] px-1 rounded-[22px]">
           {primary.map((item, i) => (
             <NavLink
               key={item.path}
               to={item.path}
               data-tour={item.path}
               end={item.path === homePath}
-              className={`nav-item relative z-[1] flex-1 min-w-0 flex flex-col items-center justify-center gap-1 rounded-[20px] transition-transform active:scale-[0.92] ${i === activeIdx ? 'is-active' : ''}`}
+              className={`nav-item relative z-[1] flex-1 min-w-0 flex flex-col items-center justify-center gap-[5px] transition-transform active:scale-[0.92] ${i === activeIdx ? 'is-active' : ''}`}
               style={{ color: i === activeIdx ? 'var(--ist-nav-active-text)' : 'var(--ist-nav-text)' }}
             >
-              <NavIcon name={item.icon} size={21} dot={hasNews(item.path)} locked={isPathLockedForFree(item.path, user)} />
+              <NavIcon name={item.icon} size={20} dot={hasNews(item.path)} locked={isPathLockedForFree(item.path, user)} />
               <span className={`text-[10px] truncate max-w-full px-0.5 text-center leading-none ${i === activeIdx ? 'font-bold' : 'font-medium'}`}>
                 {item.shortLabel ?? item.label}
               </span>
@@ -281,12 +267,12 @@ export default function BottomNav() {
             <button
               onClick={() => setMoreOpen(o => !o)}
               data-tour="__more__"
-              className={`nav-item relative z-[1] flex-1 min-w-0 flex flex-col items-center justify-center gap-1 rounded-[20px] transition-transform active:scale-[0.92] ${activeIdx === primary.length ? 'is-active' : ''}`}
+              className={`nav-item relative z-[1] flex-1 min-w-0 flex flex-col items-center justify-center gap-[5px] transition-transform active:scale-[0.92] ${activeIdx === primary.length ? 'is-active' : ''}`}
               aria-expanded={moreOpen}
               style={{ color: activeIdx === primary.length ? 'var(--ist-nav-active-text)' : 'var(--ist-nav-text)' }}
             >
               <span className="relative inline-flex">
-                <MoreHorizontal size={21} strokeWidth={2} />
+                <MoreHorizontal size={20} strokeWidth={2} />
                 {overflowHasNews && <NewsDot />}
               </span>
               <span className={`text-[10px] leading-none ${activeIdx === primary.length ? 'font-bold' : 'font-medium'}`}>Altro</span>

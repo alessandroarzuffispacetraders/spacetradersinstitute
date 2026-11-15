@@ -94,8 +94,8 @@ export default function Sidebar() {
         className="side-avatar group flex flex-col items-center gap-1.5 pt-1 pb-3 w-full"
         title="Impostazioni profilo"
       >
-        <span className="relative rounded-full p-[2px] transition-transform group-hover:scale-105 group-active:scale-95" style={{ background: 'linear-gradient(135deg, #7CBBD0, rgba(124,187,208,0.08))' }}>
-          <span className="block rounded-full overflow-hidden" style={{ background: 'var(--ist-nav-bg)' }}><UserAvatar user={user} size={34} /></span>
+        <span className="relative rounded-full transition-opacity group-hover:opacity-80">
+          <UserAvatar user={user} size={34} />
           {user.status && (
             <span
               className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full"
@@ -110,7 +110,7 @@ export default function Sidebar() {
 
       {/* Modalità (solo ruoli di gestione) */}
       {canManage && (
-        <div className="mx-2 mb-1 p-1 flex flex-col gap-1 rounded-[18px]" style={{ background: 'var(--ist-w6)' }}>
+        <div className="mx-2 mb-1 p-0.5 flex flex-col gap-0.5 rounded-[16px]" style={{ background: 'var(--ist-w6)' }}>
           <ModeButton active={mode === 'use'} icon={<Compass size={16} strokeWidth={2} />} label="Usa" onClick={() => switchMode('use')} />
           <ModeButton active={mode === 'manage'} icon={<SlidersHorizontal size={16} strokeWidth={2} />} label="Gestisci" onClick={() => switchMode('manage')} />
         </div>
@@ -158,9 +158,9 @@ function ModeButton({ active, icon, label, onClick }: { active: boolean; icon: R
   return (
     <button
       onClick={onClick}
-      className="flex flex-col items-center gap-1 px-1 py-2 rounded-[14px] transition-all duration-200"
+      className="flex flex-col items-center gap-1 px-1 py-2 rounded-[14px] transition-colors duration-200"
       style={active
-        ? { background: 'var(--ist-nav-pill)', boxShadow: 'var(--ist-nav-pill-shadow)', color: 'var(--ist-nav-active-text)' }
+        ? { background: 'var(--ist-nav-pill)', color: 'var(--ist-nav-active-text)' }
         : { color: 'var(--ist-nav-text)' }
       }
     >
