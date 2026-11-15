@@ -12,13 +12,14 @@ const PHASES = [
 
 // "Il tuo percorso" in una riga: percentuale che sale, le 4 fasi con la
 // linea che si riempie fino a quella attuale, streak e badge. Apre il Percorso.
-export default function PathStrip({ progress, phase, activeDone, activeTotal, streak, badges }: {
+export default function PathStrip({ progress, phase, activeDone, activeTotal, streak, badges, nextLabel }: {
   progress: number
   phase: string
   activeDone: number
   activeTotal: number
   streak: number
   badges: number
+  nextLabel?: string
 }) {
   const navigate = useNavigate()
   const pct = useCountUp(progress)
@@ -38,6 +39,7 @@ export default function PathStrip({ progress, phase, activeDone, activeTotal, st
           <span className="block text-sm font-semibold text-white truncate">
             Fase {PHASES[idx]?.label}{activeTotal > 0 && <span style={{ color: 'rgba(255,255,255,0.6)' }}> · {activeDone}/{activeTotal} passi</span>}
           </span>
+          {nextLabel && <span className="block text-xs truncate max-w-[240px] lg:max-w-[180px]" style={{ color: 'rgba(255,255,255,0.55)' }}>Prossimo: {nextLabel}</span>}
         </span>
       </div>
 

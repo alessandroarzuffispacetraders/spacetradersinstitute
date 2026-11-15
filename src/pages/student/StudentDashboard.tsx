@@ -5,12 +5,11 @@ import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
 import { useCinemaMode } from '../../context/ThemeContext'
 import { supabase } from '../../lib/supabase'
-import { usePath } from '../../lib/path'
+import { useJourney } from '../../lib/journey'
 import { useStudentBadges } from '../../lib/badges'
 import { useLiveEvents, liveDateLabel, LiveEvent } from '../../lib/live'
 import { useStudentSessions } from '../../lib/coaching'
 import { useDmUsers, useUnreadCounts, dmChannelId } from '../../lib/chat'
-import { useStudentCatalog } from '../../lib/content'
 import { useLatestAnnouncements, BachecaPost } from '../../lib/bacheca'
 import { flattenLessons, continueWatching, pickResume, watchedFraction, remainingLabel, RESUME_CTA, RESUME_EYEBROW } from '../../lib/catalogView'
 import { useWelcomeVideo, welcomeVideoFor } from '../../lib/onboarding'
@@ -93,14 +92,13 @@ export default function StudentDashboard() {
   const userRole = (user?.role ?? 'student') as UserRole
   const free = isFreeUser(user)
 
-  const { phase, phases } = usePath(userId)
   const { stats } = useStudentBadges(userId)
   const { events: allEvents } = useLiveEvents()
   // Le live del mental coach vivono nell'Area Mental Coach; i promemoria
   // compaiono comunque (qualunque ruolo li abbia creati).
   const events = allEvents.filter(e => e.hostRole !== 'mental_coach' || e.eventType === 'reminder')
   const { sessions: mySessions } = useStudentSessions(userId)
-  const { categories } = useStudentCatalog(userId, 'all')
+  const { journey, categories } = useJourney(userId, { hasPhoto: !!(user?.avatarUrl || user?.avatarPreset), hasMentalCoach: !!user?.assignedMentalCoachId })
   const welcome = useWelcomeVideo()
   const notices = useLatestAnnouncements(3)
 
@@ -137,12 +135,8 @@ export default function StudentDashboard() {
   const programDay = meta.createdAt ? Math.max(1, Math.floor((Date.now() - new Date(meta.createdAt).getTime()) / 86_400_000) + 1) : 0
   const dayCount = useCountUp(programDay, 900)
 
-  // Percorso
-  const allSteps = phases.flatMap(p => p.steps)
-  const progress = allSteps.length ? Math.round((allSteps.filter(s => s.done).length / allSteps.length) * 100) : 0
-  const activePhase = phases.find(p => p.id === phase)
-  const activeDone = activePhase ? activePhase.steps.filter(s => s.done).length : 0
-  const activeTotal = activePhase ? activePhase.steps.length : 0
+  // Percorso (si costruisce da solo dai contenuti: vedi lib/journey)
+  const activePhase = journey.phases.find(p => p.id === journey.phase)
 
   // Contenuti
   const entries = useMemo(() => flattenLessons(categories), [categories])
@@ -292,7 +286,7 @@ export default function StudentDashboard() {
         <OnboardingCard />
 
         <Reveal className="cinema-px">
-          <PathStrip progress={progress} phase={phase} activeDone={activeDone} activeTotal={activeTotal} streak={stats.diaryStreak} badges={stats.earnedCount} />
+          <PathStrip progress={journey.progress} phase={journey.phase} activeDone={activePhase?.done ?? 0} activeTotal={activePhase?.total ?? 0} streak={stats.diaryStreak} badges={stats.earnedCount} nextLabel={journey.next?.title} />
         </Reveal>
 
         <div className="flex flex-col gap-5 lg:gap-6">

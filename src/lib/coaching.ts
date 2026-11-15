@@ -11,6 +11,8 @@ export interface AssignedStudent {
   email: string
   phase: StudentPhase | null
   status: StudentStatus | null
+  avatar_url?: string | null
+  avatar_preset?: string | null
   diaryCount: number
 }
 
@@ -25,7 +27,7 @@ export function useAssignedStudents(role: 'coach' | 'mental_coach', myId: string
     ;(async () => {
       const { data } = await supabase
         .from('profiles')
-        .select('id, name, email, phase, status')
+        .select('id, name, email, phase, status, avatar_url, avatar_preset')
         .eq(column, myId)
         .order('name', { ascending: true })
 

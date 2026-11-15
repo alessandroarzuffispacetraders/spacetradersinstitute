@@ -3,13 +3,8 @@ import { Loader2, ChevronDown, CheckCircle2, Circle, Route } from 'lucide-react'
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
 import { useAuth } from '../../context/AuthContext'
-import { useAssignedStudents } from '../../lib/coaching'
-import { usePath, PHASE_ORDER } from '../../lib/path'
-import { StudentPhase } from '../../types'
-
-const PHASE_LABEL: Record<string, string> = {
-  onboarding: 'Onboarding', build: 'Build', test: 'Test', deploy: 'Deploy',
-}
+import { useAssignedStudents, AssignedStudent } from '../../lib/coaching'
+import { useJourney } from '../../lib/journey'
 
 function StatusBadge({ status }: { status: string | null }) {
   if (!status) return null
@@ -26,11 +21,10 @@ function StatusBadge({ status }: { status: string | null }) {
   )
 }
 
-// Editor del percorso per uno studente (fase attuale + passi).
-function PathEditor({ studentId }: { studentId: string }) {
-  const { phase, phases, loading, setStudentPhase, toggleStep } = usePath(studentId)
-  const [busy, setBusy] = useState(false)
-
+// Percorso dello studente in sola lettura: si costruisce da solo dai video
+// visti, dalle sessioni col Mental Coach e dalle attività che spunta lui.
+function PathView({ student }: { student: AssignedStudent }) {
+  const { journey, loading } = useJourney(student.id, { hasPhoto: !!(student.avatar_url || student.avatar_preset), hasMentalCoach: true })
   if (loading) {
     return (
       <div className="flex justify-center py-6">
@@ -38,51 +32,30 @@ function PathEditor({ studentId }: { studentId: string }) {
       </div>
     )
   }
-
+  const cur = journey.phases.find(p => p.id === journey.phase)
   return (
     <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--ist-border)' }}>
-      {/* Phase selector */}
-      <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--ist-text-dim)' }}>
-        Fase attuale
-      </p>
-      <div className="flex gap-2 flex-wrap mb-5">
-        {PHASE_ORDER.map(ph => (
-          <button
-            key={ph}
-            disabled={busy}
-            onClick={async () => { setBusy(true); await setStudentPhase(ph as StudentPhase); setBusy(false) }}
-            className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all disabled:opacity-50"
-            style={phase === ph
-              ? { background: 'rgba(90,154,177,0.16)', color: '#7CBBD0', border: '1px solid rgba(124,187,208,0.30)' }
-              : { background: 'var(--ist-w6)', color: 'var(--ist-text-muted)', border: '1px solid var(--ist-border)' }}
-          >
-            {PHASE_LABEL[ph]}
-          </button>
-        ))}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <span className="text-2xl font-black tabular-nums" style={{ color: 'var(--ist-text)' }}>{journey.progress}%</span>
+        <span className="text-xs" style={{ color: 'var(--ist-text-muted)' }}>
+          {journey.next ? <>Fase <b style={{ color: 'var(--ist-accent-text)' }}>{cur?.label}</b> · prossimo passo: {journey.next.title}</> : 'Percorso completato'}
+        </span>
       </div>
-
-      {/* Steps per fase */}
       <div className="space-y-3">
-        {phases.map(p => (
+        {journey.phases.map(p => (
           <div key={p.id}>
-            <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>
-              {p.icon} {p.label}
-            </p>
+            <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--ist-text-muted)' }}>{p.label} · {p.done}/{p.total}</p>
             <div className="space-y-0.5">
               {p.steps.map(s => (
-                <button
-                  key={s.key}
-                  onClick={() => toggleStep(s.key, !s.done)}
-                  className="flex items-center gap-2 w-full text-left px-1.5 py-1 rounded-lg transition-colors hover:bg-white/[0.03]"
-                >
+                <div key={s.key} className="flex items-center gap-2 px-1.5 py-1">
                   {s.done
                     ? <CheckCircle2 size={15} strokeWidth={2} style={{ color: '#46D39A', flexShrink: 0 }} />
-                    : <Circle size={15} strokeWidth={2} style={{ color: 'var(--ist-text-dim)', flexShrink: 0 }} />}
-                  <span className="text-sm" style={{ color: s.done ? 'var(--ist-text-dim)' : 'var(--ist-text)' }}>
-                    {s.label}
-                  </span>
-                </button>
+                    : <Circle size={15} strokeWidth={2} style={{ color: s.key === journey.next?.key ? 'var(--ist-accent-text)' : 'var(--ist-text-dim)', flexShrink: 0 }} />}
+                  <span className="text-sm flex-1 min-w-0 truncate" style={{ color: s.done ? 'var(--ist-text-dim)' : 'var(--ist-text)' }}>{s.title}</span>
+                  {s.kind === 'videos' && s.total ? <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: 'var(--ist-text-dim)' }}>{s.doneCount}/{s.total}</span> : null}
+                </div>
               ))}
+              {p.steps.length === 0 && <p className="text-xs px-1.5" style={{ color: 'var(--ist-text-dim)' }}>Contenuti in arrivo.</p>}
             </div>
           </div>
         ))}
@@ -142,7 +115,7 @@ export default function CoachStudenti() {
                       <StatusBadge status={student.status} />
                     </div>
                     <p className="text-xs" style={{ color: '#8495A3' }}>
-                      {student.phase ? `Fase ${PHASE_LABEL[student.phase] ?? student.phase}` : 'Fase —'} · {student.diaryCount} voci diario
+                      {student.diaryCount} voci diario
                     </p>
                   </div>
                   <button
@@ -156,7 +129,7 @@ export default function CoachStudenti() {
                   </button>
                 </div>
 
-                {expanded && <PathEditor studentId={student.id} />}
+                {expanded && <PathView student={student} />}
               </Card>
             )
           })}

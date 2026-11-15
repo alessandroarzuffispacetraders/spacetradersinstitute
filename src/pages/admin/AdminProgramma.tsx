@@ -3,6 +3,7 @@ import { Loader2, Plus, Trash2, ChevronUp, ChevronDown, Check, X, Pencil } from 
 import PageHeader from '../../components/ui/PageHeader'
 import Card from '../../components/ui/Card'
 import { usePathAdmin, PHASE_ORDER, PHASE_META } from '../../lib/path'
+import { isAutoStepLabel } from '../../lib/journey'
 import {
   useMentalMaterialsAdmin, useMentalChecklistAdmin,
   MentalMaterialType, MaterialInput,
@@ -40,8 +41,8 @@ function IconBtn({ icon, onClick, danger, disabled, title }: {
 
 // ─── Riga label editabile (usata da Percorso e Checklist) ───────────────────────
 
-function LabelRow({ label, first, last, onSave, onDelete, onMove }: {
-  label: string; first: boolean; last: boolean
+function LabelRow({ label, note, first, last, onSave, onDelete, onMove }: {
+  label: string; note?: string; first: boolean; last: boolean
   onSave: (label: string) => void; onDelete: () => void; onMove: (dir: 'up' | 'down') => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -64,7 +65,7 @@ function LabelRow({ label, first, last, onSave, onDelete, onMove }: {
         </>
       ) : (
         <>
-          <span className="flex-1 text-sm" style={{ color: 'var(--ist-text)' }}>{label}</span>
+          <span className="flex-1 text-sm" style={{ color: note ? 'var(--ist-text-dim)' : 'var(--ist-text)' }}>{label}{note && <span className="ml-2 text-[11px] italic">({note})</span>}</span>
           <IconBtn icon={<ChevronUp size={15} strokeWidth={2} />} onClick={() => onMove('up')} disabled={first} title="Su" />
           <IconBtn icon={<ChevronDown size={15} strokeWidth={2} />} onClick={() => onMove('down')} disabled={last} title="Giù" />
           <IconBtn icon={<Pencil size={13} strokeWidth={2} />} onClick={() => { setDraft(label); setEditing(true) }} title="Modifica" />
@@ -110,9 +111,12 @@ function PercorsoTab() {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>
-        Le 4 fasi sono fisse; personalizza gli step che lo studente spunta in ciascuna.
-      </p>
+      <div className="rounded-2xl px-4 py-3 text-xs leading-relaxed" style={{ background: 'rgba(124,187,208,0.08)', border: '1px solid rgba(124,187,208,0.22)', color: 'var(--ist-text-muted)' }}>
+        <b style={{ color: 'var(--ist-text)' }}>Il percorso si costruisce da solo.</b> Ogni studente trova, in ordine: completa il profilo,
+        video di benvenuto, i video del Mental Coach e le due sessioni col Mental Coach, poi i video di ogni sezione di corsi nella sua
+        fase (la fase si sceglie in Contenuti). I passi si spuntano da soli man mano che li fa.
+        Qui aggiungi solo le <b style={{ color: 'var(--ist-text)' }}>attività che non sono video</b> (es. «VPS»): lo studente le segna come fatte.
+      </div>
       {PHASE_ORDER.map(phase => {
         const phaseSteps = steps.filter(s => s.phase === phase).sort((a, b) => a.position - b.position)
         return (
@@ -128,6 +132,7 @@ function PercorsoTab() {
               <LabelRow
                 key={s.id}
                 label={s.label}
+                note={isAutoStepLabel(s.label) ? 'già un passo automatico: non viene mostrato' : undefined}
                 first={i === 0}
                 last={i === phaseSteps.length - 1}
                 onSave={label => updateStep(s.id, label)}
@@ -135,7 +140,7 @@ function PercorsoTab() {
                 onMove={dir => moveStep(s.id, dir)}
               />
             ))}
-            <AddLabel placeholder="Nuovo step…" onAdd={label => addStep(phase, label)} />
+            <AddLabel placeholder="Nuova attività…" onAdd={label => addStep(phase, label)} />
           </Card>
         )
       })}

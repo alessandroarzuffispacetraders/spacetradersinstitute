@@ -467,3 +467,39 @@ html.cinema-mode, html.cinema-mode body, html.cinema-mode .app-shell { backgroun
 }
 .home-inbox.has-news { border-left-color: #F6C85F; background: linear-gradient(90deg, rgba(246,200,95,0.09), rgba(255,255,255,0.03) 45%); }
 @media (hover: hover) { .home-inbox:hover { background: rgba(255,255,255,0.06); } }
+
+/* ===== Percorso interattivo ===== */
+.journey-hero { background: radial-gradient(70% 120% at 88% 0%, rgba(124,187,208,0.16), transparent 60%), radial-gradient(50% 90% at 8% 100%, rgba(70,211,154,0.08), transparent 60%); }
+.journey-hero::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 46px 46px;
+  -webkit-mask-image: linear-gradient(to bottom, #000, transparent); mask-image: linear-gradient(to bottom, #000, transparent);
+}
+.journey-next {
+  background: linear-gradient(160deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)), #0a0e17;
+  border: 1px solid rgba(124,187,208,0.3);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+}
+.journey-dot { width: 8px; height: 8px; border-radius: 9999px; background: var(--ist-media-accent); animation: journey-ping 1.8s ease-out infinite; }
+@keyframes journey-ping { 0% { box-shadow: 0 0 0 0 rgba(124,187,208,0.55); } 100% { box-shadow: 0 0 0 10px rgba(124,187,208,0); } }
+.journey-fill { transition: width 1.1s cubic-bezier(.2,.7,.2,1); }
+.journey-list::before { content: ''; position: absolute; left: 19px; top: 10px; bottom: 10px; width: 2px; border-radius: 2px; background: rgba(255,255,255,0.08); }
+.journey-step.is-done::after { content: ''; position: absolute; left: 19px; top: 52px; height: calc(100% - 30px); width: 2px; background: #46D39A; opacity: 0.55; }
+.journey-step:last-child.is-done::after { display: none; }
+.journey-node { z-index: 1; background: #111724; border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.55); }
+.journey-step.is-done .journey-node { background: #46D39A; border-color: #46D39A; color: #05070d; }
+.journey-step.is-next .journey-node { background: var(--ist-media-accent); border-color: transparent; color: #05070d; animation: phase-pulse 2.4s ease-in-out infinite; }
+.journey-card { background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07); transition: border-color 200ms ease, background 200ms ease; }
+.journey-step.is-next .journey-card { background: linear-gradient(90deg, rgba(124,187,208,0.13), rgba(255,255,255,0.03)); border-color: rgba(124,187,208,0.42); }
+.journey-step.is-done .journey-card { background: transparent; }
+@media (hover: hover) { .journey-card:hover { border-color: rgba(255,255,255,0.16); } }
+.journey-check { animation: check-pop 450ms cubic-bezier(.2,1.4,.4,1) both; }
+@keyframes check-pop { from { transform: scale(0.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.journey-phase-num { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.1); }
+.journey-phase.active .journey-phase-num { background: var(--ist-media-accent); color: #05070d; border-color: transparent; box-shadow: 0 0 24px rgba(124,187,208,0.45); }
+.journey-phase.completed .journey-phase-num { background: rgba(70,211,154,0.16); color: #46D39A; border-color: rgba(70,211,154,0.3); }
+@media (prefers-reduced-motion: reduce) {
+  .journey-dot, .journey-step.is-next .journey-node, .journey-check { animation: none; }
+  .journey-fill { transition: none; }
+}
