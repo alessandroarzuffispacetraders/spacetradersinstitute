@@ -248,7 +248,7 @@ export default function StudentPercorso() {
     <StepCtx.Provider value={{ user: user ? { name: user.name, avatarUrl: user.avatarUrl, avatarPreset: user.avatarPreset } : null, welcomeUrl: welcomeUrl ?? null }}>
     <div className="cinema-page pb-32 lg:pb-16">
       {/* Testata: dove sei e quanto manca */}
-      <section className="journey-hero relative overflow-hidden">
+      <section className="journey-hero">
         <div className="cinema-px pt-8 lg:pt-12 pb-8 lg:pb-10 flex flex-col-reverse lg:flex-row lg:items-center gap-6 lg:gap-12">
           <div className="flex-1 min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--ist-media-accent)' }}>Il tuo percorso</p>

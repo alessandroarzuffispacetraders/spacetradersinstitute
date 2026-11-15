@@ -155,7 +155,7 @@ export default function StudentCalendario() {
 
   return (
     <div className="cinema-page pb-32 lg:pb-16">
-      <section className="journey-hero relative overflow-hidden">
+      <section className="journey-hero">
         <div className="cinema-px pt-8 lg:pt-12 pb-6 lg:pb-8">
           <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--ist-media-accent)' }}>Calendario</p>
           <h1 className="mt-1.5 text-[34px] lg:text-[52px] font-extrabold tracking-tight leading-[1.02] text-white">Le prossime live</h1>
