@@ -8,6 +8,7 @@ import {
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
+import { useCinemaMode } from '../../context/ThemeContext'
 import {
   Channel, MemberRole, ChannelAudience,
 } from '../../data/chatData'
@@ -282,16 +283,13 @@ function ChannelRow({ channel, active, unread, muted, onSelect }: { channel: Cha
   return (
     <button
       onClick={() => onSelect(channel.id)}
-      className="w-full flex items-center gap-2 px-2 py-2 rounded-xl text-left transition-all duration-100"
-      style={active
-        ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' }
-        : { color: unread > 0 ? 'var(--ist-text)' : 'var(--ist-text-muted)' }
-      }
+      className={`chat-row w-full flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-left ${active ? 'is-active' : ''}`}
+      style={{ color: active ? '#fff' : unread > 0 ? 'var(--ist-text)' : 'var(--ist-text-muted)' }}
     >
-      <span className="flex-shrink-0 opacity-70" style={{ color: active ? 'var(--ist-accent-text)' : 'inherit' }}>
+      <span className="chat-row-icon w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
         <ChannelIcon type={channel.type} size={14} />
       </span>
-      <span className="text-sm truncate flex-1 font-medium">
+      <span className={`text-sm truncate flex-1 ${unread > 0 || active ? 'font-semibold' : 'font-medium'}`}>
         {channel.name}
       </span>
       {muted && (
@@ -401,34 +399,18 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
       }}
     >
       {/* Header */}
-      <div
-        className="flex items-center justify-between px-3 py-3 flex-shrink-0"
-        style={{ borderBottom: '1px solid var(--ist-w8)' }}
-      >
-        <span className="text-sm font-bold" style={{ color: 'var(--ist-text)' }}>
-          IST Community
-        </span>
-        <button
-          className="w-7 h-7 rounded-xl flex items-center justify-center transition-colors"
-          style={{ background: 'var(--ist-w6)', color: 'var(--ist-text-muted)' }}
-          onClick={() => document.getElementById('channel-search')?.focus()}
-        >
-          <Search size={13} strokeWidth={2} />
-        </button>
+      <div className="px-4 pt-4 pb-3 flex-shrink-0">
+        <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--ist-media-accent)' }}>IST Community</p>
+        <h1 className="text-[26px] font-extrabold tracking-tight leading-tight" style={{ color: 'var(--ist-text)' }}>Chat</h1>
       </div>
 
       {/* Tab switcher */}
-      <div
-        className="flex gap-1 px-2 py-2 flex-shrink-0"
-        style={{ borderBottom: '1px solid var(--ist-w8)' }}
-      >
+      <div className="chat-tabs relative flex gap-1 mx-3 p-1 rounded-2xl flex-shrink-0">
+        <span className="chat-tabs-pill" style={{ transform: tab === 'groups' ? 'translateX(0)' : 'translateX(100%)' }} aria-hidden />
         <button
           onClick={() => { onTabChange('groups'); setSearch('') }}
-          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold transition-all"
-          style={tab === 'groups'
-            ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' }
-            : { color: 'var(--ist-text-muted)' }
-          }
+          className="relative z-[1] flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-colors"
+          style={{ color: tab === 'groups' ? '#fff' : 'var(--ist-text-muted)' }}
         >
           <UsersRound size={13} strokeWidth={2} />
           Gruppi
@@ -443,11 +425,8 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
         </button>
         <button
           onClick={() => { onTabChange('direct'); setSearch('') }}
-          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold transition-all"
-          style={tab === 'direct'
-            ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' }
-            : { color: 'var(--ist-text-muted)' }
-          }
+          className="relative z-[1] flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-colors"
+          style={{ color: tab === 'direct' ? '#fff' : 'var(--ist-text-muted)' }}
         >
           <MessageCircle size={13} strokeWidth={2} />
           Privati
@@ -463,20 +442,18 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
       </div>
 
       {/* Search */}
-      <div className="px-2 py-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--ist-w8)' }}>
-        <input
-          id="channel-search"
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder={tab === 'groups' ? 'Cerca canale...' : 'Cerca chat...'}
-          className="w-full px-3 py-1.5 text-xs rounded-xl focus:outline-none"
-          style={{
-            background: 'var(--ist-input-surface)',
-            border: '1px solid var(--ist-input-border)',
-            color: 'var(--ist-text)',
-          }}
-        />
+      <div className="px-3 pt-3 pb-2 flex-shrink-0">
+        <div className="relative">
+          <Search size={14} strokeWidth={2.2} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--ist-text-dim)' }} />
+          <input
+            id="channel-search"
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder={tab === 'groups' ? 'Cerca canale' : 'Cerca chat'}
+            className="chat-search w-full pl-9 pr-3 py-2.5 text-sm rounded-xl focus:outline-none"
+          />
+        </div>
       </div>
 
       {/* Channel / DM list */}
@@ -547,15 +524,14 @@ function ChannelSidebar({ activeChannel, onSelect, userRole, userId, channels, d
                   <button
                     key={u.id}
                     onClick={() => onSelect(chId)}
-                    className="w-full flex items-center gap-3 px-2 py-2 rounded-xl text-left transition-all duration-100"
-                    style={isActive ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' } : {}}
+                    className={`chat-row w-full flex items-center gap-3 px-2 py-2 rounded-xl text-left ${isActive ? 'is-active' : ''}`}
                   >
-                    <div className="relative flex-shrink-0">
-                      <UserAvatar user={{ name: u.name, avatarUrl: u.avatarUrl, avatarPreset: u.avatarPreset }} size={36} />
+                    <div className="relative flex-shrink-0 rounded-full" style={highlight ? { boxShadow: '0 0 0 2px #05070d, 0 0 0 4px var(--ist-media-accent)' } : undefined}>
+                      <UserAvatar user={{ name: u.name, avatarUrl: u.avatarUrl, avatarPreset: u.avatarPreset }} size={40} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold truncate flex-1" style={{ color: isActive ? 'var(--ist-accent-text)' : 'var(--ist-text)' }}>
+                        <p className={`text-sm truncate flex-1 ${highlight ? 'font-bold' : 'font-semibold'}`} style={{ color: isActive ? '#fff' : 'var(--ist-text)' }}>
                           {u.name}
                         </p>
                         {thread && (
@@ -1076,13 +1052,12 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
     <div className="flex flex-col h-full relative">
       {/* Header — colore standard: bianco in chiaro, scuro in scuro (nav-bg) */}
       <div
-        className="flex items-center gap-3 px-4 py-3 flex-shrink-0"
-        style={{ borderBottom: '1px solid var(--ist-w8)', background: 'var(--ist-nav-bg)', backdropFilter: 'blur(16px)' }}
+        className="chat-header flex items-center gap-3 px-4 lg:px-6 py-3 flex-shrink-0"
       >
         {isMobile && onBack && (
           <button
             onClick={onBack}
-            className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors"
+            className="lg:hidden w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors"
             style={{ background: 'var(--ist-w8)', color: 'var(--ist-text)' }}
           >
             <ArrowLeft size={16} strokeWidth={2} />
@@ -1091,17 +1066,17 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
 
         {isDirect && dmPartner ? (
           <div className="flex-shrink-0">
-            <UserAvatar user={{ name: dmPartner.name, avatarUrl: dmPartner.avatarUrl, avatarPreset: dmPartner.avatarPreset }} size={36} />
+            <UserAvatar user={{ name: dmPartner.name, avatarUrl: dmPartner.avatarUrl, avatarPreset: dmPartner.avatarPreset }} size={42} />
           </div>
         ) : (
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--ist-w8)', color: 'var(--ist-accent-text)' }}>
-            <ChannelIcon type={channel.type} size={15} />
+          <div className="chat-header-icon w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0">
+            <ChannelIcon type={channel.type} size={17} />
           </div>
         )}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold truncate" style={{ color: 'var(--ist-text)' }}>{channel.name}</span>
+            <span className="text-base font-bold truncate" style={{ color: 'var(--ist-text)' }}>{isDirect ? channel.name : `#${channel.name}`}</span>
             {isDirect && dmPartner && (
               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: ROLE_COLOR[dmPartner.role], color: ROLE_TEXT[dmPartner.role] }}>
                 {ROLE_LABEL[dmPartner.role]}
@@ -1130,7 +1105,7 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-4 lg:pb-28 no-scrollbar"
+        className="chat-stream flex-1 overflow-y-auto px-4 lg:px-8 py-4 lg:pb-28 no-scrollbar"
         style={{ overscrollBehavior: 'contain' }}
         onClick={() => { setHoveredMsgId(null); setShowReactFor(null) }}
       >
@@ -1160,10 +1135,8 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
             return (
               <div key={`group-${gi}`}>
                 {showDateSep && (
-                  <div className="flex items-center gap-3 py-3">
-                    <div className="flex-1 h-px" style={{ background: 'var(--ist-w8)' }} />
-                    <span className="text-[10px] font-semibold px-2" style={{ color: 'var(--ist-text-dim)' }}>{formatDate(group.firstTimestamp)}</span>
-                    <div className="flex-1 h-px" style={{ background: 'var(--ist-w8)' }} />
+                  <div className="flex justify-center py-3">
+                    <span className="chat-day text-[11px] font-semibold px-3 py-1 rounded-full">{formatDate(group.firstTimestamp)}</span>
                   </div>
                 )}
 
@@ -1323,7 +1296,7 @@ function ChatArea({ channel, userRole, postAudience, userId, userName, onShowUse
                               </div>
                             ) : (
                               <div
-                                className="px-3.5 py-2.5 text-sm leading-relaxed"
+                                className={`px-3.5 py-2.5 text-sm leading-relaxed ${group.own ? 'chat-bubble-own' : 'chat-bubble-other'}`}
                                 style={group.own
                                   ? {
                                     background: 'var(--ist-bubble-own-bg)',
@@ -1735,14 +1708,7 @@ function BachecaPostCard({
 }) {
   const [confirmDel, setConfirmDel] = useState(false)
   return (
-    <div
-      className="rounded-3xl p-4 flex flex-col gap-3"
-      style={{
-        background: 'var(--ist-card-bg)',
-        border: post.pinned ? '1px solid rgba(124,187,208,0.35)' : '1px solid var(--ist-border)',
-        boxShadow: 'var(--ist-card-shadow)',
-      }}
-    >
+    <div className={`chat-post rounded-3xl p-5 flex flex-col gap-3 ${post.pinned ? 'is-pinned' : ''}`}>
       {post.pinned && (
         <div className="flex items-center gap-1.5">
           <Pin size={11} strokeWidth={2.5} style={{ color: 'var(--ist-accent-text)' }} />
@@ -1787,7 +1753,7 @@ function BachecaPostCard({
       </div>
 
       {post.title && (
-        <h3 className="text-base font-bold leading-snug" style={{ color: 'var(--ist-text)' }}>
+        <h3 className="text-lg lg:text-xl font-extrabold tracking-tight leading-snug" style={{ color: 'var(--ist-text)' }}>
           {post.title}
         </h3>
       )}
@@ -1956,33 +1922,23 @@ function BachecaArea({
 
   return (
     <div className="flex flex-col h-full">
-      <div
-        className="flex items-center gap-3 px-4 py-3 flex-shrink-0"
-        style={{
-          borderBottom: '1px solid var(--ist-w8)',
-          background: 'var(--ist-nav-bg)',
-          backdropFilter: 'blur(16px)',
-        }}
-      >
+      <div className="chat-header flex items-center gap-3 px-4 lg:px-6 py-3 flex-shrink-0">
         {isMobile && onBack && (
           <button
             onClick={onBack}
-            className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors"
+            className="lg:hidden w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors"
             style={{ background: 'var(--ist-w8)', color: 'var(--ist-text)' }}
           >
             <ArrowLeft size={16} strokeWidth={2} />
           </button>
         )}
-        <div
-          className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-          style={{ background: 'rgba(124,187,208,0.15)', color: 'var(--ist-accent-text)' }}
-        >
-          <Megaphone size={15} strokeWidth={2} />
+        <div className="chat-header-icon w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0">
+          <Megaphone size={17} strokeWidth={2} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>
-              {channel.name}
+            <span className="text-base font-bold" style={{ color: 'var(--ist-text)' }}>
+              #{channel.name}
             </span>
             <span
               className="text-[10px] font-bold px-2 py-0.5 rounded-full"
@@ -2012,7 +1968,8 @@ function BachecaArea({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 no-scrollbar">
+      <div className="chat-stream flex-1 overflow-y-auto px-4 lg:px-8 py-5 no-scrollbar">
+        <div className="max-w-3xl mx-auto space-y-4">
         {loading ? (
           <div className="flex justify-center py-16">
             <Loader2 size={20} className="animate-spin" style={{ color: 'var(--ist-text-dim)' }} />
@@ -2035,6 +1992,7 @@ function BachecaArea({
             />
           ))
         )}
+        </div>
       </div>
 
       {composing && (
@@ -2051,6 +2009,7 @@ function BachecaArea({
 // ─── main component ───────────────────────────────────────────────────────────
 
 export default function ChatPage() {
+  useCinemaMode()
   const { user } = useAuth()
   const { setHideBottomNav } = useUI()
   const vp = useVisibleViewport()
@@ -2285,10 +2244,10 @@ export default function ChatPage() {
   const keyboardInset = nativeKeyboardInset(nativeKbHeight)
 
   return (
-    <div className="flex overflow-hidden fixed inset-0 z-10" style={{ background: 'var(--ist-nav-bg)', paddingTop: 'env(safe-area-inset-top, 0px)', ...(vp?.kbOpen && !nativeKb ? { top: vp.top, height: vp.height, bottom: 'auto' } : null) }}>
+    <div className="chat-shell flex overflow-hidden fixed inset-0 z-10" style={{ background: '#05070d', paddingTop: 'env(safe-area-inset-top, 0px)', ...(vp?.kbOpen && !nativeKb ? { top: vp.top, height: vp.height, bottom: 'auto' } : null) }}>
       {/* Sidebar */}
       <div
-        className={`flex-shrink-0 ${mobileView === 'channels' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[240px] lg:ml-[108px] flex-col overflow-hidden`}
+        className={`flex-shrink-0 ${mobileView === 'channels' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[300px] lg:ml-[108px] flex-col overflow-hidden`}
         style={{ height: '100%' }}
       >
         <ChannelSidebar
