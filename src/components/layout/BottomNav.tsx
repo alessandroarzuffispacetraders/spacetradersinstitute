@@ -1,10 +1,10 @@
 import { useState, useEffect, type ElementType } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Map, BookOpen, BookMarked, MessageCircle,
   Brain, Radio, TrendingUp, ExternalLink, Users, ClipboardList,
   AlertTriangle, CalendarDays, FileText, Package, BarChart3,
-  MoreHorizontal, X, Sun, Moon, LogOut, Compass, SlidersHorizontal, Lock,
+  MoreHorizontal, X, Sun, Moon, LogOut, Compass, SlidersHorizontal, Lock, ChevronRight,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useUI } from '../../context/UIContext'
@@ -64,47 +64,47 @@ function OverflowSheet({
   const { user, logout } = useAuth()
   const { setProfileOpen } = useUI()
   const { hasNews } = useNews()
+  const { pathname } = useLocation()
 
   return (
     <>
       {/* Backdrop */}
       <div
         className="lg:hidden fixed inset-0 z-40"
-        style={{ background: 'rgba(0,0,0,0.40)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+        style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'fadeInBackdrop 0.2s ease' }}
         onClick={onClose}
       />
       {/* Sheet */}
       <div
-        className="lg:hidden fixed z-50 left-4 right-4"
-        style={{
-          bottom: 96,
-          borderRadius: '2rem',
-          background: 'var(--ist-nav-bg)',
-          border: '1px solid var(--ist-nav-border)',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
-          boxShadow: '0 -8px 40px rgba(0,0,0,0.30)',
-          animation: 'slideUpSheet 0.22s cubic-bezier(0.22,1,0.36,1)',
-        }}
+        className="nav-glass nav-scope lg:hidden fixed z-50 left-3 right-3 rounded-[28px] overflow-hidden"
+        style={{ bottom: 'calc(max(14px, env(safe-area-inset-bottom, 0px) + 4px) + 78px)', animation: 'slideUpSheet 0.24s cubic-bezier(0.22,1,0.36,1)' }}
       >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between px-5 py-4"
-          style={{ borderBottom: '1px solid var(--ist-w8)' }}
-        >
-          <span className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>Altro</span>
+        {/* Profilo in testa */}
+        <div className="flex items-center gap-3 px-4 pt-4 pb-3">
+          {user && (
+            <button onClick={() => { setProfileOpen(true); onClose() }} className="flex-1 min-w-0 flex items-center gap-3 text-left active:opacity-70">
+              <span className="rounded-full p-[2px] flex-shrink-0" style={{ background: 'linear-gradient(135deg, #7CBBD0, rgba(124,187,208,0.1))' }}>
+                <span className="block rounded-full overflow-hidden" style={{ background: 'var(--ist-nav-bg)' }}><UserAvatar user={user} size={44} /></span>
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px] font-bold truncate" style={{ color: 'var(--ist-text)' }}>{user.name}</span>
+                <span className="flex items-center gap-0.5 text-xs" style={{ color: 'var(--ist-accent-text)' }}>Il tuo profilo <ChevronRight size={13} strokeWidth={2.4} /></span>
+              </span>
+            </button>
+          )}
           <button
             onClick={onClose}
-            className="w-7 h-7 rounded-full flex items-center justify-center transition-colors"
+            className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors"
             style={{ background: 'var(--ist-w8)', color: 'var(--ist-text-muted)' }}
+            aria-label="Chiudi"
           >
-            <X size={14} strokeWidth={2.5} />
+            <X size={16} strokeWidth={2.4} />
           </button>
         </div>
 
         {/* Mode switch — only for management roles */}
         {canManage && (
-          <div className="px-4 pt-3">
+          <div className="px-4 pb-1">
             <div className="flex gap-1 p-1 rounded-2xl" style={{ background: 'var(--ist-w6)' }}>
               <SheetModeButton active={navMode === 'use'} icon={<Compass size={15} strokeWidth={2} />} label="Usa" onClick={() => onSwitchMode('use')} />
               <SheetModeButton active={navMode === 'manage'} icon={<SlidersHorizontal size={15} strokeWidth={2} />} label="Gestisci" onClick={() => onSwitchMode('manage')} />
@@ -112,100 +112,53 @@ function OverflowSheet({
           </div>
         )}
 
-        {/* Items grid */}
-        <div className="p-4 grid grid-cols-3 gap-2">
+        {/* Sezioni */}
+        <div className="px-4 pt-2 pb-3 grid grid-cols-3 gap-2">
           {items.map((item) => (
             <button
               key={item.path}
               data-tour={item.path}
               onClick={() => { navigate(item.path); onClose() }}
-              className="flex flex-col items-center gap-2 py-4 px-2 rounded-2xl transition-all active:scale-[0.95]"
-              style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)' }}
+              className={`nav-tile flex flex-col items-center gap-2 pt-3.5 pb-3 px-1.5 rounded-2xl transition-transform active:scale-[0.95] ${pathname === item.path || pathname.startsWith(item.path + '/') ? 'is-active' : ''}`}
             >
-              <div
-                className="relative w-10 h-10 rounded-2xl flex items-center justify-center"
-                style={{ background: 'rgba(90,154,177,0.14)', border: '1px solid rgba(90,154,177,0.18)' }}
-              >
-                <NavIcon name={item.icon} size={18} locked={isPathLockedForFree(item.path, user)} />
+              <span className="nav-tile-icon relative w-11 h-11 rounded-2xl flex items-center justify-center">
+                <NavIcon name={item.icon} size={19} locked={isPathLockedForFree(item.path, user)} />
                 {hasNews(item.path) && <NewsDot />}
-              </div>
-              <span
-                className="text-[10px] font-medium text-center leading-tight"
-                style={{ color: 'var(--ist-text-muted)' }}
-              >
+              </span>
+              <span className="text-[11px] font-semibold text-center leading-tight" style={{ color: 'var(--ist-text)' }}>
                 {item.shortLabel ?? item.label}
               </span>
             </button>
           ))}
-
-          {/* Theme toggle */}
-          <button
-            onClick={toggleTheme}
-            className="flex flex-col items-center gap-2 py-4 px-2 rounded-2xl transition-all active:scale-[0.95]"
-            style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)' }}
-          >
-            <div
-              className="w-10 h-10 rounded-2xl flex items-center justify-center"
-              style={{ background: 'rgba(90,154,177,0.14)', border: '1px solid rgba(90,154,177,0.18)' }}
-            >
-              {theme === 'dark'
-                ? <Sun size={18} strokeWidth={2} style={{ color: 'var(--ist-nav-text)' }} />
-                : <Moon size={18} strokeWidth={2} style={{ color: 'var(--ist-nav-text)' }} />
-              }
-            </div>
-            <span
-              className="text-[10px] font-medium text-center leading-tight"
-              style={{ color: 'var(--ist-text-muted)' }}
-            >
-              {theme === 'dark' ? 'Tema chiaro' : 'Tema scuro'}
-            </span>
-          </button>
-
-          {/* Profile */}
-          {user && (
-            <button
-              onClick={() => { setProfileOpen(true); onClose() }}
-              className="flex flex-col items-center gap-2 py-4 px-2 rounded-2xl transition-all active:scale-[0.95]"
-              style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)' }}
-            >
-              <div
-                className="w-10 h-10 rounded-2xl flex items-center justify-center overflow-hidden"
-                style={{ background: 'rgba(90,154,177,0.14)', border: '1px solid rgba(90,154,177,0.18)' }}
-              >
-                <UserAvatar user={user} size={40} />
-              </div>
-              <span
-                className="text-[10px] font-medium text-center leading-tight"
-                style={{ color: 'var(--ist-text-muted)' }}
-              >
-                Profilo
-              </span>
-            </button>
-          )}
         </div>
 
-        {/* Logout — small, at the bottom */}
-        <div className="px-5 pb-5 pt-1">
+        {/* Tema ed esci */}
+        <div className="flex gap-2 px-4 pb-4">
+          <button
+            onClick={toggleTheme}
+            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-semibold transition-transform active:scale-[0.97]"
+            style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)', color: 'var(--ist-text)' }}
+          >
+            {theme === 'dark' ? <Sun size={15} strokeWidth={2.2} /> : <Moon size={15} strokeWidth={2.2} />}
+            {theme === 'dark' ? 'Tema chiaro' : 'Tema scuro'}
+          </button>
           <button
             onClick={() => { logout(); onClose() }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl transition-colors"
-            style={{
-              background: 'rgba(255,107,122,0.06)',
-              border: '1px solid rgba(255,107,122,0.14)',
-              color: 'rgba(255,107,122,0.70)',
-            }}
+            className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-xs font-semibold transition-transform active:scale-[0.97]"
+            style={{ background: 'rgba(255,107,122,0.08)', border: '1px solid rgba(255,107,122,0.18)', color: '#FF7A88' }}
           >
-            <LogOut size={13} strokeWidth={2} />
-            <span className="text-xs font-medium">Esci dall'account</span>
+            <LogOut size={14} strokeWidth={2.2} />
+            Esci
           </button>
         </div>
       </div>
 
       <style>{`
         @keyframes slideUpSheet {
-          from { opacity: 0; transform: translateY(16px); }
-          to   { opacity: 1; transform: translateY(0); }
+          from { opacity: 0; transform: translateY(18px) scale(0.98); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
         }
+        @keyframes fadeInBackdrop { from { opacity: 0; } to { opacity: 1; } }
       `}</style>
     </>
   )
@@ -217,8 +170,8 @@ function SheetModeButton({ active, icon, label, onClick }: { active: boolean; ic
       onClick={onClick}
       className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all"
       style={active
-        ? { background: 'var(--ist-nav-active-bg)', color: 'var(--ist-accent-text)' }
-        : { color: 'var(--ist-text-muted)' }
+        ? { background: 'var(--ist-nav-pill)', boxShadow: 'var(--ist-nav-pill-shadow)', color: 'var(--ist-nav-active-text)' }
+        : { color: 'var(--ist-nav-text)' }
       }
     >
       {icon}
@@ -232,6 +185,7 @@ export default function BottomNav() {
   const { hideBottomNav, navMode, setNavMode } = useUI()
   const { hasNews } = useNews()
   const navigate = useNavigate()
+  const location = useLocation()
   const [moreOpen, setMoreOpen] = useState(false)
   const spaceQuantAccess = useSpaceQuantAccess()
 
@@ -270,6 +224,12 @@ export default function BottomNav() {
   const hasOverflow = overflow.length > 0 || canManage
   const overflowHasNews = overflow.some(i => hasNews(i.path))
 
+  const slots = primary.length + (hasOverflow ? 1 : 0)
+  const path = location.pathname
+  const matchIdx = primary.findIndex(i => (i.path === homePath ? path === i.path : path === i.path || path.startsWith(i.path + '/')))
+  const inOverflow = overflow.some(i => path === i.path || path.startsWith(i.path + '/'))
+  const activeIdx = moreOpen && hasOverflow ? primary.length : matchIdx >= 0 ? matchIdx : inOverflow && hasOverflow ? primary.length : -1
+
   const switchMode = (target: NavMode) => {
     if (target !== mode) {
       setNavMode(target)
@@ -291,31 +251,27 @@ export default function BottomNav() {
       )}
 
       <nav
-        className={`lg:hidden fixed z-50 transition-transform duration-300 ease-in-out ${hideBottomNav ? 'translate-y-[200%]' : 'translate-y-0'}`}
-        style={{ bottom: 20, left: 16, right: 16 }}
+        className={`nav-scope lg:hidden fixed z-50 transition-transform duration-300 ease-in-out ${hideBottomNav ? 'translate-y-[200%]' : 'translate-y-0'}`}
+        style={{ left: 12, right: 12, bottom: 'max(14px, calc(env(safe-area-inset-bottom, 0px) + 4px))' }}
       >
-        <div
-          className="flex items-center justify-around h-[68px] px-1"
-          style={{
-            borderRadius: 999,
-            background: 'var(--ist-nav-bg)',
-            border: '1px solid var(--ist-nav-border)',
-            backdropFilter: 'blur(24px)',
-            WebkitBackdropFilter: 'blur(24px)',
-            boxShadow: '0 18px 60px rgba(0,0,0,0.44)',
-          }}
-        >
-          {primary.map((item) => (
+        <div className="nav-glass relative flex items-stretch h-[66px] p-1.5 rounded-[26px]">
+          {/* Pillola che scorre sotto la voce attiva */}
+          <span
+            className="nav-pill absolute top-1.5 bottom-1.5 left-1.5 rounded-[20px]"
+            style={{ width: `calc((100% - 12px) / ${slots})`, transform: `translateX(${Math.max(0, activeIdx) * 100}%)`, opacity: activeIdx >= 0 ? 1 : 0 }}
+            aria-hidden
+          />
+          {primary.map((item, i) => (
             <NavLink
               key={item.path}
               to={item.path}
               data-tour={item.path}
               end={item.path === homePath}
-              className="flex flex-col items-center gap-1 py-1 px-2 transition-all duration-150"
-              style={({ isActive }) => ({ color: isActive ? '#7CBBD0' : 'var(--ist-nav-text)' })}
+              className={`nav-item relative z-[1] flex-1 min-w-0 flex flex-col items-center justify-center gap-1 rounded-[20px] transition-transform active:scale-[0.92] ${i === activeIdx ? 'is-active' : ''}`}
+              style={{ color: i === activeIdx ? 'var(--ist-nav-active-text)' : 'var(--ist-nav-text)' }}
             >
-              <NavIcon name={item.icon} size={20} dot={hasNews(item.path)} locked={isPathLockedForFree(item.path, user)} />
-              <span className="text-[9px] font-medium truncate max-w-[52px] text-center leading-none">
+              <NavIcon name={item.icon} size={21} dot={hasNews(item.path)} locked={isPathLockedForFree(item.path, user)} />
+              <span className={`text-[10px] truncate max-w-full px-0.5 text-center leading-none ${i === activeIdx ? 'font-bold' : 'font-medium'}`}>
                 {item.shortLabel ?? item.label}
               </span>
             </NavLink>
@@ -325,14 +281,15 @@ export default function BottomNav() {
             <button
               onClick={() => setMoreOpen(o => !o)}
               data-tour="__more__"
-              className="flex flex-col items-center gap-1 py-1 px-2 transition-all duration-150"
-              style={{ color: moreOpen ? '#7CBBD0' : 'var(--ist-nav-text)' }}
+              className={`nav-item relative z-[1] flex-1 min-w-0 flex flex-col items-center justify-center gap-1 rounded-[20px] transition-transform active:scale-[0.92] ${activeIdx === primary.length ? 'is-active' : ''}`}
+              aria-expanded={moreOpen}
+              style={{ color: activeIdx === primary.length ? 'var(--ist-nav-active-text)' : 'var(--ist-nav-text)' }}
             >
               <span className="relative inline-flex">
-                <MoreHorizontal size={20} strokeWidth={2} />
+                <MoreHorizontal size={21} strokeWidth={2} />
                 {overflowHasNews && <NewsDot />}
               </span>
-              <span className="text-[9px] font-medium leading-none">Altro</span>
+              <span className={`text-[10px] leading-none ${activeIdx === primary.length ? 'font-bold' : 'font-medium'}`}>Altro</span>
             </button>
           )}
         </div>

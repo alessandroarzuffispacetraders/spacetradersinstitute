@@ -385,6 +385,96 @@ html.is-android *::after {
    scroll non mostrano una banda blu/verde. */
 html.cinema-mode, html.cinema-mode body, html.cinema-mode .app-shell { background: #05070d; }
 
+/* ===== Navigazione: barra in basso, pannello "Altro", barra laterale ===== */
+/* Vetro scuro come il resto della piattaforma. Sulle pagine cinema (sempre
+   scure) la navigazione resta scura anche col tema chiaro. */
+:root {
+  --ist-nav-shadow: 0 22px 50px rgba(0,0,0,0.55), 0 2px 10px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.07);
+  --ist-nav-pill: linear-gradient(180deg, rgba(124,187,208,0.26), rgba(124,187,208,0.09));
+  --ist-nav-pill-shadow: inset 0 1px 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(124,187,208,0.24), 0 8px 22px rgba(124,187,208,0.16);
+  --ist-nav-active-icon: #8FD0E4;
+  --ist-nav-hover: rgba(255,255,255,0.05);
+  --ist-nav-divider: rgba(255,255,255,0.08);
+}
+.light {
+  --ist-nav-shadow: 0 16px 40px rgba(15,40,60,0.16), 0 2px 8px rgba(15,40,60,0.08), inset 0 1px 0 rgba(255,255,255,0.9);
+  --ist-nav-pill: linear-gradient(180deg, rgba(90,154,177,0.20), rgba(90,154,177,0.08));
+  --ist-nav-pill-shadow: inset 0 0 0 1px rgba(90,154,177,0.28), 0 6px 16px rgba(40,102,128,0.12);
+  --ist-nav-active-icon: #1F6F8B;
+  --ist-nav-hover: rgba(10,20,40,0.05);
+  --ist-nav-divider: rgba(10,20,40,0.08);
+}
+html.cinema-mode .nav-scope {
+  color-scheme: dark;
+  --ist-nav-bg: rgba(10,13,22,0.88);
+  --ist-nav-border: rgba(255,255,255,0.10);
+  --ist-nav-text: rgba(214,226,236,0.58);
+  --ist-nav-active-text: #ffffff;
+  --ist-text: #F7FAFC;
+  --ist-text-muted: #8495A3;
+  --ist-accent-text: #7CBBD0;
+  --ist-w6: rgba(255,255,255,0.06);
+  --ist-w8: rgba(255,255,255,0.08);
+  --ist-nav-shadow: 0 22px 50px rgba(0,0,0,0.6), 0 2px 10px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.07);
+  --ist-nav-pill: linear-gradient(180deg, rgba(124,187,208,0.26), rgba(124,187,208,0.09));
+  --ist-nav-pill-shadow: inset 0 1px 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(124,187,208,0.24), 0 8px 22px rgba(124,187,208,0.16);
+  --ist-nav-active-icon: #8FD0E4;
+  --ist-nav-hover: rgba(255,255,255,0.05);
+  --ist-nav-divider: rgba(255,255,255,0.08);
+}
+.nav-glass {
+  background: var(--ist-nav-bg);
+  border: 1px solid var(--ist-nav-border);
+  box-shadow: var(--ist-nav-shadow);
+  -webkit-backdrop-filter: blur(28px) saturate(1.5);
+  backdrop-filter: blur(28px) saturate(1.5);
+}
+
+/* Barra in basso: la pillola scorre sotto la voce attiva */
+.nav-pill {
+  background: var(--ist-nav-pill);
+  box-shadow: var(--ist-nav-pill-shadow);
+  transition: transform 460ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease;
+  pointer-events: none;
+}
+.nav-pill::before {
+  content: ''; position: absolute; top: 0; left: 32%; right: 32%; height: 2px; border-radius: 2px;
+  background: var(--ist-nav-active-icon); box-shadow: 0 0 10px var(--ist-nav-active-icon);
+}
+.nav-item { -webkit-tap-highlight-color: transparent; transition: color 200ms ease, transform 150ms ease; }
+.nav-item > span:first-child { transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1); }
+.nav-item.is-active > span:first-child { transform: translateY(-1px); color: var(--ist-nav-active-icon); }
+.nav-item.is-active svg { filter: drop-shadow(0 0 8px rgba(124,187,208,0.45)); }
+
+/* Pannello "Altro" */
+.nav-tile { background: var(--ist-w6); border: 1px solid var(--ist-w8); -webkit-tap-highlight-color: transparent; }
+.nav-tile-icon {
+  background: linear-gradient(145deg, rgba(124,187,208,0.18), rgba(124,187,208,0.05));
+  box-shadow: inset 0 0 0 1px rgba(124,187,208,0.18);
+  color: var(--ist-nav-active-icon);
+}
+.nav-tile.is-active { background: var(--ist-nav-pill); border-color: rgba(124,187,208,0.32); }
+.nav-tile.is-active .nav-tile-icon { background: rgba(124,187,208,0.22); box-shadow: inset 0 0 0 1px rgba(124,187,208,0.35), 0 0 18px rgba(124,187,208,0.25); }
+
+/* Barra laterale */
+.side-divider { height: 1px; background: linear-gradient(90deg, transparent, var(--ist-nav-divider), transparent); flex-shrink: 0; }
+.side-item { color: var(--ist-nav-text); transition: color 180ms ease, background 180ms ease; flex-shrink: 0; }
+.side-item .side-label { font-weight: 500; }
+.side-item:hover { background: var(--ist-nav-hover); color: var(--ist-nav-active-text); }
+.side-item.is-active { background: var(--ist-nav-pill); box-shadow: var(--ist-nav-pill-shadow); color: var(--ist-nav-active-text); }
+.side-item.is-active .side-label { font-weight: 700; }
+.side-item.is-active > span:first-child { color: var(--ist-nav-active-icon); }
+.side-item.is-active svg { filter: drop-shadow(0 0 8px rgba(124,187,208,0.45)); }
+.side-item.is-active::before {
+  content: ''; position: absolute; left: -8px; top: 50%; width: 3px; height: 22px; margin-top: -11px; border-radius: 0 3px 3px 0;
+  background: var(--ist-nav-active-icon); box-shadow: 0 0 10px var(--ist-nav-active-icon);
+}
+.side-item-danger:hover { background: rgba(255,107,122,0.08); color: #FF7A88; }
+/* Se le voci non ci stanno, la lista scorre e sfuma in fondo */
+.side-list { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent); }
+@media (max-height: 940px) { .side-item { padding-top: 7px; padding-bottom: 7px; } }
+@media (prefers-reduced-motion: reduce) { .nav-pill, .nav-item > span:first-child { transition: none; } }
+
 /* ===== Home stile streaming ===== */
 /* Banner rotante: slide impilate in dissolvenza, zoom lento sulla copertina
    attiva, testo che risale, barre di avanzamento (la fine della barra attiva

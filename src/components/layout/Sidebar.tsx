@@ -82,101 +82,72 @@ export default function Sidebar() {
   }
 
   return (
-    <aside
-      className="hidden lg:flex flex-col fixed top-4 left-4 bottom-4 w-[76px] z-40 rounded-[28px] overflow-hidden"
-      style={{
-        background: 'var(--ist-nav-bg)',
-        border: '1px solid var(--ist-nav-border)',
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
-        boxShadow: '0 12px 40px rgba(0,0,0,0.18)',
-      }}
-    >
+    <aside className="nav-glass nav-scope hidden lg:flex flex-col fixed top-4 left-4 bottom-4 w-[76px] z-40 rounded-[28px] overflow-hidden">
       {/* Logo */}
-      <div className="flex justify-center py-4" style={{ borderBottom: '1px solid var(--ist-w8)' }}>
+      <div className="flex justify-center pt-5 pb-3">
         <ISTLogo size={26} />
       </div>
 
-      {/* User avatar — click to open profile */}
+      {/* Avatar: apre il profilo */}
       <button
         onClick={() => setProfileOpen(true)}
-        className="flex flex-col items-center gap-1 py-3 w-full transition-opacity hover:opacity-80 active:opacity-60"
-        style={{ borderBottom: '1px solid var(--ist-w8)' }}
+        className="side-avatar group flex flex-col items-center gap-1.5 pt-1 pb-3 w-full"
         title="Impostazioni profilo"
       >
-        <UserAvatar user={user} size={32} />
-        <p className="text-[9px] font-semibold truncate w-full text-center px-1 leading-none" style={{ color: 'var(--ist-text)' }}>
+        <span className="relative rounded-full p-[2px] transition-transform group-hover:scale-105 group-active:scale-95" style={{ background: 'linear-gradient(135deg, #7CBBD0, rgba(124,187,208,0.08))' }}>
+          <span className="block rounded-full overflow-hidden" style={{ background: 'var(--ist-nav-bg)' }}><UserAvatar user={user} size={34} /></span>
+          {user.status && (
+            <span
+              className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full"
+              style={{ background: STATUS_COLORS[user.status] ?? '#8495A3', boxShadow: '0 0 0 2px var(--ist-nav-bg)' }}
+            />
+          )}
+        </span>
+        <span className="text-[10px] font-semibold truncate w-full text-center px-1.5 leading-none" style={{ color: 'var(--ist-text)' }}>
           {user.name.split(' ')[0]}
-        </p>
-        {user.status && (
-          <div
-            className="w-1.5 h-1.5 rounded-full mt-0.5"
-            style={{ background: STATUS_COLORS[user.status] ?? '#8495A3' }}
-          />
-        )}
+        </span>
       </button>
 
-      {/* Mode switch — only for users with a management role */}
+      {/* Modalità (solo ruoli di gestione) */}
       {canManage && (
-        <div className="px-1.5 pt-2 pb-1 flex flex-col gap-1" style={{ borderBottom: '1px solid var(--ist-w8)' }}>
-          <ModeButton
-            active={mode === 'use'}
-            icon={<Compass size={16} strokeWidth={2} />}
-            label="Usa"
-            onClick={() => switchMode('use')}
-          />
-          <ModeButton
-            active={mode === 'manage'}
-            icon={<SlidersHorizontal size={16} strokeWidth={2} />}
-            label="Gestisci"
-            onClick={() => switchMode('manage')}
-          />
+        <div className="mx-2 mb-1 p-1 flex flex-col gap-1 rounded-[18px]" style={{ background: 'var(--ist-w6)' }}>
+          <ModeButton active={mode === 'use'} icon={<Compass size={16} strokeWidth={2} />} label="Usa" onClick={() => switchMode('use')} />
+          <ModeButton active={mode === 'manage'} icon={<SlidersHorizontal size={16} strokeWidth={2} />} label="Gestisci" onClick={() => switchMode('manage')} />
         </div>
       )}
 
-      {/* Nav for the active mode (deduplicated) */}
-      <nav className="flex-1 py-2 overflow-y-auto no-scrollbar">
+      <div className="side-divider mx-4 my-1.5" />
+
+      {/* Voci della modalità attiva */}
+      <nav className="side-list flex-1 min-h-0 py-1 px-2 flex flex-col gap-1 overflow-y-auto no-scrollbar">
         {items.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             data-tour={item.path}
             end={HOME_PATHS.has(item.path)}
-            style={({ isActive }) => isActive ? {
-              background: 'var(--ist-nav-active-bg)',
-              border: '1px solid var(--ist-nav-active-border)',
-              color: 'var(--ist-nav-active-text)',
-            } : {
-              color: 'var(--ist-nav-text)',
-              border: '1px solid transparent',
-            }}
-            className="flex flex-col items-center gap-0.5 mx-1.5 px-1 py-2 rounded-2xl transition-all duration-150 w-[calc(100%-12px)]"
+            title={item.label}
+            className={({ isActive }) => `side-item relative flex flex-col items-center gap-1 px-1 py-2.5 rounded-[18px] ${isActive ? 'is-active' : ''}`}
           >
             <NavIcon name={item.icon} dot={hasNews(item.path)} locked={isPathLockedForFree(item.path, user)} />
-            <span className="text-[9px] font-medium truncate w-full text-center leading-none mt-0.5">
+            <span className="side-label text-[9.5px] truncate w-full text-center leading-none">
               {item.shortLabel ?? item.label}
             </span>
           </NavLink>
         ))}
       </nav>
 
-      {/* Bottom actions */}
-      <div className="py-2" style={{ borderTop: '1px solid var(--ist-w8)' }}>
-        <button
-          onClick={toggleTheme}
-          className="flex flex-col items-center gap-0.5 mx-1.5 px-1 py-2 rounded-2xl transition-all duration-150 w-[calc(100%-12px)] hover:bg-white/5"
-          style={{ color: 'var(--ist-nav-text)' }}
-        >
+      <div className="side-divider mx-4 my-1.5" />
+
+      {/* Tema ed esci */}
+      <div className="px-2 pb-3 pt-1 flex flex-col gap-1">
+        <button onClick={toggleTheme} className="side-item flex flex-col items-center gap-1 px-1 py-2.5 rounded-[18px]" title={theme === 'dark' ? 'Tema chiaro' : 'Tema scuro'}>
           {theme === 'dark' ? <Sun size={18} strokeWidth={2} /> : <Moon size={18} strokeWidth={2} />}
-          <span className="text-[9px] font-medium leading-none mt-0.5">Tema</span>
+          <span className="side-label text-[9.5px] leading-none">Tema</span>
         </button>
-        <button
-          onClick={logout}
-          className="flex flex-col items-center gap-0.5 mx-1.5 px-1 py-2 rounded-2xl transition-all duration-150 w-[calc(100%-12px)] hover:bg-red-500/5 hover:text-red-400"
-          style={{ color: 'var(--ist-nav-text)' }}
-        >
+        <button onClick={logout} className="side-item side-item-danger flex flex-col items-center gap-1 px-1 py-2.5 rounded-[18px]" title="Esci">
           <LogOut size={18} strokeWidth={2} />
-          <span className="text-[9px] font-medium leading-none mt-0.5">Esci</span>
+          <span className="side-label text-[9.5px] leading-none">Esci</span>
         </button>
       </div>
     </aside>
@@ -187,14 +158,14 @@ function ModeButton({ active, icon, label, onClick }: { active: boolean; icon: R
   return (
     <button
       onClick={onClick}
-      className="flex flex-col items-center gap-0.5 px-1 py-1.5 rounded-2xl transition-all duration-150"
+      className="flex flex-col items-center gap-1 px-1 py-2 rounded-[14px] transition-all duration-200"
       style={active
-        ? { background: 'var(--ist-nav-active-bg)', border: '1px solid var(--ist-nav-active-border)', color: 'var(--ist-nav-active-text)' }
-        : { background: 'var(--ist-w6)', border: '1px solid transparent', color: 'var(--ist-nav-text)' }
+        ? { background: 'var(--ist-nav-pill)', boxShadow: 'var(--ist-nav-pill-shadow)', color: 'var(--ist-nav-active-text)' }
+        : { color: 'var(--ist-nav-text)' }
       }
     >
       {icon}
-      <span className="text-[9px] font-semibold leading-none mt-0.5">{label}</span>
+      <span className="text-[9.5px] font-semibold leading-none">{label}</span>
     </button>
   )
 }
