@@ -142,11 +142,16 @@ export function useBachecaPosts(channelId: string | null, userId: string) {
 // filtra per ruolo), dal più recente. Per la slide "Avvisi" della Home.
 export function useLatestAnnouncements(limit = 3) {
   const [posts, setPosts] = useState<BachecaPost[]>([])
+  const [loading, setLoading] = useState(true)
   useEffect(() => {
     let active = true
     supabase.from('bacheca_posts').select('*').order('created_at', { ascending: false }).limit(limit)
-      .then(({ data }) => { if (active) setPosts(((data ?? []) as RawPost[]).map(mapPost)) })
+      .then(({ data }) => {
+        if (!active) return
+        setPosts(((data ?? []) as RawPost[]).map(mapPost))
+        setLoading(false)
+      })
     return () => { active = false }
   }, [limit])
-  return posts
+  return { posts, loading }
 }

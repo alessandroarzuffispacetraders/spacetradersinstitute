@@ -25,6 +25,10 @@ export interface BillboardProps {
   layout?: 'stack' | 'overlay'
 }
 
+// Spaziature del blocco testo nel layout 'overlay': danno l'altezza al banner.
+// Le usa anche lo scheletro della Home (HeroSkeleton), così ha la stessa forma.
+export const OVERLAY_COPY_CLASS = 'relative cinema-px mt-auto pt-[44vw] sm:pt-[34vw] pb-12 lg:pb-[4.5rem] lg:pt-28 lg:min-h-[min(66vh,600px)] flex flex-col justify-end'
+
 // Banner grande in testa alla pagina (stile "billboard"): immagine a tutta
 // larghezza, velo scuro, titolo grande e pulsanti. È sempre scuro (anche col
 // tema chiaro), come una sala cinema; i testi stanno sopra la parte velata.
@@ -78,8 +82,8 @@ export default function Billboard({
       )}
 
       <div className={overlay
-        ? 'relative cinema-px mt-auto pt-[44vw] sm:pt-[34vw] pb-12 lg:pb-[4.5rem] lg:pt-28 lg:min-h-[min(66vh,600px)] flex flex-col justify-end'
-        : 'relative cinema-px -mt-14 sm:-mt-24 pb-14 lg:mt-0 lg:pb-[4.5rem] lg:pt-28 lg:min-h-[min(66vh,600px)] lg:flex lg:flex-col lg:justify-end'}>
+        ? OVERLAY_COPY_CLASS
+        :'relative cinema-px -mt-14 sm:-mt-24 pb-14 lg:mt-0 lg:pb-[4.5rem] lg:pt-28 lg:min-h-[min(66vh,600px)] lg:flex lg:flex-col lg:justify-end'}>
         <div className="hero-copy max-w-xl">
           {eyebrow && <div className="mb-2.5 flex items-center gap-2 flex-wrap">{eyebrow}</div>}
 

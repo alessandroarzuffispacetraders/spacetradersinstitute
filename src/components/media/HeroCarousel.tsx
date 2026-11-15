@@ -1,7 +1,44 @@
 import { ReactNode, useRef, useState } from 'react'
-import Billboard, { BillboardProps } from './Billboard'
+import Billboard, { BillboardProps, OVERLAY_COPY_CLASS } from './Billboard'
 
 export type HeroSlide = Omit<BillboardProps, 'topLeft' | 'topRight'> & { key: string }
+
+// Saluto e avatar sopra il banner (uguali nel banner e nel suo scheletro).
+function TopBar({ topLeft, topRight }: { topLeft?: ReactNode; topRight?: ReactNode }) {
+  if (!topLeft && !topRight) return null
+  return (
+    <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between gap-3 cinema-px pt-3.5 lg:pt-6 pointer-events-none">
+      <div className="min-w-0 pointer-events-auto">{topLeft}</div>
+      {topRight && <div className="flex-shrink-0 pointer-events-auto">{topRight}</div>}
+    </div>
+  )
+}
+
+// Segnaposto mentre arrivano i dati delle slide: stessa forma e quasi la stessa
+// altezza del banner, così quando compare la pagina sotto non scatta in basso.
+export function HeroSkeleton({ topLeft, topRight }: { topLeft?: ReactNode; topRight?: ReactNode }) {
+  const bar = 'rounded-md motion-safe:animate-pulse'
+  const tone = { background: 'rgba(255,255,255,0.08)' }
+  return (
+    <div className="hero-carousel relative" aria-busy="true">
+      <section data-inverted="true" className="media-hero relative isolate overflow-hidden flex flex-col w-full">
+        <div className="media-hero-bg absolute inset-0 -z-10" />
+        <div className={OVERLAY_COPY_CLASS}>
+          <div className="max-w-xl" aria-hidden>
+            <div className={`${bar} h-[22px] w-24 mb-2.5`} style={tone} />
+            <div className={`${bar} h-[26px] sm:h-[34px] lg:h-[46px] w-4/5`} style={tone} />
+            <div className={`${bar} h-[26px] sm:h-[34px] lg:h-[46px] w-3/5 mt-1.5`} style={tone} />
+            <div className={`${bar} h-[14px] w-40 mt-3.5`} style={tone} />
+            <div className={`${bar} h-[14px] w-full max-w-sm mt-4`} style={tone} />
+            <div className={`${bar} h-[14px] w-2/3 max-w-xs mt-2`} style={tone} />
+            <div className={`${bar} h-11 w-36 rounded-xl mt-5`} style={tone} />
+          </div>
+        </div>
+      </section>
+      <TopBar topLeft={topLeft} topRight={topRight} />
+    </div>
+  )
+}
 
 // Banner rotante stile Netflix: le slide (Billboard) sono impilate e si
 // alternano in dissolvenza, con uno zoom lentissimo sulla copertina attiva e
@@ -47,12 +84,7 @@ export default function HeroCarousel({ slides, topLeft, topRight, interval = 7 }
         })}
       </div>
 
-      {(topLeft || topRight) && (
-        <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between gap-3 cinema-px pt-3.5 lg:pt-6 pointer-events-none">
-          <div className="min-w-0 pointer-events-auto">{topLeft}</div>
-          {topRight && <div className="flex-shrink-0 pointer-events-auto">{topRight}</div>}
-        </div>
-      )}
+      <TopBar topLeft={topLeft} topRight={topRight} />
 
       {n > 1 && (
         <div className="absolute z-20 bottom-5 lg:bottom-7 cinema-px flex items-center gap-1.5" style={{ left: 0 }}>

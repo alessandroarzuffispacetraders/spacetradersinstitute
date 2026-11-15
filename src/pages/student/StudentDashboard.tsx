@@ -15,7 +15,7 @@ import { flattenLessons, continueWatching, pickResume, watchedFraction, remainin
 import { useWelcomeVideo, welcomeVideoFor } from '../../lib/onboarding'
 import { isFreeUser, upsellSuppressed } from '../../lib/freeTier'
 import { UserRole } from '../../types'
-import HeroCarousel, { HeroSlide } from '../../components/media/HeroCarousel'
+import HeroCarousel, { HeroSlide, HeroSkeleton } from '../../components/media/HeroCarousel'
 import { HeroButton, HeroTag } from '../../components/media/Billboard'
 import MediaRow from '../../components/media/MediaRow'
 import LessonCard from '../../components/media/LessonCard'
@@ -93,14 +93,14 @@ export default function StudentDashboard() {
   const free = isFreeUser(user)
 
   const { stats } = useStudentBadges(userId)
-  const { events: allEvents } = useLiveEvents()
+  const { events: allEvents, loading: livesLoading } = useLiveEvents()
   // Le live del mental coach vivono nell'Area Mental Coach; i promemoria
   // compaiono comunque (qualunque ruolo li abbia creati).
   const events = allEvents.filter(e => e.hostRole !== 'mental_coach' || e.eventType === 'reminder')
   const { sessions: mySessions } = useStudentSessions(userId)
-  const { journey, categories } = useJourney(userId, { hasPhoto: !!(user?.avatarUrl || user?.avatarPreset), hasMentalCoach: !!user?.assignedMentalCoachId })
+  const { journey, categories, loading: journeyLoading } = useJourney(userId, { hasPhoto: !!(user?.avatarUrl || user?.avatarPreset), hasMentalCoach: !!user?.assignedMentalCoachId })
   const welcome = useWelcomeVideo()
-  const notices = useLatestAnnouncements(3)
+  const { posts: notices, loading: noticesLoading } = useLatestAnnouncements(3)
 
   // Messaggi privati non letti
   const dmUsers = useDmUsers(userId, userRole)
@@ -110,6 +110,7 @@ export default function StudentDashboard() {
 
   // Data di registrazione + coach e mental coach (nome e avatar)
   const [meta, setMeta] = useState<{ createdAt: string | null; coach: TeamPerson; mental: TeamPerson }>({ createdAt: null, coach: { name: null }, mental: { name: null } })
+  const [metaReady, setMetaReady] = useState(false)
   useEffect(() => {
     if (!user) return
     let active = true
@@ -127,6 +128,7 @@ export default function StudentDashboard() {
         return { id: r?.id ?? null, name: r?.name ?? null, avatarUrl: r?.avatar_url ?? null, avatarPreset: r?.avatar_preset ?? null }
       }
       setMeta({ createdAt: (own.data as { created_at?: string } | null)?.created_at ?? null, coach: toPerson(co.data), mental: toPerson(me.data) })
+      setMetaReady(true)
     })()
     return () => { active = false }
   }, [user])
@@ -239,6 +241,21 @@ export default function StudentDashboard() {
     actions: <HeroButton icon={Play} onClick={() => openLive(lastReplay.id)}>Guarda il replay</HeroButton>,
   })
 
+  // Il banner si compone da più richieste (live, lezioni, avvisi, video di
+  // benvenuto, data di iscrizione). Finché non sono arrivate tutte mostriamo lo
+  // scheletro e teniamo invisibile il resto: così, quando il banner compare, la
+  // pagina sotto è già al suo posto e non scatta in basso. Una volta pronto resta
+  // pronto; con rete lenta dopo 4 secondi mostriamo comunque quello che c'è.
+  const dataReady = !livesLoading && !journeyLoading && !welcome.loading && !noticesLoading && metaReady
+  const [heroLatched, setHeroLatched] = useState(false)
+  useEffect(() => {
+    if (heroLatched) return
+    if (dataReady) { setHeroLatched(true); return }
+    const t = setTimeout(() => setHeroLatched(true), 4000)
+    return () => clearTimeout(t)
+  }, [dataReady, heroLatched])
+  const heroReady = heroLatched || dataReady
+
   const greeting = (
     <div>
       <p className="text-[11px] lg:text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.72)', textShadow: '0 1px 12px rgba(0,0,0,0.5)' }}>
@@ -275,13 +292,18 @@ export default function StudentDashboard() {
         </button>
       </div>
 
-      {slides.length > 0 ? (
+      {!heroReady ? (
+        <HeroSkeleton topLeft={greeting} topRight={avatar} />
+      ) : slides.length > 0 ? (
         <HeroCarousel slides={slides} topLeft={greeting} topRight={avatar} />
       ) : (
         <div className="cinema-px pt-8 pb-4 flex items-center justify-between">{greeting}{avatar}</div>
       )}
 
-      <div className="relative z-10 flex flex-col gap-7 lg:gap-9 mt-1 lg:-mt-2">
+      <div
+        className={`relative z-10 flex flex-col gap-7 lg:gap-9 mt-1 lg:-mt-2 transition-opacity duration-500 ${heroReady ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        aria-hidden={!heroReady}
+      >
         {free && <div className="cinema-px"><UpgradeBanner /></div>}
         <OnboardingCard />
 
