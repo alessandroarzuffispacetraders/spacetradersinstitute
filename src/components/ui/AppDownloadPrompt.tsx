@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { X, Download, Smartphone } from 'lucide-react'
-import { QRCodeSVG } from 'qrcode.react'
 import { useUI } from '../../context/UIContext'
+import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabase'
 
-// Invito a scaricare l'app nativa — mostrato SOLO sul sito web (mai dentro l'app
-// nativa: là è già installata). Al primo ingresso apre un popup una-tantum
-// (a tutto schermo su smartphone, modale centrato su desktop); poi resta un
-// tasto sempre visibile per riaprirlo. Su desktop il popup mostra un QR da
-// inquadrare col telefono; su smartphone il tasto porta direttamente allo store.
+// Invito a scaricare l'app nativa — mostrato SOLO sul sito aperto dal browser di
+// un iPhone (mai su desktop, mai dentro l'app nativa) e solo a chi non risulta
+// avere già l'app. Al primo ingresso apre un popup una-tantum a tutto schermo;
+// poi resta un tasto sempre visibile per riaprirlo, che porta allo store.
 //
 // URL store: usa VITE_IOS_APP_URL se è un link reale, altrimenti il link App
 // Store noto (così funziona in produzione anche senza env impostata). L'Android
@@ -19,19 +19,42 @@ const APP_STORE_URL = CONFIGURED && !/id0+$/.test(CONFIGURED) ? CONFIGURED : REA
 
 const LS_SEEN = 'ist_app_promo_seen'
 
-// Per ora esiste solo l'app iOS. Su un browser Android mobile non ha senso
-// spingere un link App Store: nascondiamo finché l'app Android non è pubblica
-// (allora si aggiunge il link Play Store e si mostra anche lì). iOS mobile e
-// desktop (QR da inquadrare con l'iPhone) restano i target utili.
-function isAndroidMobileWeb() {
-  return /android/i.test(navigator.userAgent)
+// Solo smartphone, e per ora solo iPhone: esiste il link App Store ma non ancora
+// quello Play Store (quando ci sarà si aggiunge Android). Su desktop e tablet
+// non compare.
+function isIPhoneWeb() {
+  return /iphone|ipod/i.test(navigator.userAgent)
+}
+
+// L'utente ha già l'app? Quando apre l'app nativa e accetta le notifiche, il
+// dispositivo viene registrato in push_subscriptions con platform 'ios' o
+// 'android' (vedi lib/nativePush). La RLS fa leggere a ognuno solo le proprie
+// righe, quindi basta contarle. null = verifica in corso (non mostriamo nulla,
+// così il tasto non compare e poi sparisce). Limite: chi ha installato l'app ma
+// ha rifiutato le notifiche non risulta, e continua a vedere l'invito.
+function useHasNativeApp(userId: string | undefined, enabled: boolean): boolean | null {
+  const [has, setHas] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!enabled || !userId) return
+    let active = true
+    supabase.from('push_subscriptions')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .in('platform', ['ios', 'android'])
+      .then(({ count, error }) => { if (active) setHas(!error && (count ?? 0) > 0) })
+    return () => { active = false }
+  }, [userId, enabled])
+  return has
 }
 
 export default function AppDownloadPrompt() {
   const [open, setOpen] = useState(false)
   const { hideDownloadPrompt } = useUI()
+  const { user } = useAuth()
 
-  const hidden = Capacitor.isNativePlatform() || isAndroidMobileWeb() || hideDownloadPrompt
+  const target = !Capacitor.isNativePlatform() && isIPhoneWeb()
+  const hasApp = useHasNativeApp(user?.id, target)
+  const hidden = !target || hasApp !== false || hideDownloadPrompt
 
   // Apertura automatica una-tantum al primo ingresso; poi solo il tasto.
   useEffect(() => {
@@ -41,8 +64,8 @@ export default function AppDownloadPrompt() {
     return () => clearTimeout(t)
   }, [hidden])
 
-  // Dentro l'app nativa (o su Android web, o su una pagina full-bleed che lo
-  // nasconde esplicitamente come SpaceQuant) non deve comparire nulla.
+  // Fuori da iPhone web, con l'app già installata o su una pagina full-bleed che
+  // lo nasconde esplicitamente (come SpaceQuant) non deve comparire nulla.
   if (hidden) return null
 
   const markSeen = () => { try { localStorage.setItem(LS_SEEN, '1') } catch { /* storage non disponibile */ } }
@@ -51,7 +74,7 @@ export default function AppDownloadPrompt() {
 
   return (
     <>
-      {/* Tasto sempre visibile (web). Su mobile sta sopra la bottom nav. */}
+      {/* Tasto sempre visibile, sopra la bottom nav. */}
       <button
         onClick={() => setOpen(true)}
         className="fixed right-4 bottom-28 lg:bottom-6 z-[95] flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold transition-transform active:scale-[0.97]"
@@ -104,17 +127,6 @@ export default function AppDownloadPrompt() {
               </h2>
               <p className="text-sm leading-relaxed max-w-xs" style={{ color: 'var(--ist-text-muted)' }}>
                 Vivi Space Traders Institute come un'app nativa: più veloce, con notifiche push e messaggi vocali.
-              </p>
-            </div>
-
-            {/* QR — utile da desktop: si inquadra col telefono. Nascosto su mobile,
-                dove il tasto porta direttamente allo store. */}
-            <div className="hidden lg:flex flex-col items-center gap-2">
-              <div className="p-3 rounded-2xl bg-white">
-                <QRCodeSVG value={APP_STORE_URL} size={168} bgColor="#ffffff" fgColor="#0B1020" level="M" />
-              </div>
-              <p className="text-xs" style={{ color: 'var(--ist-text-dim)' }}>
-                Inquadra il QR con la fotocamera del telefono
               </p>
             </div>
 
