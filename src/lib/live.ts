@@ -284,13 +284,29 @@ export async function claimLessonCover(lessonId: string, keyword?: string | null
   return { status: d.status ?? 'ok', left: d.left }
 }
 
-// Copertine ancora libere nella scorta, per tema (solo staff; null se la
-// migrazione non c'è ancora).
-export async function coverPoolStatus(): Promise<{ trading: number; mind: number } | null> {
-  const { data, error } = await supabase.from('cover_pool').select('theme').is('used_id', null)
-  if (error) return null
-  const rows = (data ?? []) as { theme: string }[]
-  return { trading: rows.filter(r => r.theme === 'trading').length, mind: rows.filter(r => r.theme === 'mind').length }
+// Locandina verticale di una sezione dalla stessa scorta (phase_cover_pool_posters.sql):
+// solo admin. force = ne assegna un'altra anche se la sezione ne ha già una.
+export async function claimPosterCover(categoryId: string, force = false): Promise<ClaimResult> {
+  const { data, error } = await supabase.rpc('claim_category_poster', { p_category_id: categoryId, p_force: force })
+  if (error) return { status: /claim_category_poster|PGRST202|42883/.test(`${error.code} ${error.message}`) ? 'unavailable' : 'error' }
+  const d = (data ?? {}) as { status?: ClaimResult['status']; left?: number }
+  return { status: d.status ?? 'ok', left: d.left }
+}
+
+export interface CoverPoolStatus { trading: number; mind: number; posters: number }
+
+// Copertine ancora libere nella scorta, per tema, e quante hanno anche la
+// locandina verticale (solo staff; null se la migrazione non c'è ancora).
+export async function coverPoolStatus(): Promise<CoverPoolStatus | null> {
+  let res = await supabase.from('cover_pool').select('theme, poster_dark').is('used_id', null)
+  if (res.error) res = await supabase.from('cover_pool').select('theme').is('used_id', null) as typeof res
+  if (res.error) return null
+  const rows = (res.data ?? []) as { theme: string; poster_dark?: string | null }[]
+  return {
+    trading: rows.filter(r => r.theme === 'trading').length,
+    mind: rows.filter(r => r.theme === 'mind').length,
+    posters: rows.filter(r => !!r.poster_dark).length,
+  }
 }
 
 // opts.ownerId: id da assegnare alle live create (e da filtrare se onlyOwn).

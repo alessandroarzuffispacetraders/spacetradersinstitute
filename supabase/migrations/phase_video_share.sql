@@ -45,7 +45,7 @@ begin
   v_text := lower(coalesce(v_lesson.title, '') || ' ' || coalesce(v_lesson.description, ''));
   v_theme := case
     when v_section = 'mental'
-      or v_text ~ '(mental|mente|psicolog|emozion|dopamin|abitudin|comfort|stress|disciplin|ansia|paura|respir)'
+      or v_text ~ '\m(mental|mente\M|psicolog|emozion|dopamin|abitudin|comfort|stress|disciplin|ansia\M|paura\M|respir)'
     then 'mind' else 'trading' end;
 
   select * into v_pick from public.cover_pool

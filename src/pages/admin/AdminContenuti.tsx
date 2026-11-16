@@ -4,7 +4,6 @@ import {
   ChevronDown, Plus, Edit2, Trash2,
   Paperclip, Video, FolderOpen, BookOpen, Radio, Clock,
   ChevronUp, Eye, EyeOff, Loader2, X, Upload, Sparkles, ImagePlus, WandSparkles,
-  Copy, Check, ExternalLink, CircleAlert,
 } from 'lucide-react'
 import {
   useContentAdmin, Category, Course, Lesson,
@@ -12,14 +11,11 @@ import {
 } from '../../lib/content'
 import { parseVimeo, fetchVimeoDuration } from '../../lib/vimeo'
 import { uploadAttachment, deleteAttachment, uploadCategoryCover, deleteCategoryCover } from '../../lib/storage'
-import { useLiveAdmin } from '../../lib/live'
 import LiveManager from '../../components/live/LiveManager'
-import CoverEditorModal, { CoverChip, CoverSubject, fullPrompt } from '../../components/admin/CoverEditorModal'
+import CoverEditorModal, { CoverChip, CoverSubject } from '../../components/admin/CoverEditorModal'
 import { phaseIcon } from '../../components/media/phase'
-import {
-  listMissingCovers, generateMissingCovers, preparePrompt, prepareAllPrompts, usePromptJob,
-  uploadCoverImage, copyText, isUploadedCover, PromptKind,
-} from '../../lib/covers'
+import { claimCover, isStyledCover } from '../../lib/coverPool'
+import { useLiveAdmin, coverPoolStatus, type CoverPoolStatus } from '../../lib/live'
 import { useAuth } from '../../context/AuthContext'
 
 type Tab = 'corsi' | 'live'
@@ -190,21 +186,17 @@ function MoveBtns({ onUp, onDown, isFirst, isLast }: {
 function categoryPosterSubject(cat: Category): CoverSubject {
   return {
     kind: 'category', id: cat.id, title: cat.title,
-    coverUrl: cat.posterUrl, keyword: null, status: cat.posterStatus,
+    coverUrl: cat.posterUrl, coverUrlLight: cat.posterUrlLight, keyword: null, status: cat.posterStatus,
     accent: cat.accent, icon: phaseIcon(cat.phase),
-    prompt: cat.posterPrompt,
-    promptContext: { serie: cat.title, descrizione: cat.description || undefined },
   }
 }
 
-function lessonCoverSubject(lesson: Lesson, category: Category, number: number, course?: Course): CoverSubject {
+function lessonCoverSubject(lesson: Lesson, category: Category, number: number): CoverSubject {
   return {
     kind: 'lesson', id: lesson.id, title: lesson.title,
-    coverUrl: lesson.coverUrl, keyword: lesson.coverKeyword, status: lesson.coverStatus,
+    coverUrl: lesson.coverUrl, coverUrlLight: lesson.coverUrlLight, keyword: lesson.coverKeyword, status: lesson.coverStatus,
     accent: category.accent, icon: phaseIcon(category.phase),
     kicker: `Lezione ${String(number).padStart(2, '0')}`,
-    prompt: lesson.coverPrompt,
-    promptContext: { serie: category.title, corso: course?.title, numero: number },
   }
 }
 
@@ -702,206 +694,72 @@ function CoursesTab({ admin, openModal, openCover, openPoster }: {
 }
 
 
-// ─── Copertine AI mancanti (locandine delle serie + lezioni + replay) ───────
+// ─── Copertine da sistemare (sezione aperta) ──────────────────────────────────
+// Locandine delle sezioni e copertine delle lezioni senza immagine o con uno
+// stile diverso da quello della piattaforma (vecchie grafiche vettoriali o
+// immagini caricate a mano, senza versione chiara). «Genera» le prende tutte
+// dalla scorta: stesso stile, versione scura e chiara.
 
-function MissingCoversBar({ onProgressReload, nested = false }: { onProgressReload: () => void; nested?: boolean }) {
-  const [state, setState] = useState<
-    | { phase: 'idle' }
-    | { phase: 'checking' }
-    | { phase: 'running'; done: number; total: number; failed: number }
-    | { phase: 'finished'; total: number; failed: number; notice?: string }
-    | { phase: 'message'; text: string; error?: boolean }
-  >({ phase: 'idle' })
-
-  const run = async () => {
-    setState({ phase: 'checking' })
-    const { items, error, notice } = await listMissingCovers()
-    if (error) { setState({ phase: 'message', text: error, error: true }); return }
-    if (items.length === 0) {
-      setState({ phase: 'message', text: notice ?? 'Tutte le sezioni, le lezioni e i replay hanno già la loro grafica.', error: !!notice })
-      return
-    }
-    const posters = items.filter(i => i.kind === 'category').length
-    const covers = items.length - posters
-    const what = [posters ? `${posters} locandine delle sezioni` : '', covers ? `${covers} copertine (lezioni e replay)` : ''].filter(Boolean).join(' e ')
-    if (!confirm(`Generare ${what}? Ci vorrà qualche minuto: tieni aperta questa pagina finché non finisce.`)) {
-      setState({ phase: 'idle' }); return
-    }
-    const res = await generateMissingCovers(items, (done, total, failed) => {
-      setState({ phase: 'running', done, total, failed })
-      if (done > 0 && done % 4 === 0) onProgressReload()
-    })
-    onProgressReload()
-    setState({ phase: 'finished', total: items.length, failed: res.failed, notice })
-  }
-
-  const busy = state.phase === 'checking' || state.phase === 'running'
-  const pct = state.phase === 'running' && state.total ? Math.round((state.done / state.total) * 100) : 0
-
-  return (
-    <div
-      className={`flex items-center gap-3 flex-wrap ${nested ? 'py-1' : 'px-5 py-3 rounded-2xl mb-6'}`}
-      style={nested ? undefined : { background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)' }}
-    >
-      <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(90,154,177,0.14)', color: 'var(--ist-accent-text)' }}>
-        <WandSparkles size={15} strokeWidth={2} />
-      </div>
-      <div className="flex-1 min-w-[180px]">
-        <p className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>Generazione vettoriale automatica</p>
-        {state.phase === 'running' ? (
-          <div className="mt-1">
-            <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: 'var(--ist-text-muted)' }}>
-              <span>{state.done}/{state.total} create{state.failed > 0 ? ` · ${state.failed} non riuscite` : ''} — tieni aperta questa pagina</span>
-              <span>{pct}%</span>
-            </div>
-            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--ist-w10)' }}>
-              <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #7CBBD0, #286680)' }} />
-            </div>
-          </div>
-        ) : (
-          <p className="text-[11px]" style={{ color: state.phase === 'message' && state.error ? '#FF6B7A' : 'var(--ist-text-muted)' }}>
-            {state.phase === 'message' ? state.text
-              : state.phase === 'finished' ? `Fatto: ${state.total - state.failed} grafiche create${state.failed ? `, ${state.failed} non riuscite (riprova dalla singola sezione o lezione)` : ''}.${state.notice ? ` ${state.notice}` : ''}`
-              : 'Disegna in automatico, in vettoriale, le grafiche che mancano: prima le locandine delle sezioni, poi le copertine di lezioni e replay.'}
-          </p>
-        )}
-      </div>
-      <button
-        onClick={run}
-        disabled={busy}
-        className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0 flex-shrink-0"
-        style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)', border: '1px solid rgba(255,255,255,0.12)' }}
-      >
-        {busy ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} strokeWidth={2.2} />}
-        {state.phase === 'checking' ? 'Controllo…' : state.phase === 'running' ? 'In corso…' : 'Genera in vettoriale'}
-      </button>
-    </div>
-  )
-}
-
-
-// ─── Copertine con ChatGPT (flusso principale) ───────────────────────────────
-// Elenco di serie (prima) e lezioni (poi, in ordine di catalogo) della sezione
-// aperta che non hanno ancora un'immagine caricata: per ognuna si prepara il
-// prompt (Claude sceglie il soggetto), lo si copia in ChatGPT e si carica
-// l'immagine ottenuta. Le grafiche vettoriali già presenti contano come "da fare".
-
-interface ChatGptItem {
-  kind: PromptKind
+interface CoverTodo {
+  kind: 'lesson' | 'category'
   id: string
   title: string
   meta: string
   subject: CoverSubject
 }
 
-function ChatGptRow({ item, onReload, onOpen }: { item: ChatGptItem; onReload: () => void; onOpen: () => void }) {
-  const job = usePromptJob(item.kind, item.id)
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [copied, setCopied] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const text = fullPrompt(item.subject, item.subject.prompt)
-
-  const prepare = async () => {
-    setError(null)
-    const res = await preparePrompt(item.kind, item.id)
-    if (!res.ok) setError(res.error ?? 'Prompt non riuscito')
-    onReload()
-  }
-  const copy = async () => {
-    if (text && await copyText(text)) { setCopied(true); window.setTimeout(() => setCopied(false), 1800) }
-  }
-  const upload = async (file: File | undefined) => {
-    if (!file) return
-    setUploading(true)
-    setError(null)
-    const keyword = item.subject.keyword ?? item.subject.prompt?.parolaChiave ?? undefined
-    const res = await uploadCoverImage(item.kind, item.id, file, keyword)
-    setUploading(false)
-    if (fileRef.current) fileRef.current.value = ''
-    if (!res.ok) setError(res.error ?? 'Caricamento non riuscito')
-    onReload()
-  }
-
-  const btn = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors disabled:opacity-50 flex-shrink-0'
-  return (
-    <div className="flex items-center gap-3 px-4 py-2.5" style={{ borderTop: '1px solid var(--ist-w7)' }}>
-      <CoverChip subject={item.subject} onClick={onOpen} width={item.kind === 'category' ? 30 : 56} />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate" style={{ color: 'var(--ist-text)' }}>{item.title}</p>
-        <p className="text-[11px] truncate" style={{ color: error ? '#FF6B7A' : 'var(--ist-text-dim)' }}>
-          {error ?? (job.running ? 'Claude sta scegliendo il soggetto…' : text ? `${item.meta} · prompt pronto${item.subject.prompt?.visual ? ` (${item.subject.prompt.visual})` : ''}` : item.meta)}
-        </p>
-      </div>
-      {text ? (
-        <button onClick={copy} className={btn} style={copied ? { background: 'rgba(70,211,154,0.16)', color: '#46D39A' } : { background: 'var(--ist-w8)', color: 'var(--ist-text)' }}>
-          {copied ? <Check size={12} strokeWidth={2.6} /> : <Copy size={12} strokeWidth={2.2} />}
-          {copied ? 'Copiato' : 'Copia prompt'}
-        </button>
-      ) : (
-        <button onClick={prepare} disabled={job.running} className={btn} style={{ background: 'var(--ist-w8)', color: 'var(--ist-text)' }}>
-          {job.running ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} strokeWidth={2.2} />}
-          Prepara prompt
-        </button>
-      )}
-      <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => upload(e.target.files?.[0])} />
-      <button onClick={() => fileRef.current?.click()} disabled={uploading} className={btn} style={{ background: 'rgba(90,154,177,0.14)', color: 'var(--ist-accent-text)' }}>
-        {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} strokeWidth={2.2} />}
-        Carica
-      </button>
-      <button onClick={onOpen} className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:bg-white/[0.06]" style={{ color: 'var(--ist-text-dim)' }} title="Apri (anteprima, parola chiave, rigenera prompt)">
-        <ExternalLink size={13} strokeWidth={2} />
-      </button>
-    </div>
-  )
-}
-
-function ChatGptCoversPanel({ categories, onReload, openCover, openPoster, onReloadAll }: {
+function CoversPanel({ categories, onReload, openCover, openPoster }: {
   categories: Category[]
   onReload: () => void
-  onReloadAll: () => void
   openCover: (lessonId: string) => void
   openPoster: (categoryId: string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const [batch, setBatch] = useState<
+  const [pool, setPool] = useState<CoverPoolStatus | null>(null)
+  const [run, setRun] = useState<
     | { phase: 'idle' }
-    | { phase: 'running'; done: number; total: number; failed: number }
-    | { phase: 'finished'; total: number; failed: number }
+    | { phase: 'running'; done: number; total: number }
+    | { phase: 'finished'; done: number; total: number; empty: boolean; failed: number }
   >({ phase: 'idle' })
 
-  const items = useMemo<ChatGptItem[]>(() => {
-    const posters: ChatGptItem[] = categories
-      .filter(c => !isUploadedCover(c.posterUrl))
-      .map(c => ({ kind: 'category', id: c.id, title: c.title, meta: `Locandina della sezione · ${c.phase}`, subject: categoryPosterSubject(c) }))
-    const lessons: ChatGptItem[] = categories.flatMap(c => c.courses.flatMap(cr => cr.lessons.map((l, i) => ({ l, c, cr, n: i + 1 }))))
-      .filter(x => !isUploadedCover(x.l.coverUrl))
+  useEffect(() => { coverPoolStatus().then(setPool) }, [categories])
+
+  const items = useMemo<CoverTodo[]>(() => {
+    const posters: CoverTodo[] = categories
+      .filter(c => !isStyledCover(c.posterUrl))
+      .map(c => ({ kind: 'category', id: c.id, title: c.title, meta: `Locandina della sezione${c.published ? '' : ' · bozza'}`, subject: categoryPosterSubject(c) }))
+    const lessons: CoverTodo[] = categories.flatMap(c => c.courses.flatMap(cr => cr.lessons.map((l, i) => ({ l, c, cr, n: i + 1 }))))
+      .filter(x => !isStyledCover(x.l.coverUrl))
       .map(x => ({
         kind: 'lesson', id: x.l.id, title: x.l.title,
-        meta: `${x.c.title} · ${x.cr.title} · lezione ${x.n}`,
-        subject: lessonCoverSubject(x.l, x.c, x.n, x.cr),
+        meta: `${x.c.title} · ${x.cr.title} · lezione ${x.n}${x.c.published ? '' : ' · bozza'}`,
+        subject: lessonCoverSubject(x.l, x.c, x.n),
       }))
     return [...posters, ...lessons]
   }, [categories])
 
-  const posters = items.filter(i => i.kind === 'category').length
-  const ready = items.filter(i => !!i.subject.prompt).length
-  const missingPrompts = items.filter(i => !i.subject.prompt)
+  const postersTodo = items.filter(i => i.kind === 'category').length
+  const lessonsTodo = items.length - postersTodo
 
-  const runBatch = async () => {
-    if (missingPrompts.length === 0) return
-    if (!confirm(`Preparare ${missingPrompts.length} prompt? Claude sceglie il soggetto di ognuno (qualche secondo ciascuno): tieni aperta la pagina.`)) return
-    setOpen(true)
-    const res = await prepareAllPrompts(missingPrompts.map(i => ({ kind: i.kind, id: i.id })), (done, total, failed) => {
-      setBatch({ phase: 'running', done, total, failed })
-      if (done > 0 && done % 4 === 0) onReload()
-    })
+  const generateAll = async () => {
+    if (!items.length) return
+    const stock = pool ? `\n\nNella scorta: ${pool.trading + pool.mind} copertine e ${pool.posters} locandine.` : ''
+    if (!confirm(`Generare ${[postersTodo ? `${postersTodo} locandine` : '', lessonsTodo ? `${lessonsTodo} copertine` : ''].filter(Boolean).join(' e ')} nello stile della piattaforma (versione scura e chiara)?${stock}`)) return
+    let done = 0, failed = 0, empty = false
+    setRun({ phase: 'running', done: 0, total: items.length })
+    for (const it of items) {
+      const res = await claimCover(it.kind, it.id, { title: it.title, keyword: it.subject.keyword, force: !!it.subject.coverUrl })
+      if (res.status === 'ok' || res.status === 'other_theme' || res.status === 'kept') done++
+      else if (res.status === 'empty') empty = true
+      else failed++
+      setRun({ phase: 'running', done: done + failed, total: items.length })
+    }
     onReload()
-    setBatch({ phase: 'finished', total: missingPrompts.length, failed: res.failed })
+    coverPoolStatus().then(setPool)
+    setRun({ phase: 'finished', done, total: items.length, empty, failed })
   }
 
-  const pct = batch.phase === 'running' && batch.total ? Math.round((batch.done / batch.total) * 100) : 0
-
+  const btn = 'flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold flex-shrink-0 transition-all disabled:opacity-60'
   return (
     <div className="rounded-2xl mb-6 overflow-hidden" style={{ background: 'var(--ist-card-bg)', border: '1px solid var(--ist-border)' }}>
       <div className="flex items-center gap-3 px-5 py-3 flex-wrap">
@@ -909,77 +767,55 @@ function ChatGptCoversPanel({ categories, onReload, openCover, openPoster, onRel
           <ImagePlus size={15} strokeWidth={2} />
         </div>
         <div className="flex-1 min-w-[200px]">
-          <p className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>Copertine con ChatGPT</p>
-          {batch.phase === 'running' ? (
-            <div className="mt-1">
-              <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: 'var(--ist-text-muted)' }}>
-                <span>{batch.done}/{batch.total} prompt preparati{batch.failed ? ` · ${batch.failed} non riusciti` : ''} — tieni aperta questa pagina</span>
-                <span>{pct}%</span>
-              </div>
-              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--ist-w10)' }}>
-                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #7CBBD0, #286680)' }} />
-              </div>
-            </div>
-          ) : (
-            <p className="text-[11px]" style={{ color: 'var(--ist-text-muted)' }}>
-              {items.length === 0
-                ? 'Tutte le sezioni e le lezioni di quest\'area hanno la loro immagine.'
-                : `${items.length} da fare in questa sezione (${posters} locandine, ${items.length - posters} copertine) · ${ready} prompt pronti.`}
-              {batch.phase === 'finished' ? ` Fatto: ${batch.total - batch.failed} prompt preparati${batch.failed ? `, ${batch.failed} non riusciti (riprova dalla riga)` : ''}.` : ''}
-            </p>
-          )}
+          <p className="text-sm font-semibold" style={{ color: 'var(--ist-text)' }}>Copertine e locandine</p>
+          <p className="text-[11px]" style={{ color: 'var(--ist-text-muted)' }}>
+            {run.phase === 'running'
+              ? `Sto generando… ${run.done}/${run.total}`
+              : run.phase === 'finished'
+                ? `Fatto: ${run.done} su ${run.total}.${run.empty ? ' La scorta è finita: vanno preparate immagini nuove.' : ''}${run.failed ? ` ${run.failed} non riuscite.` : ''}`
+                : items.length === 0
+                  ? 'Tutte le sezioni e le lezioni di quest\'area hanno la loro immagine, in versione scura e chiara.'
+                  : `${items.length} da sistemare (${postersTodo} locandine, ${lessonsTodo} copertine): senza immagine o con uno stile diverso.`}
+            {pool && ` · Scorta: ${pool.trading + pool.mind} copertine, ${pool.posters} locandine.`}
+          </p>
         </div>
-        {missingPrompts.length > 0 && (
-          <button
-            onClick={runBatch}
-            disabled={batch.phase === 'running'}
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0 flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)', border: '1px solid rgba(255,255,255,0.12)' }}
-          >
-            {batch.phase === 'running' ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} strokeWidth={2.2} />}
-            {batch.phase === 'running' ? 'In corso…' : 'Prepara tutti i prompt'}
+        {items.length > 0 && (
+          <button onClick={generateAll} disabled={run.phase === 'running'} className={`${btn} text-white hover:-translate-y-0.5`}
+            style={{ background: 'linear-gradient(135deg, #5A9AB1 0%, #286680 45%, #0A3346 100%)', border: '1px solid rgba(255,255,255,0.12)' }}>
+            {run.phase === 'running' ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} strokeWidth={2.2} />}
+            {run.phase === 'running' ? 'In corso…' : `Genera tutte (${items.length})`}
           </button>
         )}
         {items.length > 0 && (
-          <button
-            onClick={() => setOpen(o => !o)}
-            className="flex items-center gap-1 px-3 py-2 rounded-full text-xs font-semibold flex-shrink-0"
-            style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)', color: 'var(--ist-text)' }}
-          >
-            {open ? 'Nascondi elenco' : `Mostra elenco (${items.length})`}
+          <button onClick={() => setOpen(o => !o)} className={btn} style={{ background: 'var(--ist-w6)', border: '1px solid var(--ist-w8)', color: 'var(--ist-text)' }}>
+            {open ? 'Nascondi elenco' : 'Mostra elenco'}
             <ChevronDown size={13} strokeWidth={2.2} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
           </button>
         )}
       </div>
-
       {open && items.length > 0 && (
-        <>
-          <p className="px-5 pb-2 text-[11px] flex items-start gap-1.5" style={{ color: 'var(--ist-text-dim)' }}>
-            <CircleAlert size={12} strokeWidth={2} className="flex-shrink-0 mt-px" />
-            1. Prepara o copia il prompt · 2. Incollalo in ChatGPT (allega l&apos;immagine di riferimento se vuoi) · 3. Scarica l&apos;immagine e premi «Carica». Le locandine sono verticali 2:3, le copertine orizzontali 3:2.
-          </p>
-          <div className="max-h-[480px] overflow-y-auto">
-            {items.map(it => (
-              <ChatGptRow
-                key={`${it.kind}:${it.id}`}
-                item={it}
-                onReload={onReload}
-                onOpen={() => (it.kind === 'category' ? openPoster(it.id) : openCover(it.id))}
-              />
-            ))}
-          </div>
-        </>
+        <div className="max-h-[420px] overflow-y-auto">
+          {items.map(it => {
+            const openIt = () => (it.kind === 'category' ? openPoster(it.id) : openCover(it.id))
+            return (
+              <div key={`${it.kind}:${it.id}`} className="flex items-center gap-3 px-4 py-2.5" style={{ borderTop: '1px solid var(--ist-w7)' }}>
+                <CoverChip subject={it.subject} onClick={openIt} width={it.kind === 'category' ? 30 : 56} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate" style={{ color: 'var(--ist-text)' }}>{it.title}</p>
+                  <p className="text-[11px] truncate" style={{ color: 'var(--ist-text-dim)' }}>{it.meta}</p>
+                </div>
+                <button onClick={openIt} className="px-3 py-1.5 rounded-full text-[11px] font-semibold flex-shrink-0" style={{ background: 'rgba(90,154,177,0.14)', color: 'var(--ist-accent-text)' }}>
+                  Apri
+                </button>
+              </div>
+            )
+          })}
+        </div>
       )}
-
-      <details className="px-5 pb-3 pt-1" style={{ borderTop: '1px solid var(--ist-w7)' }}>
-        <summary className="text-[11px] font-semibold cursor-pointer py-2" style={{ color: 'var(--ist-text-dim)' }}>
-          Altre opzioni: generazione vettoriale automatica
-        </summary>
-        <MissingCoversBar onProgressReload={onReloadAll} nested />
-      </details>
     </div>
   )
 }
+
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
@@ -1041,10 +877,9 @@ export default function AdminContenuti() {
       </div>
 
       {tab === 'corsi' && !admin.loading && (
-        <ChatGptCoversPanel
+        <CoversPanel
           categories={admin.categories}
           onReload={() => { void admin.reload() }}
-          onReloadAll={() => { void admin.reload(); void liveAdmin.reload() }}
           openCover={setCoverLessonId}
           openPoster={setPosterCatId}
         />
@@ -1100,7 +935,7 @@ export default function AdminContenuti() {
 
       {coverCtx && (
         <CoverEditorModal
-          subject={lessonCoverSubject(coverCtx.lesson, coverCtx.category, coverCtx.number, coverCtx.course)}
+          subject={lessonCoverSubject(coverCtx.lesson, coverCtx.category, coverCtx.number)}
           onClose={() => setCoverLessonId(null)}
           onChanged={() => { void admin.reload() }}
         />

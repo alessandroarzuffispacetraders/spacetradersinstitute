@@ -50,14 +50,32 @@ ricevono una copertina. Colonne da aggiornare: `cover_url`, `cover_url_light`,
 Mental Coach nello stesso stile (cervello, neuroni, sinapsi). Input: le
 categorie della sezione `mental` con le loro lezioni (`id, title, lessons[]`).
 
-## Scorta per le nuove live
+## Scorta (copertine e locandine nuove)
 
-`plan_pool.py` genera la scorta di copertine pronte (tabella `cover_pool`,
-cartella `curated/pool/` del bucket). Quando si crea una live l'app chiama
-`claim_live_cover` e riceve subito una copertina mai usata: tema mente per il
-Mental Coach, trading per il resto, scegliendo quella con più tag presenti nel
-titolo. Ogni voce ha un grafico protagonista che non compare altrove: per
-rifornire la scorta servono grafici nuovi (aggiungerli a `POOL`).
+`plan_pool.py` genera la scorta di immagini pronte (tabella `cover_pool`,
+cartella `curated/pool/` del bucket). Ogni voce ha un grafico protagonista che
+non compare altrove, in quattro file: copertina orizzontale scura e chiara
+(`{grafico}-dark.webp`, `-light.webp`) e locandina verticale scura e chiara
+(`-poster-dark.webp`, `-poster-light.webp`).
+
+Ogni «Genera» dell'admin (copertina di lezione o live, locandina di sezione,
+«Genera tutte») e ogni lezione o live appena creata prende dalla scorta una voce
+mai usata: tema mente per il Mental Coach, trading per il resto, scegliendo
+quella con più tag nel titolo (funzioni `claim_lesson_cover`, `claim_live_cover`,
+`claim_category_poster`; anche la funzione `generate-cover` usa queste). Ogni
+voce si usa una volta sola.
+
+Per rifornirla servono grafici NUOVI (mai uno di `plan.py`, `plan_lives.py`,
+`plan_mental.py` o già in `POOL`): aggiungili a `charts.py` e a `POOL`, poi
+
+```
+python3 plan_pool.py out grafico1,grafico2,…
+```
+
+converti in WebP, carica in `video-covers/curated/pool/` e inserisci le righe
+in `cover_pool` (`theme, chart, tags, url_dark, url_light, poster_dark,
+poster_light`). Novembre 2026: 47 voci in tutto (20 della prima scorta, 27
+della seconda).
 
 ## Sfondo degli avvisi
 

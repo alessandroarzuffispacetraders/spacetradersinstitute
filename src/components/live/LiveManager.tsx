@@ -14,7 +14,7 @@ import CoverEditorModal, { CoverChip, CoverSubject } from '../admin/CoverEditorM
 function liveCoverSubject(e: LiveEvent): CoverSubject {
   return {
     kind: 'live', id: e.id, title: e.title,
-    coverUrl: e.coverUrl, keyword: e.coverKeyword, status: e.coverStatus,
+    coverUrl: e.coverUrl, coverUrlLight: e.coverUrlLight, keyword: e.coverKeyword, status: e.coverStatus,
     accent: e.accent, accentEnd: e.accentEnd, icon: Radio, kicker: e.status === 'replay' ? 'Replay' : 'Live',
   }
 }

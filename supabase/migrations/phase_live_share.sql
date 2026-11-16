@@ -57,7 +57,7 @@ begin
   v_text := lower(coalesce(v_live.title, '') || ' ' || coalesce(v_live.description, ''));
   v_theme := case
     when v_live.host_role = 'mental_coach'
-      or v_text ~ '(mental|mente|psicolog|emozion|dopamin|abitudin|comfort|stress|disciplin|ansia|paura|respir)'
+      or v_text ~ '\m(mental|mente\M|psicolog|emozion|dopamin|abitudin|comfort|stress|disciplin|ansia\M|paura\M|respir)'
     then 'mind' else 'trading' end;
 
   select * into v_pick from public.cover_pool
